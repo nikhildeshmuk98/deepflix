@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>DeepFlix · Series Experience</title>
+    <!-- Tailwind + Font Awesome + Google Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        body { background: #0a0a0a; scroll-behavior: smooth; }
+        .star-btn { transition: color 0.2s ease, transform 0.1s; cursor: pointer; }
+        .star-btn:hover, .star-btn.active { color: #fbbf24 !important; transform: scale(1.1); }
+        .reviews-scroll::-webkit-scrollbar { width: 6px; }
+        .reviews-scroll::-webkit-scrollbar-track { background: #1f2937; }
+        .reviews-scroll::-webkit-scrollbar-thumb { background: #ef4444; border-radius: 10px; }
+        .review-textarea {
+            background: rgba(17, 24, 39, 0.95);
+            border: 2px solid #374151;
+            transition: all 0.2s ease;
+            color: white;
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+        .review-textarea:focus {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
+            background: #111827;
+            outline: none;
+        }
+        .review-textarea::placeholder { color: #9ca3af; opacity: 0.8; font-weight: 400; }
+        .recommendations-container { position: relative; width: 100%; padding: 0 40px; }
+        .recommendations-carousel {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            padding: 15px 5px 25px;
+        }
+        .recommendations-carousel::-webkit-scrollbar { display: none; }
+        .recommendation-card {
+            flex: 0 0 auto;
+            width: 200px;
+            border-radius: 1.2rem;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            box-shadow: 0 10px 20px -8px rgba(0,0,0,0.6);
+            border: 1px solid rgba(239,68,68,0.3);
+            background: #111;
+        }
+        .recommendation-card:hover {
+            transform: translateY(-10px) scale(1.03);
+            box-shadow: 0 25px 30px -10px rgba(239,68,68,0.5);
+            border-color: rgba(239,68,68,0.7);
+        }
+        .poster-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 2/3;
+            background: linear-gradient(145deg, #1e1e2f, #111);
+            overflow: hidden;
+        }
+        .poster-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.6s ease;
+        }
+        .recommendation-card:hover .poster-container img { transform: scale(1.12); }
+        .poster-overlay {
+            position: absolute; top:0; left:0; right:0; bottom:0;
+            background: radial-gradient(circle at 30% 40%, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.85) 90%);
+            opacity: 0;
+            transition: opacity 0.35s;
+            z-index: 10;
+        }
+        .recommendation-card:hover .poster-overlay { opacity: 1; }
+        .play-button-center {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(0.7);
+            width: 64px; height: 64px;
+            background: #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
+            box-shadow: 0 0 35px #ef4444aa;
+            z-index: 20;
+        }
+        .recommendation-card:hover .play-button-center {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        .movie-info-hover {
+            position: absolute;
+            bottom: 0; left:0; right:0;
+            padding: 22px 15px 15px;
+            background: linear-gradient(to top, #000 15%, rgba(0,0,0,0.8) 60%, transparent);
+            transform: translateY(100%);
+            transition: transform 0.35s ease;
+            z-index: 15;
+        }
+        .recommendation-card:hover .movie-info-hover { transform: translateY(0); }
+        /* genre badge hidden by default, shows on hover */
+        .genre-badge {
+            position: absolute;
+            top: 12px; right: 12px;
+            background: rgba(239,68,68,0.9);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 30px;
+            z-index: 25;
+            backdrop-filter: blur(4px);
+            text-transform: capitalize;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+        }
+        .recommendation-card:hover .genre-badge {
+            opacity: 1;
+        }
+        .carousel-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 48px; height: 48px;
+            background: rgba(20,20,30,0.85);
+            backdrop-filter: blur(8px);
+            border: 2px solid #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.25s;
+            z-index: 35;
+        }
+        .carousel-arrow:hover {
+            background: #ef4444;
+            transform: translateY(-50%) scale(1.15);
+            border-color: white;
+        }
+        .carousel-arrow.disabled {
+            opacity: 0.25;
+            pointer-events: none;
+            border-color: #6b7280;
+        }
+        .carousel-arrow.left { left: -18px; }
+        .carousel-arrow.right { right: -18px; }
+        .toast-message {
+            animation: slideUp 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+        }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeOut { to { opacity: 0; transform: translateY(10px); visibility: hidden; } }
+        .cast-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            justify-content: flex-start;
+        }
+        .cast-item {
+            text-align: center;
+            width: 130px;
+            transition: transform 0.25s ease;
+            text-decoration: none;
+            color: inherit;
+        }
+        .cast-item:hover { transform: translateY(-6px); }
+        .cast-item .avatar {
+            width: 120px; height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 0.8rem;
+            border: 2px solid #ef4444;
+            box-shadow: 0 10px 20px -8px rgba(239,68,68,0.3);
+            background: #1e1e2e;
+        }
+        .avatar-placeholder {
+            width: 120px; height: 120px;
+            border-radius: 50%;
+            background: #1e1e2e;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 0.8rem;
+            border: 2px solid #ef4444;
+            color: #ef4444;
+        }
+        .cast-item h4 { font-size: 1.2rem; font-weight: 600; color: white; margin-bottom: 0.2rem; word-break: break-word; }
+        .role { font-size: 0.85rem; color: #ef4444; font-weight: 500; }
+        .navbar {
+            transition: opacity 0.3s ease;
+        }
+        .navbar-hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .download-btn {
+            background: linear-gradient(135deg, #10b981, #059669);
+            transition: all 0.2s ease;
+        }
+        .download-btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 0 15px #10b981;
+        }
+        /* EPISODE CARD STYLES - clean, hover reveal play + download */
+        .episode-card {
+            background: #1a1c23;
+            border-radius: 1rem;
+            overflow: hidden;
+            transition: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+            position: relative;
+            cursor: pointer;
+        }
+        .episode-card:hover {
+            transform: translateY(-6px) scale(1.02);
+            background: #22252e;
+            box-shadow: 0 20px 25px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(239,68,68,0.3);
+        }
+        .episode-thumb {
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            width: 100%;
+            transition: transform 0.5s ease;
+        }
+        .episode-card:hover .episode-thumb {
+            transform: scale(1.05);
+        }
+        .episode-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+        }
+        .episode-card:hover .episode-overlay {
+            opacity: 1;
+        }
+        .episode-play-btn {
+            background: #ef4444;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            color: white;
+            transition: all 0.2s;
+            box-shadow: 0 0 20px rgba(239,68,68,0.6);
+            cursor: pointer;
+        }
+        .episode-play-btn:hover {
+            transform: scale(1.1);
+            background: #dc2626;
+        }
+        .episode-download-btn {
+            background: #1f2937;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            color: white;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .episode-download-btn:hover {
+            background: #10b981;
+            transform: scale(1.1);
+            border-color: #10b981;
+        }
+        .episode-info {
+            padding: 0.8rem;
+        }
+        .episode-title {
+            font-weight: 700;
+            font-size: 0.9rem;
+            line-height: 1.3;
+            color: white;
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .episode-number {
+            background: #ef4444;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 30px;
+            color: white;
+        }
+        .episode-name {
+            font-weight: 500;
+            color: #e5e7eb;
+        }
+        .fallback-icon {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            background: #1e1e2f;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body class="text-white antialiased">
+
+    <!-- Auto-hide Navbar -->
+    <nav class="navbar fixed top-0 left-0 w-full z-50 p-5 flex justify-between items-center bg-gradient-to-b from-black via-black/80 to-transparent transition-opacity duration-300">
+        <a href="{{ url_for('all_series') }}" class="text-white/90 hover:text-red-500 transition-all flex items-center gap-3 text-lg group">
+            <i class="fas fa-arrow-left group-hover:-translate-x-1 transition"></i> 
+            <span class="border-b border-transparent group-hover:border-red-500">All Series</span>
+        </a>
+        <div class="flex items-center gap-4">
+            {% if series.genre %}
+            <div class="bg-black/40 backdrop-blur-md px-5 py-2 rounded-full border border-red-500/40 shadow-lg shadow-red-500/10">
+                <i class="fas fa-tv mr-2 text-red-500"></i>
+                <span class="text-red-400 font-medium">Series:</span>
+                <span class="text-white font-semibold ml-1">{{ series.genre|title }}</span>
+            </div>
+            {% endif %}
+            <button onclick="triggerDownload()" class="download-btn text-white px-5 py-2 rounded-full font-bold flex items-center gap-2 shadow-xl transition-all">
+                <i class="fas fa-download"></i> Info
+            </button>
+        </div>
+    </nav>
+
+    <!-- Hero YouTube Player -->
+    <div class="relative w-full" style="height: 70vh; min-height: 520px;">
+        <div id="player" class="w-full h-full"></div>
+        <div id="player-fallback" class="w-full h-full hidden items-center justify-center bg-gradient-to-b from-gray-900 to-black">
+            <div class="text-center p-8 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10">
+                <i class="fas fa-film text-7xl text-gray-700 mb-5"></i>
+                <p class="text-gray-300 text-xl">✨ Trailer / Episode preview unavailable ✨</p>
+                <p class="text-gray-500 mt-2">But you can still explore & review this series</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 md:px-6 py-10">
+        <div class="flex flex-col lg:flex-row gap-10">
+            <!-- Left Column: Details -->
+            <div class="lg:w-2/3">
+                <h1 class="text-5xl md:text-6xl font-black mb-4 bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent leading-tight">
+                    {{ series.title }}
+                </h1>
+                <div class="flex flex-wrap items-center gap-3 text-sm text-gray-300 mb-6">
+                    <span class="bg-gray-800/90 px-4 py-1.5 rounded-full"><i class="far fa-calendar-alt mr-2"></i>{{ series.release_year }}</span>
+                    <span class="border border-gray-700/80 px-4 py-1.5 rounded-full"><i class="fas fa-tv mr-2"></i>Series</span>
+                    <span class="border border-gray-700/80 px-4 py-1.5 rounded-full"><i class="fas fa-globe mr-2"></i>{{ series.language }}</span>
+                    {% if series.genre %}
+                    <span class="border border-red-500/60 bg-red-500/10 text-red-400 px-4 py-1.5 rounded-full"><i class="fas fa-tag mr-2"></i>{{ series.genre|title }}</span>
+                    {% endif %}
+                </div>
+                <p class="text-lg text-gray-300 leading-relaxed mb-10 max-w-3xl">{{ series.story }}</p>
+
+                <!-- CAST & CREW -->
+                <div class="cast-section mb-8">
+                    <h2 class="text-3xl font-bold mb-6 flex items-center gap-3"><i class="fas fa-star text-red-500"></i><span>Cast & Crew</span></h2>
+                    <div class="cast-grid">
+                        {% if series.hero %}
+                        <div class="cast-item">
+                            {% if series.hero_image %}
+                                <img src="{{ url_for('static', filename='uploads/' + series.hero_image.split('/')[-1]) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle fa-3x"></i></div>
+                            {% else %}
+                                <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
+                            {% endif %}
+                            <h4>{{ series.hero }}</h4><div class="role">Lead Hero</div>
+                        </div>
+                        {% endif %}
+                        {% if series.hero2 and series.hero2 != "None" %}
+                        <div class="cast-item">
+                            {% if series.hero2_image %}
+                                <img src="{{ url_for('static', filename='uploads/' + series.hero2_image.split('/')[-1]) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle fa-3x"></i></div>
+                            {% else %}
+                                <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
+                            {% endif %}
+                            <h4>{{ series.hero2 }}</h4><div class="role">Supporting Hero</div>
+                        </div>
+                        {% endif %}
+                        {% if series.hero3 and series.hero3 != "None" %}
+                        <div class="cast-item">
+                            <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
+                            <h4>{{ series.hero3 }}</h4><div class="role">Character Hero</div>
+                        </div>
+                        {% endif %}
+                        {% if series.heroine %}
+                        <div class="cast-item">
+                            {% if series.heroine_image %}
+                                <img src="{{ url_for('static', filename='uploads/' + series.heroine_image.split('/')[-1]) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle fa-3x"></i></div>
+                            {% else %}
+                                <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
+                            {% endif %}
+                            <h4>{{ series.heroine }}</h4><div class="role">Heroine</div>
+                        </div>
+                        {% endif %}
+                        {% if series.heroine2 and series.heroine2 != "None" %}
+                        <div class="cast-item">
+                            <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
+                            <h4>{{ series.heroine2 }}</h4><div class="role">Supporting Heroine</div>
+                        </div>
+                        {% endif %}
+                        {% if series.director %}
+                        <div class="cast-item">
+                            {% if series.director_image %}
+                                <img src="{{ url_for('static', filename='uploads/' + series.director_image.split('/')[-1]) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle fa-3x"></i></div>
+                            {% else %}
+                                <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
+                            {% endif %}
+                            <h4>{{ series.director }}</h4><div class="role">Director</div>
+                        </div>
+                        {% endif %}
+                        {% if series.producer and series.producer != "None" %}
+                        <div class="cast-item">
+                            <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
+                            <h4>{{ series.producer }}</h4><div class="role">Producer</div>
+                        </div>
+                        {% endif %}
+                        {% if series.comedian and series.comedian != "None" %}
+                        <div class="cast-item">
+                            <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
+                            <h4>{{ series.comedian }}</h4><div class="role">Comedian</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Rating & Share -->
+                <div class="flex flex-wrap items-center gap-8 border-t border-gray-800/70 pt-7">
+                    <div class="flex items-center">
+                        <span class="mr-4 font-medium text-gray-200">Rate this series:</span>
+                        <div class="flex space-x-1.5" id="star-container">
+                            {% for i in range(1, 6) %}
+                            <button onclick="rateContent({{ series.id }}, {{ i }})" class="star-btn text-4xl text-gray-600 focus:outline-none" data-rating="{{ i }}">★</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <button onclick="openShareModal()" class="text-gray-400 hover:text-white transition-all flex items-center gap-3 group">
+                        <i class="fas fa-share-alt group-hover:rotate-12 transition"></i> <span>Share</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Column: Reviews -->
+            <div class="lg:w-1/3 bg-gray-900/70 backdrop-blur-md p-6 rounded-3xl border border-gray-800/80 shadow-2xl">
+                <h3 class="text-2xl font-bold mb-5 flex items-center gap-3">
+                    <i class="fas fa-comments text-red-500"></i> 
+                    <span>Community Reviews</span>
+                    <span class="text-sm bg-gray-800 px-3 py-1 rounded-full text-gray-300" id="review-count">{{ reviews|length if reviews else 0 }}</span>
+                </h3>
+
+                <form id="reviewForm" method="POST" class="mb-7">
+                    <input type="hidden" name="content_id" value="{{ series.id }}">
+                    <textarea name="review_text" id="reviewText" rows="3" placeholder="Write your honest review... (clear, vibrant, visible)" 
+                              class="review-textarea w-full p-4 rounded-2xl border-2 resize-none focus:ring-0"></textarea>
+                    <button type="submit" class="mt-4 w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold py-3 rounded-xl transition-all shadow-xl shadow-red-600/30 flex items-center justify-center gap-2">
+                        <i class="fas fa-paper-plane"></i> Post Review
+                    </button>
+                </form>
+
+                <div id="reviewsList" class="space-y-5 max-h-96 overflow-y-auto pr-2 reviews-scroll">
+                    {% if reviews and reviews|length > 0 %}
+                        {% for review in reviews %}
+                        <div class="border-b border-gray-800/70 pb-4 last:border-0 review-card p-3 -mx-2 rounded-xl">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="font-semibold text-sm flex items-center gap-2"><i class="fas fa-user-circle text-red-500 text-lg"></i> {{ review['username'] }}</span>
+                                {% if review['sentiment_score'] is defined %}
+                                    {% if review['sentiment_score'] > 0.1 %}
+                                        <span class="text-green-400 text-xs bg-green-500/15 px-3 py-1 rounded-full"><i class="far fa-smile mr-1"></i>positive</span>
+                                    {% elif review['sentiment_score'] < -0.1 %}
+                                        <span class="text-red-400 text-xs bg-red-500/15 px-3 py-1 rounded-full"><i class="far fa-frown mr-1"></i>negative</span>
+                                    {% else %}
+                                        <span class="text-gray-400 text-xs bg-gray-500/15 px-3 py-1 rounded-full"><i class="far fa-meh mr-1"></i>neutral</span>
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                            <p class="text-gray-200 text-sm leading-relaxed">{{ review['review_text'] }}</p>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-gray-500 text-center py-12"><i class="fas fa-pen-fancy text-4xl mb-3 opacity-30"></i><p>No reviews yet. <br> Be the first to share your thoughts on this series!</p></div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- EPISODES SECTION - Enhanced with hover play/download, proper episode name extraction -->
+        <div class="mt-12">
+            <h3 class="text-3xl font-bold mb-6 flex items-center gap-3"><i class="fas fa-list-ol text-red-500"></i> Episodes</h3>
+            {% if episodes and episodes|length > 0 %}
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+                {% for ep in episodes %}
+                <div class="episode-card group" data-episode-id="{{ ep.id }}" data-video-url="{{ ep.video_url if ep.video_url else '' }}">
+                    <div class="relative overflow-hidden">
+                        {% if ep.thumbnail %}
+                            <img src="{{ ep.thumbnail }}" class="episode-thumb" alt="Episode thumbnail" onerror="this.onerror=null; this.src='https://placehold.co/400x225/1f2937/red?text=Episode';">
+                        {% else %}
+                            <div class="episode-thumb flex items-center justify-center bg-gray-800"><i class="fas fa-video text-4xl text-gray-600"></i></div>
+                        {% endif %}
+                        <!-- Hover overlay with play + download buttons -->
+                        <div class="episode-overlay">
+                            <div class="episode-play-btn" onclick="event.stopPropagation(); window.location.href='/series_play/{{ ep.id }}'">
+                                <i class="fas fa-play"></i>
+                            </div>
+                            <div class="episode-download-btn" onclick="event.stopPropagation(); downloadEpisodeVideo('{{ ep.video_url if ep.video_url else '' }}', '{{ ep.title|replace("'", "\\'") }}')">
+                                <i class="fas fa-download"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="episode-info">
+                        <div class="episode-title">
+                            <span class="episode-number">EP {{ loop.index }}</span>
+                            <span class="episode-name">
+                                {# Extract clean episode name after colon #}
+                                {% if ':' in ep.title %}
+                                    {{ ep.title.split(':', 1)[1].strip() }}
+                                {% else %}
+                                    {{ ep.title }}
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% if ep.duration %}
+                        <p class="text-gray-400 text-xs mt-1"><i class="far fa-clock mr-1"></i> {{ ep.duration }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="bg-gray-800/30 rounded-xl p-10 text-center border border-dashed border-gray-700">
+                <i class="fas fa-video-slash text-5xl text-gray-600 mb-3"></i>
+                <p class="text-gray-400">No episodes added yet. Check back soon!</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- More Like This Carousel (genre badge hidden until hover) -->
+        {% if recommended and recommended|length > 0 %}
+        <div class="mt-16 pt-6 border-t border-gray-800/70">
+            <div class="section-header flex items-center justify-between mb-5">
+                <h3 class="text-3xl font-bold flex items-center gap-3"><i class="fas fa-thumbs-up text-red-500"></i> More {{ series.genre|title if series.genre else 'Recommended Series' }} <span class="text-sm bg-gray-800 px-3 py-1 rounded-full">{{ recommended|length }}</span></h3>
+            </div>
+            <div class="recommendations-container">
+                <div class="carousel-arrow left" id="carousel-left" onclick="scrollCarousel('left')"><i class="fas fa-chevron-left"></i></div>
+                <div class="recommendations-carousel" id="recommendations-carousel">
+                    {% for item in recommended %}
+                    <div class="recommendation-card" onclick="window.location.href='{{ url_for('series_play', series_id=item.id) }}'">
+                        <div class="poster-container">
+                            {% if item.genre %}<div class="genre-badge"><i class="fas fa-tv mr-1"></i>{{ item.genre|title }}</div>{% endif %}
+                            <div class="poster-wrapper relative w-full h-full">
+                                {% if item.poster_path %}
+                                    {% if item.poster_path.startswith(('http://', 'https://')) %}
+                                        <img src="{{ item.poster_path }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">
+                                    {% else %}
+                                        {% set filename = item.poster_path.split('/')[-1] %}
+                                        <img src="{{ url_for('static', filename='uploads/' + filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">
+                                    {% endif %}
+                                {% else %}
+                                    <img src="{{ url_for('static', filename='uploads/default.jpg') }}" alt="{{ item.title }}" onerror="this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">
+                                {% endif %}
+                                <div class="fallback-icon" style="display:none;"><i class="fas fa-film fa-3x"></i><span class="text-xs mt-2">{{ item.title|truncate(18) }}</span></div>
+                            </div>
+                            <div class="poster-overlay"></div>
+                            <div class="play-button-center"><i class="fas fa-play"></i></div>
+                            <div class="movie-info-hover">
+                                <div class="movie-title-hover font-bold text-white">{{ item.title }}</div>
+                                <div class="flex items-center gap-3 mt-1">
+                                    {% if item.release_year %}<div class="movie-year-hover bg-red-500/30 px-2 py-0.5 rounded-full text-xs">{{ item.release_year }}</div>{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="carousel-arrow right" id="carousel-right" onclick="scrollCarousel('right')"><i class="fas fa-chevron-right"></i></div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Share Modal -->
+    <div id="shareModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+        <div class="bg-gray-900 p-6 rounded-2xl w-96 border border-gray-700 shadow-2xl">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-share-alt text-red-500"></i> Share this Series</h2>
+            <div class="flex items-center gap-2 mb-4"><input id="shareLink" type="text" readonly class="w-full bg-gray-800 p-3 rounded-lg text-sm text-gray-300 border border-gray-700"><button onclick="copyLink()" class="bg-red-600 px-4 py-2 rounded-lg hover:bg-red-700">Copy</button></div>
+            <div class="flex justify-between gap-3"><button onclick="shareWhatsApp()" class="flex-1 bg-green-600 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"><i class="fab fa-whatsapp"></i> WhatsApp</button><button onclick="nativeShare()" class="flex-1 bg-blue-600 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"><i class="fas fa-mobile-alt"></i> Share</button></div>
+            <button onclick="closeShareModal()" class="mt-5 w-full text-gray-400 hover:text-white">Close</button>
+        </div>
+    </div>
+
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        const seriesId = {{ series.id }};
+        const youtubeVideoId = "{{ series.youtube_video_id }}";
+        let player;
+        let progressUpdateInterval;
+        let lastReportedTime = 0;
+
+        function onYouTubeIframeAPIReady() {
+            if (!youtubeVideoId || youtubeVideoId === 'None' || youtubeVideoId === '') { showFallback(); return; }
+            player = new YT.Player('player', { height: '100%', width: '100%', videoId: youtubeVideoId, playerVars: { autoplay: 1, modestbranding: 1, rel: 0 }, events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange, 'onError': onPlayerError } });
+        }
+        function onPlayerReady(event) { 
+            fetch(`/api/progress/get?content_id=${seriesId}`).then(res=>res.json()).then(data=>{ if(data.success && data.progress>0){ let dur=player.getDuration(); player.seekTo((data.progress/100)*dur,true); } }).catch(()=>{}); 
+            progressUpdateInterval = setInterval(()=>reportProgress(), 15000); 
+        }
+        function onPlayerStateChange(event){ if(event.data === YT.PlayerState.ENDED) reportProgress(100); }
+        function onPlayerError(){ showFallback(); }
+        function showFallback(){ document.getElementById('player').classList.add('hidden'); document.getElementById('player-fallback').classList.remove('hidden'); }
+        function reportProgress(forcePercent=null){ if(!player||!player.getCurrentTime)return; let percent; if(forcePercent!==null){ percent=forcePercent; } else{ let cur=player.getCurrentTime(), dur=player.getDuration(); if(!dur)return; percent=(cur/dur)*100; if(Math.abs(percent-lastReportedTime)<2)return; } percent=Math.min(100,Math.max(0,percent)); lastReportedTime=percent; fetch('/api/progress/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:seriesId,progress:percent})}).catch(()=>{}); }
+        
+        function rateContent(cid,rating){ 
+            fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:cid,rating:rating})}).then(res=>res.json()).then(data=>{ if(data.success){ let stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<rating){ star.classList.add('active'); star.style.color='#fbbf24'; } else{ star.classList.remove('active'); star.style.color=''; } }); showToast('⭐ Rating saved!'); } }).catch(()=>showToast('Error saving rating','error')); 
+        }
+        function loadUserRating(){ 
+            fetch(`/api/rating/get?content_id=${seriesId}`).then(res=>res.json()).then(data=>{ if(data.success && data.rating>0){ let stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<data.rating){ star.classList.add('active'); star.style.color='#fbbf24'; } }); } }).catch(()=>{}); 
+        }
+        
+        function scrollCarousel(dir){ const car=document.getElementById('recommendations-carousel'); if(!car)return; const amount=dir==='left'? -440 : 440; car.scrollBy({left:amount,behavior:'smooth'}); setTimeout(updateArrowStates,300); }
+        function updateArrowStates(){ const car=document.getElementById('recommendations-carousel'); if(!car)return; const left=document.getElementById('carousel-left'),right=document.getElementById('carousel-right'); if(car.scrollLeft<=15) left.classList.add('disabled'); else left.classList.remove('disabled'); if(car.scrollLeft>=car.scrollWidth-car.clientWidth-15) right.classList.add('disabled'); else right.classList.remove('disabled'); }
+        
+        function showToast(msg,type='success'){ const toast=document.createElement('div'); toast.className=`fixed bottom-6 right-6 ${type==='success'?'bg-green-600':'bg-red-600'} text-white px-6 py-4 rounded-2xl shadow-2xl z-50 flex items-center gap-3 backdrop-blur-sm bg-opacity-90 border ${type==='success'?'border-green-400':'border-red-400'} toast-message`; toast.innerHTML=`<i class="fas ${type==='success'?'fa-check-circle':'fa-exclamation-triangle'}"></i><span>${msg}</span>`; document.body.appendChild(toast); setTimeout(()=>toast.remove(),3000); }
+        
+        // Auto-hide navbar
+        (function(){ const nav=document.querySelector('.navbar'); let hideTimeout; function showNav(){ if(nav) nav.classList.remove('navbar-hidden'); clearTimeout(hideTimeout); hideTimeout=setTimeout(()=>{ if(nav) nav.classList.add('navbar-hidden'); },2000); } if(nav){ document.addEventListener('mousemove',showNav); document.addEventListener('keydown',showNav); showNav(); } })();
+        
+        // Share modal
+        function openShareModal(){ const modal=document.getElementById('shareModal'); document.getElementById('shareLink').value=window.location.href; modal.classList.remove('hidden'); modal.classList.add('flex'); }
+        function closeShareModal(){ const modal=document.getElementById('shareModal'); modal.classList.add('hidden'); modal.classList.remove('flex'); }
+        function copyLink(){ const inp=document.getElementById('shareLink'); inp.select(); navigator.clipboard.writeText(inp.value).then(()=>showToast('🔗 Series link copied!')).catch(()=>showToast('Failed','error')); }
+        function shareWhatsApp(){ window.open(`https://wa.me/?text=${encodeURIComponent("🔥 Check out this series on DeepFlix:\n"+window.location.href)}`,'_blank'); }
+        function nativeShare(){ if(navigator.share){ navigator.share({title:document.title,text:"DeepFlix series",url:window.location.href}).catch(()=>{}); } else showToast("⚠️ Native share not supported",'error'); }
+        
+        // Download series info text
+        function triggerDownload(){
+            const seriesTitle = "{{ series.title }}";
+            const seriesInfo = `Series: ${seriesTitle}\nYear: {{ series.release_year }}\nGenre: {{ series.genre|default('N/A') }}\nLanguage: {{ series.language }}\nStory: {{ series.story|truncate(300) }}\nCast: Hero: {{ series.hero|default('N/A') }} | Heroine: {{ series.heroine|default('N/A') }} | Director: {{ series.director|default('N/A') }}\n\nWatch on DeepFlix: ${window.location.href}`;
+            const blob = new Blob([seriesInfo], {type: 'text/plain'});
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${seriesTitle.replace(/[^a-z0-9]/gi, '_')}_series_info.txt`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            showToast(`📥 Downloaded info for "${seriesTitle}"`, 'success');
+        }
+
+        // Episode video download function
+        function downloadEpisodeVideo(videoUrl, episodeRawTitle) {
+            if(!videoUrl || videoUrl === '' || videoUrl === 'None') {
+                showToast('❌ No video file available for download', 'error');
+                return;
+            }
+            const link = document.createElement('a');
+            link.href = videoUrl;
+            let cleanName = episodeRawTitle.replace(/[^a-z0-9]/gi, '_').substring(0, 50);
+            link.download = `DeepFlix_${cleanName}.mp4`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('⬇️ Download started!', 'success');
+        }
+        
+        // AJAX review submission
+        document.getElementById('reviewForm')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            try {
+                const res = await fetch('{{ url_for("api_review") }}', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('reviewText').value = '';
+                    showToast('✅ Review posted!');
+                    const reviewsDiv = document.getElementById('reviewsList');
+                    const newReviewHtml = `
+                        <div class="border-b border-gray-800/70 pb-4 review-card p-3 -mx-2 rounded-xl">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="font-semibold text-sm flex items-center gap-2"><i class="fas fa-user-circle text-red-500 text-lg"></i> You</span>
+                                <span class="text-green-400 text-xs bg-green-500/15 px-3 py-1 rounded-full"><i class="far fa-smile mr-1"></i>positive</span>
+                            </div>
+                            <p class="text-gray-200 text-sm leading-relaxed">${formData.get('review_text')}</p>
+                        </div>
+                    `;
+                    if (reviewsDiv.children.length === 1 && reviewsDiv.children[0].classList?.contains('text-gray-500')) {
+                        reviewsDiv.innerHTML = newReviewHtml;
+                    } else {
+                        reviewsDiv.insertAdjacentHTML('afterbegin', newReviewHtml);
+                    }
+                    const countSpan = document.getElementById('review-count');
+                    let currentCount = parseInt(countSpan.innerText) || 0;
+                    countSpan.innerText = currentCount + 1;
+                } else {
+                    showToast(data.message || 'Failed to post review', 'error');
+                }
+            } catch(err) {
+                showToast('Network error. Please try again.', 'error');
+            }
+        });
+        
+        document.addEventListener('DOMContentLoaded',()=>{ 
+            loadUserRating(); 
+            const car=document.getElementById('recommendations-carousel'); 
+            if(car){ car.addEventListener('scroll',updateArrowStates); window.addEventListener('resize',updateArrowStates); setTimeout(updateArrowStates,200); } 
+            if(!youtubeVideoId||youtubeVideoId==='None') showFallback(); 
+        });
+        window.addEventListener('beforeunload',()=>reportProgress());
+        window.addEventListener('unload',()=>{ if(progressUpdateInterval) clearInterval(progressUpdateInterval); });
+    </script>
+</body>
+</html>

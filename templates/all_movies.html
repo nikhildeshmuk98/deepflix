@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>DeepFlix · Cinematic Universe</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --red:       #e8192c;
+            --red-dim:   #a01020;
+            --red-glow:  rgba(232,25,44,0.35);
+            --surface:   #0c0c0e;
+            --surface-2: #111115;
+            --surface-3: #17171d;
+            --border:    rgba(255,255,255,0.07);
+            --border-h:  rgba(232,25,44,0.4);
+            --text-1:    #f0eff4;
+            --text-2:    #8e8ea0;
+            --text-3:    #52526a;
+            --gold:      #f0b429;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--surface);
+            color: var(--text-1);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── NOISE OVERLAY ── */
+        body::before {
+            content: '';
+            position: fixed; inset: 0; z-index: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        /* ── AMBIENT GLOW ── */
+        .ambient {
+            position: fixed; border-radius: 50%; filter: blur(130px);
+            pointer-events: none; z-index: 0;
+        }
+        .amb-1 {
+            width: 700px; height: 700px;
+            top: -200px; left: -200px;
+            background: radial-gradient(circle, rgba(232,25,44,0.12) 0%, transparent 70%);
+            animation: ambFloat 18s ease-in-out infinite;
+        }
+        .amb-2 {
+            width: 500px; height: 500px;
+            bottom: 10%; right: -150px;
+            background: radial-gradient(circle, rgba(232,25,44,0.08) 0%, transparent 70%);
+            animation: ambFloat 22s ease-in-out infinite reverse;
+        }
+        @keyframes ambFloat {
+            0%,100% { transform: translate(0,0) scale(1); }
+            50%      { transform: translate(40px,30px) scale(1.1); }
+        }
+
+        /* ── HEADER ── */
+        header {
+            position: sticky; top: 0; z-index: 100;
+            background: rgba(12,12,14,0.85);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border-bottom: 1px solid var(--border);
+            padding: 0 1.5rem;
+            height: 68px;
+            display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+        }
+
+        .logo-text {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1.75rem;
+            letter-spacing: 0.05em;
+            background: linear-gradient(135deg, #fff 30%, var(--red));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            text-decoration: none;
+        }
+
+        .nav-link {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.8rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--text-2); text-decoration: none;
+            padding: 6px 14px; border-radius: 100px;
+            border: 1px solid transparent;
+            transition: all 0.2s ease;
+        }
+        .nav-link:hover {
+            color: var(--text-1);
+            border-color: var(--border);
+            background: var(--surface-3);
+        }
+        .nav-link.active {
+            color: var(--red);
+            background: rgba(232,25,44,0.1);
+            border-color: rgba(232,25,44,0.25);
+        }
+
+        /* ── SEARCH ── */
+        .search-wrap { position: relative; flex: 1; max-width: 480px; }
+        .search-input {
+            width: 100%;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            padding: 9px 18px 9px 40px;
+            color: var(--text-1);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.875rem;
+            outline: none;
+            transition: all 0.25s ease;
+        }
+        .search-input::placeholder { color: var(--text-3); }
+        .search-input:focus {
+            border-color: var(--red-dim);
+            background: var(--surface-2);
+            box-shadow: 0 0 0 3px rgba(232,25,44,0.12);
+        }
+        .search-icon {
+            position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+            color: var(--text-3); font-size: 0.8rem; pointer-events: none;
+        }
+
+        #suggestions {
+            position: absolute; top: calc(100% + 8px); left: 0; right: 0;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            display: none; z-index: 200;
+        }
+        #suggestions div {
+            padding: 11px 16px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-2);
+            transition: all 0.15s ease;
+        }
+        #suggestions div:last-child { border-bottom: none; }
+        #suggestions div:hover, #suggestions div.highlighted {
+            background: var(--red); color: #fff;
+        }
+
+        /* ── PROFILE PILL ── */
+        .profile-pill {
+            display: flex; align-items: center; gap: 10px;
+            padding: 5px 14px 5px 5px;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            text-decoration: none; color: var(--text-1);
+            font-size: 0.8rem; font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .profile-pill:hover {
+            border-color: var(--border-h);
+            background: rgba(232,25,44,0.08);
+        }
+        .profile-avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: linear-gradient(135deg, var(--red-dim), var(--surface-3));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.85rem; color: var(--red);
+            border: 1.5px solid rgba(232,25,44,0.4);
+            overflow: hidden;
+        }
+        .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+        .btn-logout {
+            display: flex; align-items: center; gap: 6px;
+            padding: 8px 18px;
+            background: var(--red);
+            color: #fff; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em;
+            border-radius: 100px; border: none;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 20px rgba(232,25,44,0.3);
+        }
+        .btn-logout:hover {
+            background: #c0101f;
+            box-shadow: 0 6px 28px rgba(232,25,44,0.5);
+            transform: translateY(-1px);
+        }
+
+        /* ── PAGE HERO ── */
+        .page-hero {
+            position: relative; z-index: 1;
+            padding: 3.5rem 0 2rem;
+            display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;
+        }
+        .page-hero-eyebrow {
+            font-size: 0.7rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
+            color: var(--red); display: flex; align-items: center; gap: 8px;
+        }
+        .page-hero-eyebrow::before {
+            content: ''; width: 24px; height: 1.5px; background: var(--red);
+        }
+        .page-hero-title {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(2.2rem, 5vw, 4rem);
+            font-weight: 900; line-height: 1.1;
+            color: var(--text-1);
+        }
+        .page-hero-title span { color: var(--red); }
+        .page-hero-count {
+            font-size: 0.85rem; color: var(--text-2);
+        }
+
+        /* ── GENRE FILTER ── */
+        .genre-section { position: relative; z-index: 1; margin-bottom: 3rem; }
+        .genre-label {
+            font-size: 0.7rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase;
+            color: var(--text-3); margin-bottom: 0.75rem;
+        }
+        .genre-scroll {
+            display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px;
+            scrollbar-width: none;
+        }
+        .genre-scroll::-webkit-scrollbar { display: none; }
+
+        .chip {
+            white-space: nowrap; padding: 6px 16px;
+            background: var(--surface-3); border: 1px solid var(--border);
+            border-radius: 100px;
+            font-size: 0.78rem; font-weight: 500; color: var(--text-2);
+            cursor: pointer; text-decoration: none;
+            transition: all 0.2s ease;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .chip:hover {
+            border-color: var(--border-h);
+            background: rgba(232,25,44,0.1);
+            color: var(--text-1);
+        }
+        .chip.active {
+            background: var(--red); color: #fff;
+            border-color: var(--red);
+            box-shadow: 0 0 20px rgba(232,25,44,0.35);
+            font-weight: 600;
+        }
+
+        .filter-reset {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 0.78rem; color: var(--text-3);
+            text-decoration: none; margin-top: 12px;
+            transition: color 0.2s;
+        }
+        .filter-reset:hover { color: var(--red); }
+
+        /* ── LANGUAGE SECTION ── */
+        .lang-section { position: relative; z-index: 1; margin-bottom: 4rem; }
+        .lang-header {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 1.5rem;
+        }
+        .lang-bar {
+            width: 3px; height: 28px;
+            background: linear-gradient(to bottom, var(--red), transparent);
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+        .lang-title {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1.5rem; letter-spacing: 0.07em;
+            color: var(--text-1);
+        }
+        .lang-count {
+            font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em;
+            color: var(--red);
+            background: rgba(232,25,44,0.12);
+            border: 1px solid rgba(232,25,44,0.2);
+            padding: 3px 10px; border-radius: 100px;
+        }
+        .lang-line {
+            flex: 1; height: 1px;
+            background: linear-gradient(to right, var(--border), transparent);
+        }
+
+        /* ── CINEMATIC RECTANGLE GRID (Backdrop Focus) ── */
+        .movie-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 20px;
+        }
+
+        /* RECTANGLE CARD + BACKDROP STYLES */
+        .card {
+            position: relative; border-radius: 14px; overflow: hidden;
+            text-decoration: none; display: block;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            transition: transform 0.3s cubic-bezier(.34,1.56,.64,1), box-shadow 0.3s ease, border-color 0.3s ease;
+            will-change: transform;
+        }
+        .card:hover {
+            transform: translateY(-10px) scale(1.02);
+            box-shadow: 0 30px 50px -10px rgba(0,0,0,0.8), 0 0 0 1px var(--border-h), 0 0 40px -10px var(--red-glow);
+            border-color: var(--border-h);
+        }
+
+        /* RECTANGLE ASPECT: 16:9 — PERFECT FOR BACKDROPS */
+        .card-img-wrap {
+            aspect-ratio: 16 / 9;
+            overflow: hidden;
+            background: #0a0a0f;
+            position: relative;
+        }
+        .card-img {
+            width: 100%; height: 100%; object-fit: cover; object-position: center 10%;
+            transition: transform 0.5s ease;
+            display: block;
+        }
+        .card:hover .card-img { transform: scale(1.05); }
+
+        .card-fallback {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--text-3); font-size: 2rem;
+            background: linear-gradient(145deg, #14141a, #0b0b10);
+        }
+
+        /* Gradient overlay for text readability */
+        .card-gradient {
+            position: absolute; inset: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 40%, transparent 70%);
+            pointer-events: none;
+        }
+
+        /* Hover overlay with play button */
+        .card-hover-overlay {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(3px);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 10px;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+        }
+        .card:hover .card-hover-overlay { opacity: 1; pointer-events: auto; }
+        .card-play {
+            width: 56px; height: 56px; border-radius: 50%;
+            background: var(--red);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.3rem; color: #fff;
+            box-shadow: 0 0 30px rgba(232,25,44,0.8);
+            transform: scale(0.8); transition: transform 0.2s cubic-bezier(.34,1.56,.64,1);
+            cursor: pointer;
+        }
+        .card:hover .card-play { transform: scale(1); }
+
+        /* Badges (Rating / NEW) */
+        .badge {
+            position: absolute; top: 12px; left: 12px; z-index: 12;
+            display: flex; align-items: center; gap: 6px;
+            padding: 4px 10px;
+            border-radius: 40px; font-size: 0.7rem; font-weight: 700;
+            backdrop-filter: blur(12px);
+            letter-spacing: 0.3px;
+        }
+        .badge-rating {
+            background: rgba(0,0,0,0.8);
+            border: 1px solid rgba(240,180,41,0.5);
+            color: var(--gold);
+        }
+        .badge-new {
+            background: rgba(232,25,44,0.7);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: #fff;
+        }
+
+        /* Card Info at bottom */
+        .card-info {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            padding: 12px 12px 10px;
+            z-index: 10;
+        }
+        .card-title {
+            font-size: 0.85rem; font-weight: 700;
+            color: var(--text-1); line-height: 1.3;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+        .card-meta {
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            margin-top: 6px;
+        }
+        .card-tag {
+            font-size: 0.65rem; padding: 2px 8px;
+            border-radius: 6px; font-weight: 500;
+            backdrop-filter: blur(2px);
+        }
+        .tag-genre { background: rgba(0,0,0,0.6); color: #ddd; border-left: 2px solid var(--red);}
+        .tag-lang  { background: rgba(232,25,44,0.35); color: #fff; }
+
+        /* ── EMPTY STATE ── */
+        .empty-state {
+            position: relative; z-index: 1;
+            margin: 4rem auto; max-width: 480px;
+            text-align: center;
+            padding: 4rem 2rem;
+            border: 1px dashed var(--border);
+            border-radius: 24px;
+            background: var(--surface-2);
+        }
+        .empty-icon { font-size: 4rem; color: var(--text-3); margin-bottom: 1.5rem; }
+        .empty-title { font-family:'Playfair Display',serif; font-size:1.5rem; margin-bottom:0.5rem; }
+        .empty-sub { font-size:0.85rem; color:var(--text-2); margin-bottom:1.5rem; }
+        .empty-link {
+            display:inline-flex; align-items:center; gap:8px;
+            padding:10px 24px; border-radius:100px;
+            background:rgba(232,25,44,0.1); border:1px solid rgba(232,25,44,0.3);
+            color:var(--red); font-size:0.85rem; font-weight:500;
+            text-decoration:none; transition:all 0.2s ease;
+        }
+        .empty-link:hover { background:var(--red); color:#fff; }
+
+        /* TOAST */
+        .toast {
+            position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 20px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--red);
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            font-size: 0.875rem;
+            transform: translateY(80px); opacity: 0;
+            transition: all 0.35s cubic-bezier(.34,1.56,.64,1);
+            max-width: 320px;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--red-dim); }
+
+        footer {
+            position: relative; z-index: 1;
+            background: var(--surface-2);
+            border-top: 1px solid var(--border);
+            padding: 2rem 1.5rem;
+            text-align: center;
+        }
+        .footer-logo {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1.4rem; letter-spacing: 0.1em;
+            background: linear-gradient(135deg, #fff 30%, var(--red));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem; display: inline-block;
+        }
+        .footer-links {
+            display: flex; justify-content: center; gap: 1.5rem; margin-bottom: 1rem;
+        }
+        .footer-link {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: var(--surface-3); border: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--text-2); font-size: 0.85rem;
+            text-decoration: none; transition: all 0.2s ease;
+        }
+        .footer-link:hover { border-color: var(--border-h); color: var(--red); background: rgba(232,25,44,0.1); }
+        .footer-copy { font-size: 0.75rem; color: var(--text-3); }
+
+        @keyframes fadeUp {
+            from { opacity:0; transform: translateY(20px); }
+            to   { opacity:1; transform: translateY(0); }
+        }
+        .fade-up {
+            opacity: 0;
+            animation: fadeUp 0.5s ease forwards;
+        }
+        .card { opacity: 0; animation: fadeUp 0.4s ease forwards; }
+
+        @media (max-width: 640px) {
+            header { padding: 0 1rem; }
+            .nav-link span { display: none; }
+            .profile-text { display: none; }
+            .movie-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+            .card-title { font-size: 0.75rem; }
+            .card-meta { gap: 4px; }
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+        .mobile-search { display: none; }
+        @media (max-width: 768px) {
+            .desktop-search { display: none; }
+            .mobile-search { display: block; }
+            .mobile-search-bar {
+                padding: 10px 1rem;
+                border-bottom: 1px solid var(--border);
+                background: rgba(12,12,14,0.95);
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="ambient amb-1"></div>
+<div class="ambient amb-2"></div>
+<div class="toast" id="toast"><i class="fas fa-check-circle" style="color:var(--red)"></i><span id="toast-msg">Ready</span></div>
+
+<header>
+    <div style="display:flex;align-items:center;gap:1.5rem;flex-shrink:0;">
+        <a href="{{ url_for('user_dashboard') }}" class="logo-text">DeepFlix</a>
+        <nav style="display:flex;align-items:center;gap:4px;">
+            <a href="{{ url_for('user_dashboard') }}" class="nav-link"><i class="fas fa-home"></i><span>Home</span></a>
+            <a href="{{ url_for('all_movies') }}" class="nav-link active"><i class="fas fa-film"></i><span>Movies</span></a>
+            <a href="{{ url_for('all_series') }}" class="nav-link"><i class="fas fa-tv"></i><span>Series</span></a>
+            <a href="{{ url_for('social_hub') }}" class="nav-link"><i class="fas fa-users"></i><span>Social</span></a>
+        </nav>
+    </div>
+
+    <form method="GET" action="{{ url_for('all_movies') }}" class="search-wrap desktop-search" style="margin:0 1rem;">
+        <i class="fas fa-search search-icon"></i>
+        <input type="text" name="search" id="searchBox" autocomplete="off" class="search-input" value="{{ search_value if search_value else '' }}" placeholder="Search movies, cast, director…">
+        {% if request.args.get('genre') %}<input type="hidden" name="genre" value="{{ request.args.get('genre') }}">{% endif %}
+        <div id="suggestions"></div>
+    </form>
+
+    <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+        <a href="{{ url_for('profile') }}" class="profile-pill">
+            <div class="profile-avatar">
+                {% if user and user.profile_image %}
+                    <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" onerror="this.style.display='none'">
+                {% else %}<i class="fas fa-user" style="font-size:0.8rem;"></i>{% endif %}
+            </div>
+            <span class="profile-text" style="font-size:0.82rem;">{{ user.username if user else 'Profile' }}</span>
+            <i class="fas fa-chevron-right" style="font-size:0.65rem;color:var(--text-3);"></i>
+        </a>
+        <a href="{{ url_for('logout') }}" class="btn-logout"><i class="fas fa-sign-out-alt"></i><span class="profile-text">Logout</span></a>
+    </div>
+</header>
+
+<div class="mobile-search">
+    <div class="mobile-search-bar">
+        <form method="GET" action="{{ url_for('all_movies') }}" class="search-wrap" style="max-width:none;">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" name="search" autocomplete="off" class="search-input" value="{{ search_value if search_value else '' }}" placeholder="Search movies…">
+            {% if request.args.get('genre') %}<input type="hidden" name="genre" value="{{ request.args.get('genre') }}">{% endif %}
+        </form>
+    </div>
+</div>
+
+<main class="container">
+    <div class="page-hero fade-up" style="animation-delay:0.05s">
+        <div class="page-hero-eyebrow">Cinematic Universe</div>
+        <h1 class="page-hero-title">All <span>Movies</span></h1>
+        {% if regular_movies is defined %}<p class="page-hero-count">{{ regular_movies|length }} epic titles</p>{% endif %}
+    </div>
+
+    <section class="genre-section fade-up" style="animation-delay:0.1s">
+        <p class="genre-label"><i class="fas fa-sliders-h" style="margin-right:6px;color:var(--red)"></i>Filter by Genre</p>
+        <div class="genre-scroll">
+            {% set genres = ['Action','Social','Comedy','Mass','Revenge','Drama','Zombie','Political','Horror','Sci-Fi','Romance','Thriller','Religious','Documentary','Animation','History','Mythology','Fantasy','Adventure','Crime','Mystery','Biography','War','Sports','Family','Musical','Western','Superhero','Psychological','Dark Comedy','Satire','Disaster','Epic','Suspense','Teen','Survival','Martial Arts','Noir','Period Drama','Experimental'] %}
+            <a href="{{ url_for('all_movies', search=search_value if search_value else '', genre='') }}" class="chip {% if not request.args.get('genre') %}active{% endif %}"><i class="fas fa-th-large"></i> All</a>
+            {% for genre in genres %}
+            <a href="{{ url_for('all_movies', search=search_value if search_value else '', genre=genre) }}" class="chip {% if request.args.get('genre') == genre %}active{% endif %}">{% if request.args.get('genre') == genre %}<i class="fas fa-check"></i>{% endif %} {{ genre }}</a>
+            {% endfor %}
+        </div>
+        {% if request.args.get('genre') or search_value %}
+        <div style="margin-top:12px;"><a href="{{ url_for('all_movies') }}" class="filter-reset"><i class="fas fa-times-circle"></i> Clear all filters</a></div>
+        {% endif %}
+    </section>
+
+    {% set regular_movies = [] %}
+    {% for movie in movies %}
+        {% set is_kids = false %}
+        {% if movie.is_kids is defined and movie.is_kids == true %}{% set is_kids = true %}{% endif %}
+        {% if movie.category is defined and movie.category|lower in ['kids','children','kid','family kids','toddlers'] %}{% set is_kids = true %}{% endif %}
+        {% if movie.audience is defined and movie.audience|lower in ['kids','children','child','all ages kids'] %}{% set is_kids = true %}{% endif %}
+        {% if movie.tags is defined and movie.tags is string and ('kid' in movie.tags|lower or 'children' in movie.tags|lower) %}{% set is_kids = true %}{% endif %}
+        {% if movie.genre is defined and ('kids' in movie.genre|lower or movie.genre|lower in ['kids','children','kid']) %}{% set is_kids = true %}{% endif %}
+        {% if not is_kids %}{% set _ = regular_movies.append(movie) %}{% endif %}
+    {% endfor %}
+
+    {% if regular_movies %}
+        {% set main_languages = ['Telugu','Hindi','Tamil','Malayalam','Punjabi','English'] %}
+        {% set delay_base = 0.15 %}
+
+        {% for lang in main_languages %}
+            {% set lang_movies = regular_movies | selectattr('language', 'equalto', lang) | list %}
+            {% if lang_movies %}
+            <section class="lang-section fade-up" style="animation-delay:{{ delay_base + loop.index0 * 0.04 }}s">
+                <div class="lang-header">
+                    <div class="lang-bar"></div>
+                    <h2 class="lang-title">{{ lang }}</h2>
+                    <span class="lang-count">{{ lang_movies|length }} TITLES</span>
+                    <div class="lang-line"></div>
+                </div>
+                <div class="movie-grid">
+                    {% for movie in lang_movies %}
+                    <a href="{{ url_for('content_page', content_id=movie.id) }}" class="card" style="animation-delay:{{ 0.05 * loop.index }}s">
+                        {% if movie.rating %}
+                        <div class="badge badge-rating"><i class="fas fa-star"></i> {{ movie.rating }}</div>
+                        {% else %}
+                        <div class="badge badge-new"><i class="fas fa-bolt"></i> NEW</div>
+                        {% endif %}
+                        <div class="card-img-wrap">
+                            {% set backdrop_url = movie.backdrop_url if movie.backdrop_url else (movie.backdrop if movie.backdrop else (url_for('static', filename='uploads/' + movie.thumbnail) if movie.thumbnail else '')) %}
+                            {% if backdrop_url %}
+                            <img class="card-img" src="{{ backdrop_url }}" alt="{{ movie.title }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                            <div class="card-fallback" style="display:none;"><i class="fas fa-film"></i></div>
+                            {% else %}
+                            <div class="card-fallback"><i class="fas fa-film"></i></div>
+                            {% endif %}
+                            <div class="card-gradient"></div>
+                            <div class="card-hover-overlay"><div class="card-play"><i class="fas fa-play" style="margin-left:3px;"></i></div></div>
+                            <div class="card-info">
+                                <div class="card-title">{{ movie.title }}</div>
+                                <div class="card-meta">
+                                    {% if movie.genre %}<span class="card-tag tag-genre">{{ movie.genre.split(',')[0] if ',' in movie.genre else movie.genre }}</span>{% endif %}
+                                    {% if movie.release_year %}<span style="font-size:0.65rem;color:var(--text-3);">{{ movie.release_year }}</span>{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+        {% endfor %}
+
+        {% set other_movies = regular_movies | rejectattr('language', 'in', main_languages) | list %}
+        {% if other_movies %}
+        <section class="lang-section fade-up" style="animation-delay:0.4s">
+            <div class="lang-header">
+                <div class="lang-bar"></div>
+                <h2 class="lang-title">World Cinema</h2>
+                <span class="lang-count">{{ other_movies|length }} CULT CLASSICS</span>
+                <div class="lang-line"></div>
+            </div>
+            <div class="movie-grid">
+                {% for movie in other_movies %}
+                <a href="{{ url_for('content_page', content_id=movie.id) }}" class="card" style="animation-delay:{{ 0.05 * loop.index }}s">
+                    {% if movie.rating %}<div class="badge badge-rating"><i class="fas fa-star"></i> {{ movie.rating }}</div>{% else %}<div class="badge badge-new"><i class="fas fa-bolt"></i> FRESH</div>{% endif %}
+                    <div class="card-img-wrap">
+                        {% set backdrop_url = movie.backdrop_url if movie.backdrop_url else (movie.backdrop if movie.backdrop else (url_for('static', filename='uploads/' + movie.thumbnail) if movie.thumbnail else '')) %}
+                        {% if backdrop_url %}
+                        <img class="card-img" src="{{ backdrop_url }}" alt="{{ movie.title }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                        <div class="card-fallback" style="display:none;"><i class="fas fa-globe"></i></div>
+                        {% else %}
+                        <div class="card-fallback"><i class="fas fa-globe"></i></div>
+                        {% endif %}
+                        <div class="card-gradient"></div>
+                        <div class="card-hover-overlay"><div class="card-play"><i class="fas fa-play"></i></div></div>
+                        <div class="card-info">
+                            <div class="card-title">{{ movie.title }}</div>
+                            <div class="card-meta">
+                                {% if movie.genre %}<span class="card-tag tag-genre">{{ movie.genre.split(',')[0] if ',' in movie.genre else movie.genre }}</span>{% endif %}
+                                <span class="card-tag tag-lang">{{ movie.language if movie.language else '?' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+    {% else %}
+        <div class="empty-state fade-up">
+            <div class="empty-icon"><i class="fas fa-film"></i></div>
+            <h2 class="empty-title">No backdrops found</h2>
+            <p class="empty-sub">Adjust search or explore our epic collection of cinematic masterpieces.</p>
+            <a href="{{ url_for('all_movies') }}" class="empty-link"><i class="fas fa-redo"></i> Browse all movies</a>
+        </div>
+    {% endif %}
+</main>
+
+<footer>
+    <div class="footer-logo">DeepFlix</div>
+    <div class="footer-links">
+        <a href="#" class="footer-link"><i class="fab fa-twitter"></i></a>
+        <a href="#" class="footer-link"><i class="fab fa-instagram"></i></a>
+        <a href="#" class="footer-link"><i class="fab fa-youtube"></i></a>
+        <a href="#" class="footer-link"><i class="fab fa-facebook-f"></i></a>
+    </div>
+    <p class="footer-copy">© 2025 DeepFlix — Where stories breathe. All rights reserved.</p>
+</footer>
+
+<script>
+(function(){
+    function showToast(msg){ const t=document.getElementById('toast'),m=document.getElementById('toast-msg'); if(t){ m.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3000); } }
+    document.querySelectorAll('.card-img').forEach(img=>{ img.addEventListener('error',function(){ this.style.display='none'; const fb=this.nextElementSibling; if(fb&&fb.classList.contains('card-fallback')) fb.style.display='flex'; }); });
+    const searchBox=document.getElementById('searchBox'),suggestions=document.getElementById('suggestions'); if(searchBox&&suggestions){
+        let debounce,selectedIdx=-1;
+        searchBox.addEventListener('input',function(){
+            const q=this.value.trim(); if(q.length<2){ hideSugg(); return; }
+            clearTimeout(debounce); debounce=setTimeout(()=>{
+                fetch('/movie_suggestions?q='+encodeURIComponent(q)).then(r=>r.json()).then(data=>{
+                    suggestions.innerHTML=''; selectedIdx=-1;
+                    if(!data.length){ hideSugg(); return; }
+                    data.forEach(item=>{ const d=document.createElement('div'); d.textContent=item; d.addEventListener('mousedown',()=>{ searchBox.value=item; hideSugg(); searchBox.form.submit(); }); suggestions.appendChild(d); });
+                    suggestions.style.display='block';
+                }).catch(()=>hideSugg());
+            },250);
+        });
+        searchBox.addEventListener('keydown',e=>{ const items=suggestions.querySelectorAll('div'); if(!items.length)return; if(e.key==='ArrowDown'){ e.preventDefault(); selectedIdx=(selectedIdx+1)%items.length; hlite(items); } else if(e.key==='ArrowUp'){ e.preventDefault(); selectedIdx=(selectedIdx-1+items.length)%items.length; hlite(items); } else if(e.key==='Enter'&&selectedIdx>=0){ e.preventDefault(); searchBox.value=items[selectedIdx].textContent; hideSugg(); searchBox.form.submit(); } else if(e.key==='Escape') hideSugg(); });
+        function hlite(items){ items.forEach(i=>i.classList.remove('highlighted')); if(selectedIdx>=0) items[selectedIdx].classList.add('highlighted'); }
+        function hideSugg(){ suggestions.style.display='none'; suggestions.innerHTML=''; selectedIdx=-1; }
+        document.addEventListener('click',e=>{ if(!searchBox.contains(e.target)&&!suggestions.contains(e.target)) hideSugg(); });
+    }
+    const observer=new IntersectionObserver((entries)=>{ entries.forEach(entry=>{ if(entry.isIntersecting){ entry.target.style.animationPlayState='running'; observer.unobserve(entry.target); } }); },{ threshold:0.08 });
+    document.querySelectorAll('.card').forEach(card=>{ card.style.animationPlayState='paused'; observer.observe(card); });
+})();
+</script>
+</body>
+</html>

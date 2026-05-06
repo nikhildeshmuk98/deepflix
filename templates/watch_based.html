@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Deepflix · Who's Watching</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ═══════════════════════════════════════
+       TOKENS
+    ═══════════════════════════════════════ */
+    :root {
+      --red:           #e8291c;
+      --red-glow:      rgba(232,41,28,0.18);
+      --red-border:    rgba(232,41,28,0.35);
+      --gold:          #c9a84c;
+      --gold-light:    #e8c97a;
+      --white:         #f5f0ea;
+      --off-white:     #cac5be;
+      --dim:           rgba(212,207,200,0.4);
+      --bg:            #070707;
+      --glass-bg:      rgba(8,6,6,0.68);
+      --glass-border:  rgba(255,255,255,0.07);
+      --font-display:  'Bebas Neue', sans-serif;
+      --font-serif:    'Playfair Display', Georgia, serif;
+      --font-body:     'DM Sans', sans-serif;
+      --ease:          cubic-bezier(0.23, 1, 0.32, 1);
+      --spring:        cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    /* ═══════════════════════════════════════
+       RESET
+    ═══════════════════════════════════════ */
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--white);
+      -webkit-font-smoothing: antialiased;
+      position: relative;
+    }
+
+    a { text-decoration:none; color:inherit; }
+    ::selection { background:var(--red); color:#fff; }
+
+    /* ═══════════════════════════════════════
+       BACKDROP LAYERS (crossfade system)
+    ═══════════════════════════════════════ */
+    #bd-a, #bd-b {
+      position: fixed;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      transition: opacity 1.5s var(--ease);
+    }
+    #bd-a { z-index: 0; opacity: 1; }
+    #bd-b { z-index: 1; opacity: 0; }
+
+    /* ═══════════════════════════════════════
+       LAYERED CINEMATIC OVERLAYS
+    ═══════════════════════════════════════ */
+
+    /* 1. Deep vignette — aggressive left darkening for profile readability */
+    .ov-vignette {
+      position: fixed; inset: 0; z-index: 2; pointer-events: none;
+      background:
+        linear-gradient(to right,
+          rgba(0,0,0,0.97) 0%,
+          rgba(0,0,0,0.82) 22%,
+          rgba(0,0,0,0.40) 50%,
+          rgba(0,0,0,0.10) 72%,
+          transparent 100%),
+        linear-gradient(to bottom,
+          rgba(0,0,0,0.5) 0%,
+          transparent 18%,
+          transparent 72%,
+          rgba(0,0,0,0.95) 100%),
+        radial-gradient(ellipse 160% 90% at 30% 50%,
+          transparent 30%,
+          rgba(0,0,0,0.35) 70%,
+          rgba(0,0,0,0.7) 100%);
+    }
+
+    /* 2. Film grain */
+    .ov-grain {
+      position: fixed; inset: 0; z-index: 3; pointer-events: none;
+      opacity: 0.038;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 180px 180px;
+      animation: grain 0.15s steps(1) infinite;
+    }
+    @keyframes grain {
+      0%   { background-position: 0 0; }
+      20%  { background-position: -8% -12%; }
+      40%  { background-position: 12% 6%; }
+      60%  { background-position: -4% 20%; }
+      80%  { background-position: 8% -8%; }
+      100% { background-position: 4% 4%; }
+    }
+
+    /* 3. Subtle scanlines */
+    .ov-scan {
+      position: fixed; inset: 0; z-index: 4; pointer-events: none;
+      opacity: 0.018;
+      background: repeating-linear-gradient(0deg,
+        transparent, transparent 2px,
+        rgba(0,0,0,1) 2px, rgba(0,0,0,1) 4px);
+    }
+
+    /* 4. Red edge accent (left) */
+    .ov-redge {
+      position: fixed;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      z-index: 5;
+      background: linear-gradient(to bottom,
+        transparent 0%,
+        var(--red) 30%,
+        var(--red) 70%,
+        transparent 100%);
+      opacity: 0.7;
+    }
+
+    /* ═══════════════════════════════════════
+       CURSOR GLOW
+    ═══════════════════════════════════════ */
+    .cursor-glow {
+      position: fixed;
+      width: 340px; height: 340px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(232,41,28,0.07) 0%, transparent 68%);
+      pointer-events: none;
+      z-index: 6;
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    /* ═══════════════════════════════════════
+       FULL-SCREEN LAYOUT GRID
+    ═══════════════════════════════════════ */
+    .page-grid {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      grid-template-columns: 480px 1fr;
+      grid-template-rows: 1fr;
+    }
+
+    /* ═══════════════════════════════════════
+       LEFT COLUMN — PROFILES
+    ═══════════════════════════════════════ */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 3.5rem 3rem 3.5rem 3.5rem;
+      position: relative;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    .left-col::-webkit-scrollbar { display: none; }
+
+    /* Faint vertical separator */
+    .left-col::after {
+      content: '';
+      position: absolute;
+      right: 0; top: 12%; bottom: 12%;
+      width: 1px;
+      background: linear-gradient(to bottom,
+        transparent,
+        rgba(255,255,255,0.06) 25%,
+        rgba(232,41,28,0.25) 50%,
+        rgba(255,255,255,0.06) 75%,
+        transparent);
+    }
+
+    /* ── WHO'S WATCHING HEADING ── */
+    .ww-header { margin-bottom: 2.8rem; }
+
+    .ww-eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .ww-eyebrow-bar {
+      width: 24px; height: 2px;
+      background: var(--red);
+      flex-shrink: 0;
+    }
+
+    .ww-eyebrow-text {
+      font-size: 0.6rem;
+      font-weight: 600;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--red);
+    }
+
+    .ww-title {
+      font-family: var(--font-display);
+      font-size: clamp(2.8rem, 4.5vw, 4.4rem);
+      letter-spacing: 0.06em;
+      line-height: 0.88;
+      color: var(--white);
+      text-shadow: 0 0 60px rgba(0,0,0,1), 0 4px 20px rgba(0,0,0,0.9);
+    }
+
+    .ww-title .red-word {
+      color: var(--red);
+      display: block;
+      font-size: 1.12em;
+    }
+
+    .ww-sub {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 0.88rem;
+      color: var(--dim);
+      margin-top: 0.65rem;
+    }
+
+    /* Gold ornament divider */
+    .ornament {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin: 1.4rem 0 0;
+    }
+    .ornament-line {
+      flex: 1; height: 1px;
+      background: linear-gradient(to right, var(--gold), transparent);
+    }
+    .ornament-line.flip {
+      background: linear-gradient(to left, var(--gold), transparent);
+    }
+    .ornament-diamond {
+      width: 5px; height: 5px;
+      border: 1px solid var(--gold);
+      transform: rotate(45deg);
+      flex-shrink: 0;
+    }
+
+    /* ═══════════════════════════════════════
+       PROFILE CARDS
+    ═══════════════════════════════════════ */
+    .profiles-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .profile-card {
+      display: block;
+      opacity: 0;
+      transform: translateX(-24px);
+      animation: cardIn 0.55s var(--ease) forwards;
+    }
+    .profile-card:nth-child(1) { animation-delay: 0.08s; }
+    .profile-card:nth-child(2) { animation-delay: 0.16s; }
+    .profile-card:nth-child(3) { animation-delay: 0.24s; }
+    .profile-card:nth-child(4) { animation-delay: 0.32s; }
+    .profile-card:nth-child(5) { animation-delay: 0.40s; }
+    .profile-card:nth-child(6) { animation-delay: 0.48s; }
+
+    @keyframes cardIn {
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .p-inner {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 1.15rem;
+      padding: 0.85rem 1.1rem 0.85rem 0.9rem;
+      border-radius: 16px;
+      border: 1px solid transparent;
+      background: transparent;
+      overflow: hidden;
+      transition: background 0.32s var(--ease),
+                  border-color 0.32s var(--ease),
+                  transform 0.32s var(--ease);
+      cursor: pointer;
+    }
+
+    /* HOVER STATE — full glass reveal */
+    .profile-card:hover .p-inner {
+      background: var(--glass-bg);
+      border-color: var(--red-border);
+      backdrop-filter: blur(20px);
+      transform: translateX(8px);
+    }
+
+    /* Left red accent stripe */
+    .p-inner::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 18%; bottom: 18%;
+      width: 3px;
+      background: linear-gradient(to bottom, var(--red), #ff6b5b);
+      border-radius: 0 3px 3px 0;
+      transform: scaleY(0);
+      transform-origin: center;
+      transition: transform 0.28s var(--spring);
+    }
+    .profile-card:hover .p-inner::before { transform: scaleY(1); }
+
+    /* Shimmer sweep */
+    .p-inner::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -120%;
+      width: 55%; height: 100%;
+      background: linear-gradient(105deg,
+        transparent 38%,
+        rgba(255,255,255,0.045) 50%,
+        transparent 62%);
+      transition: left 0.55s var(--ease);
+    }
+    .profile-card:hover .p-inner::after { left: 160%; }
+
+    /* ── AVATAR ── */
+    .av-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .av-img, .av-ph {
+      width: 68px; height: 68px;
+      border-radius: 50%;
+      border: 2.5px solid rgba(255,255,255,0.1);
+      transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s var(--spring);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .av-img { object-fit: cover; display: block; }
+
+    .av-ph {
+      font-family: var(--font-display);
+      font-size: 1.55rem;
+      letter-spacing: 0.04em;
+    }
+
+    /* Avatar colour themes */
+    .av-main  { background: linear-gradient(140deg, #12122a 0%, #1c2040 100%); color: var(--white); }
+    .av-kids  { background: linear-gradient(140deg, #1e0e3e 0%, #2d1b4e 100%); color: #c4b5fd; }
+    .av-guest { background: linear-gradient(140deg, #0e1f12 0%, #162b1a 100%); color: #86efac; }
+    .av-add   { background: linear-gradient(140deg, #111 0%, #1a1a1a 100%);    color: rgba(255,255,255,0.35); }
+
+    .profile-card:hover .av-img,
+    .profile-card:hover .av-ph {
+      border-color: var(--red);
+      box-shadow: 0 0 0 3px rgba(232,41,28,0.22), 0 0 22px rgba(232,41,28,0.18);
+      transform: scale(1.05);
+    }
+
+    /* Spinning ring on hover */
+    .av-ring {
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 1.5px solid transparent;
+      transition: border-color 0.3s;
+    }
+    .profile-card:hover .av-ring {
+      border-color: rgba(232,41,28,0.45);
+      border-top-color: transparent;
+      animation: spin 5s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Status dot */
+    .av-status {
+      position: absolute;
+      bottom: 3px; right: 3px;
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      border: 2px solid #070707;
+      background: #22c55e;
+    }
+    .av-status.away    { background: #f59e0b; }
+    .av-status.offline { background: #4b5563; }
+
+    /* ── TEXT ── */
+    .p-text { flex: 1; min-width: 0; }
+
+    .p-name {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--white);
+      text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: color 0.22s;
+    }
+    .profile-card:hover .p-name { color: #fff; }
+
+    .p-role {
+      font-size: 0.6rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-top: 0.18rem;
+    }
+    .p-role.gold { color: rgba(201,168,76,0.7); }
+
+    .p-pills {
+      display: flex;
+      gap: 0.35rem;
+      margin-top: 0.42rem;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      font-size: 0.55rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.14rem 0.5rem;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: rgba(212,207,200,0.45);
+    }
+    .pill.red  { background: rgba(232,41,28,0.1);  border-color: rgba(232,41,28,0.22);  color: rgba(255,110,100,0.9); }
+    .pill.gold { background: rgba(201,168,76,0.08); border-color: rgba(201,168,76,0.2);  color: rgba(232,201,122,0.85); }
+
+    /* ── ARROW ── */
+    .p-arrow {
+      flex-shrink: 0;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.07);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.65rem;
+      color: rgba(255,255,255,0.18);
+      transition: all 0.28s var(--ease);
+    }
+    .profile-card:hover .p-arrow {
+      border-color: var(--red);
+      color: var(--red);
+      background: rgba(232,41,28,0.1);
+      transform: translateX(3px);
+    }
+
+    /* ADD PROFILE variant */
+    .add-card .p-inner {
+      border: 1px dashed rgba(255,255,255,0.13) !important;
+    }
+    .add-card:hover .p-inner {
+      border-color: rgba(232,41,28,0.38) !important;
+    }
+
+    /* bottom hint */
+    .bottom-hint {
+      margin-top: 2rem;
+      display: flex; align-items: center; gap: 0.7rem;
+    }
+    .hint-rule { flex:1; height:1px; background: rgba(255,255,255,0.05); }
+    .hint-text {
+      font-size: 0.58rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: rgba(212,207,200,0.2);
+      white-space: nowrap;
+    }
+
+    /* ═══════════════════════════════════════
+       RIGHT COLUMN — CINEMATIC PANEL
+       (empty space, just holds the corner module)
+    ═══════════════════════════════════════ */
+    .right-col {
+      position: relative;
+      /* nothing to display — backdrop shows through */
+    }
+
+    /* ═══════════════════════════════════════
+       NOW SHOWING — PINNED BOTTOM RIGHT
+    ═══════════════════════════════════════ */
+    .now-showing {
+      position: fixed;
+      bottom: 3rem;
+      right: 3rem;
+      z-index: 30;
+      text-align: right;
+      max-width: 520px;
+      opacity: 0;
+      animation: nsIn 0.9s var(--ease) 0.6s forwards;
+    }
+
+    @keyframes nsIn {
+      from { opacity:0; transform: translateY(22px); }
+      to   { opacity:1; transform: translateY(0); }
+    }
+
+    /* Live badge */
+    .ns-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.3rem 0.9rem 0.3rem 0.5rem;
+      border-radius: 40px;
+      background: rgba(232,41,28,0.14);
+      border: 1px solid rgba(232,41,28,0.3);
+      backdrop-filter: blur(10px);
+      margin-bottom: 1rem;
+    }
+
+    .ns-live-dot {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--red);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .ns-live-dot::after {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #fff;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:0.4; transform:scale(0.65); }
+    }
+
+    .ns-badge-text {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: rgba(255,120,110,0.9);
+    }
+
+    /* Movie title */
+    #movie-title {
+      font-family: var(--font-display);
+      font-size: clamp(3rem, 5.5vw, 6.5rem);
+      letter-spacing: 0.05em;
+      line-height: 0.88;
+      color: var(--white);
+      text-shadow:
+        0 2px 6px rgba(0,0,0,0.7),
+        0 10px 40px rgba(0,0,0,0.6),
+        0 0 100px rgba(0,0,0,0.5);
+      transition: opacity 0.38s var(--ease), transform 0.38s var(--ease);
+      will-change: opacity, transform;
+    }
+    #movie-title.out {
+      opacity: 0;
+      transform: translateY(14px) scale(0.97);
+    }
+
+    /* Underline accent — right aligned */
+    .ns-underline {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.55rem;
+      margin-top: 1rem;
+    }
+    .ns-bar-long { width: 64px; height: 2px; border-radius: 2px; background: var(--red); }
+    .ns-bar-dot  { width: 5px;  height: 5px; border-radius: 50%;    background: var(--gold); }
+    .ns-bar-short{ width: 18px; height: 2px; border-radius: 2px; background: var(--red); opacity:0.5; }
+
+    /* Ghost counter */
+    .ns-counter {
+      position: absolute;
+      top: -4rem; right: -0.5rem;
+      font-family: var(--font-display);
+      font-size: 8rem;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      color: rgba(255,255,255,0.03);
+      user-select: none;
+      pointer-events: none;
+    }
+
+    /* Progress dots */
+    .ns-dots {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.45rem;
+      margin-top: 1.1rem;
+      align-items: center;
+    }
+    .ns-dot {
+      height: 2px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.18);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.38s var(--ease);
+    }
+    .ns-dot.active {
+      background: var(--red);
+      width: 28px !important;
+    }
+
+    /* Genre / meta row */
+    .ns-meta {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      margin-top: 0.8rem;
+      flex-wrap: wrap;
+    }
+
+    .ns-stars {
+      color: var(--gold);
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+    }
+
+    .ns-sep {
+      width: 3px; height: 3px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.25);
+    }
+
+    .ns-tag {
+      font-size: 0.58rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 0.22rem 0.6rem;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.09);
+      color: var(--off-white);
+    }
+    .ns-tag.red {
+      background: rgba(232,41,28,0.14);
+      border-color: rgba(232,41,28,0.25);
+      color: rgba(255,130,120,0.9);
+    }
+
+    /* ═══════════════════════════════════════
+       DEEPFLIX LOGO — TOP LEFT WATERMARK
+    ═══════════════════════════════════════ */
+    .logo-watermark {
+      position: fixed;
+      top: 2rem; left: 2.5rem;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      opacity: 0;
+      animation: logoIn 0.7s var(--ease) 0.2s forwards;
+    }
+    @keyframes logoIn {
+      from { opacity:0; transform:translateY(-8px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: var(--red);
+      border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+    }
+    .logo-icon::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2.5px;
+      background: var(--gold);
+    }
+    .logo-icon svg { width:17px; height:17px; fill:#fff; }
+
+    .logo-type {
+      font-family: var(--font-display);
+      font-size: 1.55rem;
+      letter-spacing: 0.14em;
+      color: var(--white);
+    }
+    .logo-type span { color: var(--red); }
+
+    /* Premium badge */
+    .logo-premium {
+      font-size: 0.55rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      padding: 0.22rem 0.65rem;
+      border-radius: 30px;
+      border: 1px solid rgba(201,168,76,0.25);
+      background: rgba(201,168,76,0.06);
+      color: rgba(232,201,122,0.75);
+      margin-left: 0.3rem;
+    }
+
+    /* ═══════════════════════════════════════
+       RESPONSIVE
+    ═══════════════════════════════════════ */
+    @media (max-width: 1050px) {
+      .page-grid { grid-template-columns: 420px 1fr; }
+    }
+
+    @media (max-width: 860px) {
+      html, body { overflow: auto; }
+
+      .page-grid {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      .left-col {
+        padding: 5.5rem 1.5rem 2rem 1.5rem;
+        overflow-y: visible;
+        justify-content: flex-start;
+      }
+      .left-col::after { display: none; }
+
+      .now-showing {
+        position: relative;
+        bottom: auto; right: auto;
+        text-align: left;
+        max-width: 100%;
+        padding: 0 1.5rem 3rem 1.5rem;
+      }
+
+      .ns-badge,
+      .ns-underline,
+      .ns-dots,
+      .ns-meta {
+        justify-content: flex-start;
+      }
+
+      #movie-title { font-size: 3rem; }
+
+      .ns-counter { display: none; }
+    }
+
+    @media (max-width: 560px) {
+      .logo-watermark { top: 1.2rem; left: 1.2rem; }
+      .logo-type { font-size: 1.25rem; }
+      .logo-premium { display: none; }
+      .ww-title { font-size: 2.4rem; }
+      .av-img, .av-ph { width: 56px; height: 56px; font-size: 1.3rem; }
+      .p-name { font-size: 0.92rem; }
+      .now-showing { padding: 0 1.2rem 2.5rem; }
+      #movie-title { font-size: 2.4rem; }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ── CURSOR GLOW ── -->
+<div class="cursor-glow" id="cg"></div>
+
+<!-- ── BACKDROP LAYERS ── -->
+<div id="bd-a"></div>
+<div id="bd-b"></div>
+
+<!-- ── OVERLAYS ── -->
+<div class="ov-vignette"></div>
+<div class="ov-grain"></div>
+<div class="ov-scan"></div>
+<div class="ov-redge"></div>
+
+
+
+<!-- ══════════════════════════════════════
+     MAIN PAGE GRID
+══════════════════════════════════════ -->
+<div class="page-grid">
+
+  <!-- ─────────────────────────────────────
+       LEFT — WHO'S WATCHING
+  ───────────────────────────────────── -->
+  <div class="left-col">
+
+    <!-- Heading -->
+    <div class="ww-header">
+      <div class="ww-eyebrow">
+        <div class="ww-eyebrow-bar"></div>
+        <span class="ww-eyebrow-text">Select Viewer</span>
+      </div>
+      <h1 class="ww-title">
+        WHO'S
+        <span class="red-word">WATCHING?</span>
+      </h1>
+      <p class="ww-sub">Your cinematic journey begins here</p>
+      <div class="ornament">
+        <div class="ornament-line"></div>
+        <div class="ornament-diamond"></div>
+        <div class="ornament-line flip"></div>
+      </div>
+    </div>
+
+    <!-- PROFILES -->
+    <div class="profiles-list">
+
+      <!-- MAIN PROFILE -->
+      <a href="{{ url_for('select_profile', profile='main') }}" class="profile-card">
+        <div class="p-inner">
+          <div class="av-wrap">
+            {% if user and user.profile_image %}
+              <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" class="av-img" alt="avatar">
+            {% else %}
+              <div class="av-ph av-main">
+                {{ user.username[0].upper() if user and user.username else 'U' }}
+              </div>
+            {% endif %}
+            <div class="av-ring"></div>
+            <div class="av-status"></div>
+          </div>
+          <div class="p-text">
+            <div class="p-name">{{ user.username if user else 'Explorer' }}</div>
+            <div class="p-role gold">✦ Main Profile</div>
+            <div class="p-pills">
+              <span class="pill red">Admin</span>
+              <span class="pill gold">All Access</span>
+            </div>
+          </div>
+          <div class="p-arrow">→</div>
+        </div>
+      </a>
+
+      <!-- KIDS -->
+      <a href="{{ url_for('select_profile', profile='kids') }}" class="profile-card">
+        <div class="p-inner">
+          <div class="av-wrap">
+            <img src="{{ url_for('static', filename='k_profile.png') }}" class="av-img" alt="kids">
+            <div class="av-ring"></div>
+            <div class="av-status away"></div>
+          </div>
+          <div class="p-text">
+            <div class="p-name">Kids</div>
+            <div class="p-role">Family & Fun Zone</div>
+            <div class="p-pills">
+              <span class="pill">Safe Mode</span>
+              <span class="pill">Ages 2–12</span>
+            </div>
+          </div>
+          <div class="p-arrow">→</div>
+        </div>
+      </a>
+
+      <!-- GUEST -->
+      <a href="{{ url_for('select_profile', profile='guest') }}" class="profile-card">
+        <div class="p-inner">
+          <div class="av-wrap">
+            <div class="av-ph av-guest">🎭</div>
+            <div class="av-ring"></div>
+            <div class="av-status offline"></div>
+          </div>
+          <div class="p-text">
+            <div class="p-name">Guest</div>
+            <div class="p-role">Temporary Access</div>
+            <div class="p-pills">
+              <span class="pill">Limited</span>
+            </div>
+          </div>
+          <div class="p-arrow">→</div>
+        </div>
+      </a>
+
+      <!-- DYNAMIC PROFILES -->
+      {% for profile in profiles %}
+      <a href="{{ url_for('select_profile', profile=profile.id) }}" class="profile-card">
+        <div class="p-inner">
+          <div class="av-wrap">
+            {% if profile.gender == 'female' %}
+              <img src="{{ url_for('static', filename='img/female_icon.png') }}" class="av-img" alt="{{ profile.name }}">
+            {% else %}
+              <img src="{{ url_for('static', filename='img/male_icon.png') }}" class="av-img" alt="{{ profile.name }}">
+            {% endif %}
+            <div class="av-ring"></div>
+            <div class="av-status offline"></div>
+          </div>
+          <div class="p-text">
+            <div class="p-name">{{ profile.name }}</div>
+            <div class="p-role">✦ Profile</div>
+            <div class="p-pills">
+              <span class="pill">Standard</span>
+            </div>
+          </div>
+          <div class="p-arrow">→</div>
+        </div>
+      </a>
+      {% endfor %}
+
+      <!-- ADD PROFILE -->
+      {% if not profiles or profiles|length < 2 %}
+      <a href="{{ url_for('add_profile') }}" class="profile-card add-card">
+        <div class="p-inner">
+          <div class="av-wrap">
+            <div class="av-ph av-add" style="font-size:2rem;font-weight:300;font-family:var(--font-body);">+</div>
+            <div class="av-ring"></div>
+          </div>
+          <div class="p-text">
+            <div class="p-name" style="color:rgba(212,207,200,0.5);">Add Profile</div>
+            <div class="p-role">Create New World</div>
+          </div>
+          <div class="p-arrow" style="border-style:dashed;">+</div>
+        </div>
+      </a>
+      {% endif %}
+
+    </div>
+
+    <!-- Bottom hint -->
+    <div class="bottom-hint">
+      <div class="hint-rule"></div>
+      <span class="hint-text">hover to reveal · click to enter</span>
+      <div class="hint-rule"></div>
+    </div>
+
+  </div>
+
+  <!-- ─────────────────────────────────────
+       RIGHT — empty, backdrop shows through
+  ───────────────────────────────────── -->
+  <div class="right-col"></div>
+
+</div><!-- /page-grid -->
+
+<!-- ══════════════════════════════════════
+     NOW SHOWING — FIXED BOTTOM RIGHT
+══════════════════════════════════════ -->
+<div class="now-showing" id="now-showing">
+
+  <!-- Ghost counter -->
+  <div class="ns-counter" id="ns-counter">01</div>
+
+  <!-- Live badge -->
+  <div class="ns-badge">
+    <div class="ns-live-dot"></div>
+    <span class="ns-badge-text">Now Showing</span>
+  </div>
+
+  <!-- Dynamic title -->
+  <h2 id="movie-title">EPIC VISIONS</h2>
+
+  <!-- Underline -->
+  <div class="ns-underline">
+    <div class="ns-bar-short"></div>
+    <div class="ns-bar-dot"></div>
+    <div class="ns-bar-long"></div>
+  </div>
+
+  <!-- Meta -->
+  <div class="ns-meta">
+    <span class="ns-stars">★★★★★</span>
+    <div class="ns-sep"></div>
+    <span class="ns-tag red" id="movie-genre">CINEMA</span>
+    <span class="ns-tag">4K HDR</span>
+    <span class="ns-tag">DOLBY</span>
+  </div>
+
+  <!-- Progress dots -->
+  <div class="ns-dots" id="ns-dots"></div>
+
+</div>
+
+<!-- ══════════════════════════════════════
+     CINEMATIC CAROUSEL ENGINE
+══════════════════════════════════════ -->
+<script>
+(function () {
+
+  /* ── MOVIE DATA from Jinja2 ── */
+  const movies = [
+    {% for movie in deepflix_top %}
+    {
+      backdrop: {{ movie.display_image|tojson }},
+      title:    {{ movie.title|tojson }},
+      genre:    {{ (movie.genre or 'CINEMA')|tojson }}
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+
+  /* Fallback for static preview */
+  if (!movies.length) {
+    movies.push(
+      { backdrop: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=1920", title: "CINEMA PARADISO",  genre: "CLASSIC"  },
+      { backdrop: "https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=1920", title: "PHANTOM HORIZON",  genre: "THRILLER" },
+      { backdrop: "https://images.unsplash.com/photo-1524985069026-dd778a71c7b4?q=80&w=1920", title: "ETERNAL FRAMES",   genre: "DRAMA"    },
+      { backdrop: "https://images.unsplash.com/photo-1493804714600-6edb1cd93080?q=80&w=1920", title: "MIDNIGHT SIGNAL",  genre: "SCI-FI"   }
+    );
+  }
+
+  /* ── DOM ── */
+  const bdA     = document.getElementById('bd-a');
+  const bdB     = document.getElementById('bd-b');
+  const titleEl = document.getElementById('movie-title');
+  const genreEl = document.getElementById('movie-genre');
+  const ctrEl   = document.getElementById('ns-counter');
+  const dotsWrap= document.getElementById('ns-dots');
+  const cgEl    = document.getElementById('cg');
+
+  /* ── STATE ── */
+  let cur = 0;
+  let aActive = true;   // bd-a currently visible
+  let timer = null;
+
+  /* ── BUILD DOTS ── */
+  function buildDots() {
+    dotsWrap.innerHTML = '';
+    movies.forEach((_, i) => {
+      const d = document.createElement('div');
+      d.className = 'ns-dot' + (i === cur ? ' active' : '');
+      d.style.width = i === cur ? '28px' : '8px';
+      d.addEventListener('click', () => goTo(i));
+      dotsWrap.appendChild(d);
+    });
+  }
+
+  function refreshDots() {
+    const all = dotsWrap.querySelectorAll('.ns-dot');
+    all.forEach((d, i) => {
+      const on = i === cur;
+      d.classList.toggle('active', on);
+      d.style.width = on ? '28px' : '8px';
+    });
+  }
+
+  /* ── CROSSFADE BACKDROP ── */
+  function swapBackdrop(url) {
+    const next = aActive ? bdB : bdA;
+    const prev = aActive ? bdA : bdB;
+    next.style.backgroundImage = `url('${url}')`;
+    // force reflow so transition fires
+    void next.offsetWidth;
+    next.style.opacity = '1';
+    prev.style.opacity = '0';
+    aActive = !aActive;
+  }
+
+  /* ── PRELOAD ── */
+  const loaded = new Set();
+  function preload(i) {
+    const url = movies[i]?.backdrop;
+    if (url && !loaded.has(url)) { const im = new Image(); im.src = url; loaded.add(url); }
+  }
+
+  /* ── UPDATE TITLE ── */
+  function updateTitle(m) {
+    titleEl.classList.add('out');
+    setTimeout(() => {
+      titleEl.textContent = m.title;
+      if (genreEl) genreEl.textContent = (m.genre || 'CINEMA').toUpperCase();
+      if (ctrEl)   ctrEl.textContent   = String(cur + 1).padStart(2, '0');
+      titleEl.classList.remove('out');
+    }, 320);
+  }
+
+  /* ── GO TO ── */
+  function goTo(idx) {
+    if (idx === cur && loaded.has(movies[cur]?.backdrop)) return;
+    cur = ((idx % movies.length) + movies.length) % movies.length;
+    const m = movies[cur];
+    swapBackdrop(m.backdrop);
+    updateTitle(m);
+    refreshDots();
+    preload((cur + 1) % movies.length);
+    resetTimer();
+  }
+
+  function next() { goTo(cur + 1); }
+
+  /* ── TIMER ── */
+  function resetTimer() {
+    clearInterval(timer);
+    timer = setInterval(next, 6000);
+  }
+
+  /* ── INIT ── */
+  function init() {
+    const first = movies[0];
+    bdA.style.backgroundImage = `url('${first.backdrop}')`;
+    loaded.add(first.backdrop);
+    if (titleEl) titleEl.textContent = first.title;
+    if (genreEl) genreEl.textContent = (first.genre || 'CINEMA').toUpperCase();
+    if (ctrEl)   ctrEl.textContent   = '01';
+    buildDots();
+    preload(1);
+    resetTimer();
+  }
+
+  init();
+
+  /* ── CURSOR GLOW ── */
+  document.addEventListener('mousemove', e => {
+    cgEl.style.left    = e.clientX + 'px';
+    cgEl.style.top     = e.clientY + 'px';
+    cgEl.style.opacity = '1';
+  });
+  document.addEventListener('mouseleave', () => { cgEl.style.opacity = '0'; });
+
+  /* ── PAUSE ON PROFILE HOVER ── */
+  document.querySelectorAll('.profile-card').forEach(c => {
+    c.addEventListener('mouseenter', () => clearInterval(timer));
+    c.addEventListener('mouseleave', resetTimer);
+  });
+
+  /* ── KEYBOARD ── */
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') next();
+    if (e.key === 'ArrowLeft')  goTo(cur - 1);
+  });
+
+})();
+</script>
+
+</body>
+</html>

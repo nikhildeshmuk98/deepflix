@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>DeepFlux · Cinematic Intelligence Hub</title>
+    
+    <!-- Tailwind + Font Awesome 6.5.0 -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    
+    <!-- Chart.js 4 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: radial-gradient(circle at 30% 20%, #1f1f1f, #0a0a0a 80%);
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #f0f0f0;
+            line-height: 1.5;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        :root {
+            --primary: #e50914;
+            --primary-glow: rgba(229, 9, 20, 0.6);
+            --glass-bg: rgba(10, 10, 10, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.03);
+            --card-bg: rgba(18, 18, 18, 0.7);
+            --text-muted: #a0a0a0;
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px) saturate(180%);
+            border: 1px solid var(--glass-border);
+            border-radius: 2rem;
+            transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.02);
+            border-radius: 2rem;
+            transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.4s ease;
+        }
+
+        .glass-card:hover {
+            border-color: rgba(229, 9, 20, 0.3);
+            box-shadow: 0 30px 40px -20px var(--primary-glow), 0 0 0 1px rgba(229, 9, 20, 0.1) inset;
+            transform: translateY(-8px) scale(1.01);
+        }
+
+        .cinema-header {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px) saturate(200%);
+            border-bottom: 1px solid rgba(229, 9, 20, 0.3);
+            box-shadow: 0 10px 30px -10px rgba(0,0,0,0.8);
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #f87171, #dc2626, #b91c1c);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .stat-tile {
+            background: rgba(20, 20, 30, 0.7);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.02);
+            border-radius: 1.8rem;
+            padding: 1.5rem 2rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-tile::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 30% 30%, rgba(229,9,20,0.15), transparent 70%);
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .stat-tile:hover {
+            background: rgba(30, 30, 40, 0.8);
+            border-color: rgba(229,9,20,0.5);
+            transform: scale(1.02) translateY(-4px);
+            box-shadow: 0 25px 30px -15px rgba(229,9,20,0.4);
+        }
+
+        .stat-tile:hover::after {
+            opacity: 1;
+        }
+
+        .stat-icon {
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 1.2rem;
+            background: rgba(229,9,20,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            color: #e50914;
+            transition: all 0.3s;
+        }
+
+        .chart-wrapper {
+            background: rgba(10,10,10,0.4);
+            border-radius: 2rem;
+            padding: 1.5rem;
+            height: 100%;
+            min-height: 280px;
+            transition: box-shadow 0.3s;
+        }
+
+        .chart-wrapper:hover {
+            box-shadow: 0 0 30px -5px rgba(229,9,20,0.3);
+        }
+
+        .poster-card {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.03);
+            border-radius: 1.5rem;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
+            aspect-ratio: 2/3;
+            position: relative;
+            box-shadow: 0 20px 30px -15px black;
+            cursor: pointer;
+        }
+
+        .poster-card:hover {
+            transform: perspective(800px) rotateX(2deg) rotateY(2deg) scale(1.03);
+            border-color: rgba(229,9,20,0.5);
+            box-shadow: 0 30px 40px -15px #e50914, 0 0 20px rgba(229,9,20,0.3);
+        }
+
+        .poster-card .poster-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s;
+        }
+
+        .poster-card:hover .poster-image {
+            transform: scale(1.1);
+        }
+
+        .poster-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 50%, transparent 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 1.5rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .poster-card:hover .poster-overlay {
+            opacity: 1;
+        }
+
+        .person-card {
+            background: rgba(31, 41, 55, 0.7);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.02);
+            border-radius: 2rem;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            transition: all 0.3s;
+            box-shadow: 0 10px 20px -10px rgba(0,0,0,0.5);
+        }
+
+        .person-card:hover {
+            background: rgba(45, 55, 75, 0.9);
+            border-color: rgba(229,9,20,0.5);
+            transform: translateY(-10px) scale(1.02);
+            box-shadow: 0 25px 30px -12px rgba(229,9,20,0.5);
+        }
+
+        .person-avatar {
+            width: 7rem;
+            height: 7rem;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid transparent;
+            transition: border-color 0.3s, transform 0.5s;
+            box-shadow: 0 10px 20px -5px black;
+        }
+
+        .person-card:hover .person-avatar {
+            border-color: #e50914;
+            transform: scale(1.05) rotate(2deg);
+        }
+
+        .search-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .search-field {
+            width: 100%;
+            background: rgba(20, 20, 30, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 3rem;
+            padding: 1rem 1.8rem 1rem 3.5rem;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .search-field:focus {
+            outline: none;
+            border-color: #e50914;
+            background: rgba(10, 10, 15, 0.9);
+            box-shadow: 0 0 0 4px rgba(229,9,20,0.15), 0 10px 20px -10px black;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 1.4rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            font-size: 1.2rem;
+        }
+
+        .search-dropdown {
+            position: absolute;
+            top: 120%;
+            left: 0;
+            right: 0;
+            background: rgba(17, 25, 40, 0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(229,9,20,0.2);
+            border-radius: 2rem;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 30px 40px -15px black;
+        }
+
+        .search-dropdown.active {
+            display: block;
+        }
+
+        .search-item {
+            padding: 1rem 1.8rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+
+        .search-item:hover {
+            background: rgba(229,9,20,0.15);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(12px);
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: rgba(18, 18, 24, 0.95);
+            backdrop-filter: blur(24px);
+            border: 1px solid rgba(229,9,20,0.3);
+            border-radius: 3rem;
+            max-width: 700px;
+            width: 90%;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 2.5rem;
+            box-shadow: 0 50px 70px -20px #e50914, 0 0 0 1px rgba(229,9,20,0.2) inset;
+            color: #e5e7eb;
+        }
+
+        .modal-close {
+            float: right;
+            font-size: 2rem;
+            cursor: pointer;
+            color: #e50914;
+            transition: transform 0.2s;
+        }
+
+        .modal-close:hover {
+            transform: scale(1.2);
+            color: #f87171;
+        }
+
+        .live-badge {
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(229,9,20,0.3);
+            border-radius: 3rem;
+            padding: 0.6rem 1.4rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.9rem;
+            box-shadow: 0 0 15px rgba(229,9,20,0.2);
+        }
+
+        .pulse-dot {
+            width: 10px;
+            height: 10px;
+            background: #e50914;
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(229,9,20,0.5);
+            animation: pulse 1.8s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(229,9,20,0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(229,9,20,0); }
+            100% { box-shadow: 0 0 0 0 rgba(229,9,20,0); }
+        }
+
+        .footer {
+            border-top: 1px solid rgba(229,9,20,0.15);
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(8px);
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 20px; }
+        ::-webkit-scrollbar-thumb { background: #e50914; border-radius: 20px; }
+        ::-webkit-scrollbar-thumb:hover { background: #f40612; }
+        
+        .confusion-table {
+            background: rgba(0,0,0,0.3);
+            border-radius: 1rem;
+            overflow-x: auto;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .confusion-table td, .confusion-table th {
+            padding: 0.75rem 1rem;
+            text-align: center;
+            border: 1px solid rgba(229,9,20,0.3);
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        .refresh-indicator {
+            font-size: 0.7rem;
+            background: rgba(0,0,0,0.5);
+            border-radius: 2rem;
+            padding: 0.2rem 0.8rem;
+            margin-left: 1rem;
+        }
+        
+        .advanced-section-title {
+            letter-spacing: -0.3px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 relative z-10">
+
+    <!-- header -->
+    <header class="cinema-header p-4 flex justify-between items-center fixed top-0 left-0 w-full z-50 shadow-2xl">
+        <div class="flex items-center">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="DeepFlixAI" class="h-12 md:h-16 drop-shadow-2xl brightness-110">
+        </div>
+        <div class="flex items-center space-x-4">
+            <h1 class="text-xl md:text-2xl font-black text-white hidden sm:block tracking-wider">
+                <span class="gradient-text">ANALYTICS</span> <span class="text-white/70">· DEEP</span>
+            </h1>
+            <a href="{{ url_for('logout') }}" class="group relative bg-gradient-to-r from-red-700 to-red-600 hover:from-red-600 hover:to-red-500 text-white px-6 py-2.5 rounded-full font-semibold text-sm shadow-2xl transition-all duration-300 flex items-center gap-2 overflow-hidden">
+                <span class="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform"></span>
+                <i class="fas fa-sign-out-alt relative z-10"></i>
+                <span class="relative z-10 hidden sm:inline">LOGOUT</span>
+            </a>
+        </div>
+    </header>
+
+    <div class="pt-24"></div>
+
+    <!-- hero + search -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-12 gap-6">
+        <div class="flex items-center gap-5">
+            <div class="w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center shadow-2xl shadow-red-600/30">
+                <i class="fas fa-crown text-3xl text-white drop-shadow"></i>
+            </div>
+            <div>
+                <h1 class="text-4xl lg:text-5xl font-black tracking-tight">
+                    <span class="gradient-text">Insight</span> <span class="text-white">Studio</span>
+                </h1>
+                <p class="text-gray-400 mt-1 flex items-center gap-2">
+                    <i class="fas fa-bolt text-red-500"></i> Live metrics · DeepFlux universe
+                </p>
+            </div>
+        </div>
+        <div class="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+            <div class="search-container">
+                <i class="fas fa-search search-icon"></i>
+                <input type="text" id="searchInput" class="search-field" placeholder="Search movies, heroes, users, or sections..." autocomplete="off">
+                <div id="searchDropdown" class="search-dropdown"></div>
+            </div>
+            <div class="live-badge">
+                <span class="pulse-dot"></span>
+                <span class="text-gray-300">Live · streaming now</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- stat cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-14">
+        <div class="stat-tile flex items-center gap-5" id="stat-movies" data-stat="movies">
+            <div class="stat-icon"><i class="fas fa-film"></i></div>
+            <div><p class="text-gray-400 text-xs uppercase tracking-wider">Total Movies</p><p class="text-3xl font-black text-white">{{ total_movies }}</p></div>
+        </div>
+        <div class="stat-tile flex items-center gap-5" id="stat-languages" data-stat="languages">
+            <div class="stat-icon"><i class="fas fa-globe"></i></div>
+            <div><p class="text-gray-400 text-xs uppercase tracking-wider">Languages</p><p class="text-3xl font-black text-white">{{ languages|length }}</p></div>
+        </div>
+        <div class="stat-tile flex items-center gap-5" id="stat-genres" data-stat="genres">
+            <div class="stat-icon"><i class="fas fa-tags"></i></div>
+            <div><p class="text-gray-400 text-xs uppercase tracking-wider">Genres</p><p class="text-3xl font-black text-white">{{ genres|length }}</p></div>
+        </div>
+        {% set total_views = most_watched|sum(attribute='views') if most_watched else 0 %}
+        <div class="stat-tile flex items-center gap-5" id="stat-views" data-stat="views">
+            <div class="stat-icon"><i class="fas fa-eye"></i></div>
+            <div><p class="text-gray-400 text-xs uppercase tracking-wider">Total Views</p><p class="text-3xl font-black text-white">{{ total_views }}</p></div>
+        </div>
+    </div>
+
+    <!-- charts grid (vibrant colors) -->
+    <div id="section-analytics" class="scroll-mt-24">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 auto-rows-fr mb-16">
+            <div class="glass-card p-6 flex flex-col">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-globe text-red-500"></i><span class="gradient-text">Language</span></h2><span class="bg-red-500/10 text-red-400 px-3 py-1 rounded-full text-xs">pie</span></div>
+                <div class="chart-wrapper"><canvas id="languageChart"></canvas></div>
+            </div>
+            <div class="glass-card p-6 flex flex-col">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-tags text-red-500"></i><span class="gradient-text">Genre</span></h2><span class="bg-red-500/10 text-red-400 px-3 py-1 rounded-full text-xs">pie</span></div>
+                <div class="chart-wrapper"><canvas id="genreChart"></canvas></div>
+            </div>
+            <div class="glass-card p-6 flex flex-col">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-fire text-red-500"></i><span class="gradient-text">Most Watched</span></h2><span class="bg-red-500/10 text-red-400 px-3 py-1 rounded-full text-xs">bar</span></div>
+                <div class="chart-wrapper"><canvas id="mostWatchedChart"></canvas></div>
+            </div>
+            <div class="glass-card p-6 flex flex-col">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-heart text-red-500"></i><span class="gradient-text">Trending</span></h2><span class="bg-red-500/10 text-red-400 px-3 py-1 rounded-full text-xs">bar</span></div>
+                <div class="chart-wrapper"><canvas id="trendingChart"></canvas></div>
+            </div>
+            <div class="glass-card p-6 flex flex-col lg:col-span-2">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-chart-line text-red-500"></i><span class="gradient-text">Activity Timeline</span></h2><span class="bg-red-500/10 text-red-400 px-3 py-1 rounded-full text-xs">line</span></div>
+                <div class="chart-wrapper"><canvas id="timelineChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== ADVANCED ANALYTICS SECTION (NEW) ========== -->
+    <div id="section-advanced-analytics" class="scroll-mt-24 mb-16">
+        <div class="flex items-center gap-3 mb-6 border-l-4 border-yellow-500 pl-4">
+            <i class="fas fa-chart-line text-yellow-500 text-2xl"></i>
+            <h2 class="text-3xl font-black tracking-tight advanced-section-title"><span class="gradient-text">Advanced</span> <span class="text-white">Analytics</span></h2>
+            <span class="bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full text-xs ml-2">real-time intelligence</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 auto-rows-fr">
+            <!-- User Growth -->
+            <div class="glass-card p-6 flex flex-col transition-all duration-300">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold flex items-center gap-2"><i class="fas fa-user-plus text-green-400"></i><span class="gradient-text">User Growth</span></h3>
+                    <span class="text-green-400/80 text-xs bg-black/30 px-2 py-1 rounded-full"><i class="fas fa-chart-line"></i> daily</span>
+                </div>
+                <div class="chart-wrapper min-h-[280px]"><canvas id="userGrowthChart"></canvas></div>
+            </div>
+            <!-- Genre Trend Over Time -->
+            <div class="glass-card p-6 flex flex-col transition-all duration-300">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold flex items-center gap-2"><i class="fas fa-waveform text-yellow-400"></i><span class="gradient-text">Genre Trend</span></h3>
+                    <span class="text-yellow-400/80 text-xs bg-black/30 px-2 py-1 rounded-full">temporal heat</span>
+                </div>
+                <div class="chart-wrapper min-h-[280px]"><canvas id="genreTrendChart"></canvas></div>
+            </div>
+            <!-- Movie Success Score -->
+            <div class="glass-card p-6 flex flex-col transition-all duration-300">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold flex items-center gap-2"><i class="fas fa-trophy text-orange-400"></i><span class="gradient-text">Movie Success Score</span></h3>
+                    <span class="text-orange-400/80 text-xs bg-black/30 px-2 py-1 rounded-full">engagement index</span>
+                </div>
+                <div class="chart-wrapper min-h-[280px]"><canvas id="movieSuccessChart"></canvas></div>
+            </div>
+            <!-- User Retention -->
+            <div class="glass-card p-6 flex flex-col transition-all duration-300">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold flex items-center gap-2"><i class="fas fa-users-retention text-blue-400"></i><span class="gradient-text">User Retention</span></h3>
+                    <span class="text-blue-400/80 text-xs bg-black/30 px-2 py-1 rounded-full">cohort loyalty</span>
+                </div>
+                <div class="chart-wrapper min-h-[280px]"><canvas id="retentionChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Model sections (Confusion Matrix + Training Progress) -->
+    <div id="section-ai-models" class="scroll-mt-24">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-20">
+            <div id="section-confusion" class="glass-card p-6 flex flex-col scroll-mt-24">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-chart-simple text-red-500"></i><span class="gradient-text">Model Confusion Matrix</span></h2>
+                    <span class="refresh-indicator text-gray-400 text-xs"><i class="fas fa-sync-alt"></i> Live</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm border-collapse confusion-table" id="confusionMatrixTable">
+                        <thead id="confusionHead"><tr><th>Loading...</th></tr></thead>
+                        <tbody id="confusionBody"><tr><td>Fetching live metrics...</td></tr></tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Rows: True labels, Columns: Predicted labels (based on genres) · Auto-refreshes every 5s</p>
+            </div>
+            <div id="section-training" class="glass-card p-6 flex flex-col scroll-mt-24">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-chart-line text-red-500"></i><span class="gradient-text">Training Progress</span></h2>
+                    <span class="refresh-indicator text-gray-400 text-xs"><i class="fas fa-sync-alt"></i> Live stream</span>
+                </div>
+                <div class="chart-wrapper"><canvas id="trainingChart"></canvas></div>
+                <div class="flex justify-between text-xs text-gray-500 mt-2"><span>Accuracy ↑ (green)</span><span>Val Accuracy (cyan)</span><span>Loss ↓ (red)</span><span>Val Loss (orange)</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOP PERFORMERS CHARTS (Directors, Heroes, Heroines, Users) -->
+    <div id="section-top-performers" class="scroll-mt-24">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-20">
+            <div id="section-top-directors" class="glass-card p-6 flex flex-col scroll-mt-24">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-trophy text-green-500"></i><span class="gradient-text">Top Directors</span></h2><span class="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-xs">by movies</span></div>
+                <div class="chart-wrapper"><canvas id="topDirectorsChart"></canvas></div>
+            </div>
+            <div id="section-top-heroes" class="glass-card p-6 flex flex-col scroll-mt-24">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-star text-yellow-500"></i><span class="gradient-text">Top Heroes</span></h2><span class="bg-yellow-500/10 text-yellow-400 px-3 py-1 rounded-full text-xs">by movies</span></div>
+                <div class="chart-wrapper"><canvas id="topHeroesChart"></canvas></div>
+            </div>
+            <div id="section-top-heroines" class="glass-card p-6 flex flex-col scroll-mt-24">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-heart text-pink-500"></i><span class="gradient-text">Top Heroines</span></h2><span class="bg-pink-500/10 text-pink-400 px-3 py-1 rounded-full text-xs">by movies</span></div>
+                <div class="chart-wrapper"><canvas id="topHeroinesChart"></canvas></div>
+            </div>
+            <div id="section-top-users" class="glass-card p-6 flex flex-col scroll-mt-24">
+                <div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-users text-blue-500"></i><span class="gradient-text">Top Users</span></h2><span class="bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full text-xs">by activity</span></div>
+                <div class="chart-wrapper"><canvas id="topUsersChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- latest movies grid -->
+    <div id="section-latest-movies" class="mt-20 scroll-mt-24">
+        <div class="flex items-center justify-between mb-8">
+            <h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-film text-red-500 text-3xl"></i><span class="gradient-text">Latest</span> <span class="text-white">Releases</span></h2>
+            <span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ posters|length }} titles</span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6" id="latestMoviesGrid">
+            {% for movie in posters %}
+            <div class="poster-card group" data-movie='{{ movie | tojson }}'>
+                {% set thumbnail = movie.thumbnail.split('/')[-1] if movie.thumbnail else '' %}
+                <img src="{{ url_for('static', filename='uploads/' + thumbnail) }}" alt="{{ movie.title }}" class="poster-image" onerror="this.src='https://placehold.co/400x600/1a1a1a/red?text=No+Poster'">
+                <div class="poster-overlay"><p class="font-black text-lg">{{ movie.title }}</p><p class="text-sm text-red-300">{{ movie.genre if movie.genre else 'Drama' }}</p>{% if movie.release_year %}<p class="text-xs text-gray-300 mt-1">{{ movie.release_year }}</p>{% endif %}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- user galaxy, heroes, heroines, directors, producers sections (condensed but intact) -->
+    <div id="section-users" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-users text-red-500"></i><span class="gradient-text">User</span> <span class="text-white">Galaxy</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ users|length }} explorers</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for user in users %}<a href="/admin_user_analysis/{{ user.id }}" class="person-card block">{% if user.profile_image %}<img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" class="person-avatar mx-auto mb-4" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">{% else %}<div class="person-avatar mx-auto mb-4 bg-gradient-to-br from-red-900 to-gray-800 flex items-center justify-center text-4xl border-2 border-red-400"><i class="fas fa-user text-red-300"></i></div>{% endif %}<p class="font-bold text-white text-lg truncate">{{ user.username }}</p><p class="text-xs text-gray-400 mt-1">ID: {{ user.id }}</p></a>{% endfor %}</div></div>
+    <div id="section-heroes" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-star text-yellow-500"></i><span class="gradient-text">Hero</span> <span class="text-white">Icons</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ heroes|length }} legends</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for hero in heroes %}<a href="/admin_hero_analysis/{{ hero.hero }}" class="person-card block"><img src="{{ url_for('static', filename='uploads/' + hero.image) }}" class="person-avatar mx-auto mb-4 border-2 border-yellow-500/50" onerror="this.src='https://placehold.co/200x200/111827/ef4444?text=Hero'"><p class="font-bold text-white text-lg truncate">{{ hero.hero }}</p><p class="text-sm text-yellow-400 mt-1">{{ hero.count }} Movies</p></a>{% endfor %}</div></div>
+    <div id="section-heroines" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-heart text-pink-500"></i><span class="gradient-text">Heroine</span> <span class="text-white">Divas</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ heroines|length }} stars</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for heroine in heroines %}<a href="/admin_heroine_analysis/{{ heroine.heroine }}" class="person-card block"><img src="{{ url_for('static', filename='uploads/' + heroine.image) }}" class="person-avatar mx-auto mb-4 border-2 border-pink-500/50" onerror="this.src='https://placehold.co/200x200/111827/ec4899?text=Heroine'"><p class="font-bold text-white text-lg truncate">{{ heroine.heroine }}</p><p class="text-sm text-pink-400 mt-1">{{ heroine.count }} Movies</p></a>{% endfor %}</div></div>
+    <div id="section-directors" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-video text-green-500"></i><span class="gradient-text">Director</span> <span class="text-white">Visionaries</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ directors|length }} auteurs</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for director in directors %}<a href="/admin_director_analysis/{{ director.director }}" class="person-card block"><img src="{{ url_for('static', filename='uploads/' + director.image) }}" class="person-avatar mx-auto mb-4 border-2 border-green-500/50" onerror="this.src='https://placehold.co/200x200/111827/f59e0b?text=Director'"><p class="font-bold text-white text-lg truncate">{{ director.director }}</p><p class="text-sm text-green-400 mt-1">{{ director.count }} Movies</p></a>{% endfor %}</div></div>
+    <div id="section-producers" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-coins text-yellow-500"></i><span class="gradient-text">Producer</span> <span class="text-white">Masters</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ producers|length }} producers</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for producer in producers %}<a href="/admin_producer_analysis/{{ producer.producer }}" class="person-card block"><img src="{{ url_for('static', filename='uploads/' + producer.image) }}" class="person-avatar mx-auto mb-4 border-2 border-yellow-500/50" onerror="this.src='https://placehold.co/200x200/111827/f59e0b?text=Producer'"><p class="font-bold text-white text-lg truncate">{{ producer.producer }}</p><p class="text-sm text-yellow-400 mt-1">{{ producer.count }} Movies</p></a>{% endfor %}</div></div>
+
+    <footer class="footer mt-20 text-center text-gray-500 text-sm py-6 rounded-t-3xl"><i class="far fa-chart-bar mr-1 text-red-500"></i> DeepFlix Analytics · Cinematic data stream<span class="mx-2">·</span><i class="far fa-clock mr-1"></i> <span id="currentYear"></span></footer>
+</div>
+
+<!-- Modals -->
+<div class="modal" id="statModal"><div class="modal-content"><span class="modal-close" id="closeModal">&times;</span><h2 class="text-3xl font-bold gradient-text mb-6" id="modalTitle">Details</h2><div id="modalBody" class="space-y-4"></div></div></div>
+<div class="modal" id="movieModal"><div class="modal-content max-w-md"><span class="modal-close" id="closeMovieModal">&times;</span><div id="movieModalContent" class="text-center"></div></div></div>
+
+<script>
+(function() {
+    // Flask data injection
+    const languages = {{ languages | default([]) | tojson }};
+    const genres = {{ genres | default([]) | tojson }};
+    const mostWatched = {{ most_watched | default([]) | tojson }};
+    const trending = {{ trending | default([]) | tojson }};
+    const timeline = {{ timeline | default([]) | tojson }};
+    const posters = {{ posters | default([]) | tojson }};
+    const heroes = {{ heroes | default([]) | tojson }};
+    const heroines = {{ heroines | default([]) | tojson }};
+    const directors = {{ directors | default([]) | tojson }};
+    const users = {{ users | default([]) | tojson }};
+    const topUsersData = {{ top_users | default([]) | tojson }};
+
+    function truncate(label, max=15) { return label.length > max ? label.substring(0, max)+'…' : label; }
+    const vibrantPie = ['#e50914', '#f97316', '#facc15', '#4ade80', '#22d3ee', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#f43f5e', '#8b5cf6', '#06b6d4'];
+    const barColors = ['#e50914', '#f97316', '#facc15', '#4ade80', '#22d3ee', '#3b82f6', '#a855f7', '#ec4899'];
+    
+    // Existing charts init
+    if(languages.length) new Chart(document.getElementById('languageChart'), {type:'pie', data:{labels:languages.map(l=>l.language), datasets:[{data:languages.map(l=>l.count), backgroundColor:vibrantPie.slice(0,languages.length), borderColor:'#1f2937', borderWidth:2}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{color:'#d1d5db', font:{size:11}}}, tooltip:{backgroundColor:'#1f2937',borderColor:'#e50914'}}}});
+    if(genres.length) new Chart(document.getElementById('genreChart'), {type:'pie', data:{labels:genres.map(g=>g.genre), datasets:[{data:genres.map(g=>g.count), backgroundColor:vibrantPie.slice(0,genres.length), borderColor:'#1f2937', borderWidth:2}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{color:'#d1d5db'}}, tooltip:{backgroundColor:'#1f2937',borderColor:'#e50914'}}}});
+    if(mostWatched.length) new Chart(document.getElementById('mostWatchedChart'), {type:'bar', data:{labels:mostWatched.map(w=>truncate(w.title,12)), datasets:[{label:'Views', data:mostWatched.map(w=>w.views), backgroundColor:mostWatched.map((_,i)=>barColors[i%barColors.length]), borderRadius:8, barPercentage:0.7}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{backgroundColor:'#1f2937',borderColor:'#e50914'}}, scales:{y:{beginAtZero:true,grid:{color:'#374151'},ticks:{color:'#9ca3af'}}, x:{grid:{display:false},ticks:{color:'#d1d5db'}}}}});
+    if(trending.length) new Chart(document.getElementById('trendingChart'), {type:'bar', data:{labels:trending.map(t=>truncate(t.title,12)), datasets:[{label:'Hearts', data:trending.map(t=>t.hearts), backgroundColor:trending.map((_,i)=>barColors[(i+3)%barColors.length]), borderRadius:8, barPercentage:0.7}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{backgroundColor:'#1f2937',borderColor:'#e50914'}}, scales:{y:{beginAtZero:true,grid:{color:'#374151'},ticks:{color:'#9ca3af'}}, x:{grid:{display:false},ticks:{color:'#d1d5db'}}}}});
+    if(timeline.length) new Chart(document.getElementById('timelineChart'), {type:'line', data:{labels:timeline.map(t=>t.day), datasets:[{label:'Views', data:timeline.map(t=>t.views), borderColor:'#f97316', backgroundColor:'rgba(249,115,22,0.2)', tension:0.3, pointBackgroundColor:'#facc15', pointBorderColor:'#fff', pointRadius:5, fill:true, borderWidth:3}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{backgroundColor:'#1f2937',borderColor:'#f97316'}}, scales:{y:{beginAtZero:true,grid:{color:'#374151'},ticks:{color:'#9ca3af'}}, x:{grid:{display:false},ticks:{color:'#d1d5db'}}}}});
+
+    // Top performers charts
+    const topDirectors = [...directors].sort((a,b)=>b.count - a.count).slice(0,6);
+    if(topDirectors.length) new Chart(document.getElementById('topDirectorsChart'), {type:'bar', data:{labels:topDirectors.map(d=>truncate(d.director,12)), datasets:[{label:'Movies Directed', data:topDirectors.map(d=>d.count), backgroundColor:topDirectors.map((_,i)=>barColors[i%barColors.length]), borderRadius:8}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{backgroundColor:'#1f2937',borderColor:'#10b981'}}, scales:{y:{beginAtZero:true,grid:{color:'#374151'},ticks:{color:'#9ca3af',stepSize:1}}, x:{grid:{display:false},ticks:{color:'#d1d5db'}}}}});
+    const topHeroes = [...heroes].sort((a,b)=>b.count - a.count).slice(0,6);
+    if(topHeroes.length) new Chart(document.getElementById('topHeroesChart'), {type:'bar', data:{labels:topHeroes.map(h=>truncate(h.hero,12)), datasets:[{label:'Movies Acted', data:topHeroes.map(h=>h.count), backgroundColor:topHeroes.map((_,i)=>barColors[(i+2)%barColors.length]), borderRadius:8}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{backgroundColor:'#1f2937',borderColor:'#f59e0b'}}, scales:{y:{beginAtZero:true,grid:{color:'#374151'},ticks:{color:'#9ca3af',stepSize:1}}, x:{grid:{display:false},ticks:{color:'#d1d5db'}}}}});
+    const topHeroines = [...heroines].sort((a,b)=>b.count - a.count).slice(0,6);
+    if(topHeroines.length) new Chart(document.getElementById('topHeroinesChart'), {type:'bar', data:{labels:topHeroines.map(hn=>truncate(hn.heroine,12)), datasets:[{label:'Movies Acted', data:topHeroines.map(hn=>hn.count), backgroundColor:topHeroines.map((_,i)=>barColors[(i+4)%barColors.length]), borderRadius:8}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{backgroundColor:'#1f2937',borderColor:'#ec4899'}}, scales:{y:{beginAtZero:true,grid:{color:'#374151'},ticks:{color:'#9ca3af',stepSize:1}}, x:{grid:{display:false},ticks:{color:'#d1d5db'}}}}});
+    if(topUsersData.length) {
+        const topUsers = topUsersData.slice(0,6);
+        new Chart(document.getElementById('topUsersChart'), {type:'bar', data:{labels:topUsers.map(u=>truncate(u.username,12)), datasets:[{label:'Activity Score', data:topUsers.map(u=>u.count), backgroundColor:topUsers.map((_,i)=>barColors[(i+6)%barColors.length]), borderRadius:8}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{backgroundColor:'#1f2937',borderColor:'#3b82f6'}}, scales:{y:{beginAtZero:true,grid:{color:'#374151'},ticks:{color:'#9ca3af'}}, x:{grid:{display:false},ticks:{color:'#d1d5db'}}}}});
+    } else { const container = document.getElementById('topUsersChart')?.parentElement?.parentElement; if(container) container.style.display = 'none'; }
+
+    // ---------- ADVANCED ANALYTICS: API CHARTS ----------
+    let userGrowthChart, genreTrendChart, movieSuccessChart, retentionChart;
+
+    async function loadUserGrowth() {
+        const res = await fetch('/api/user-growth');
+        const data = await res.json();
+        const labels = data.map(d => d.day);
+        const values = data.map(d => d.users);
+        if (userGrowthChart) userGrowthChart.destroy();
+        const ctx = document.getElementById('userGrowthChart');
+        if(!ctx) return;
+        userGrowthChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'New Users', data: values, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.2)', fill: true, tension: 0.3, pointRadius: 3 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { backgroundColor: '#1f2937' }, legend: { labels: { color: '#e5e7eb' } } }, scales: { y: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }, x: { ticks: { color: '#d1d5db' } } } } });
+    }
+    async function loadGenreTrend() {
+        const res = await fetch('/api/genre-trend');
+        const data = await res.json();
+        const grouped = {}; data.forEach(row => { if (!grouped[row.genre]) grouped[row.genre] = {}; grouped[row.genre][row.day] = row.count; });
+        const days = [...new Set(data.map(d => d.day))];
+        const datasets = Object.keys(grouped).map((genre, i) => ({ label: genre, data: days.map(day => grouped[genre][day] || 0), borderColor: ['#e50914','#facc15','#22d3ee','#4ade80','#a855f7'][i % 5], fill: false, tension: 0.2 }));
+        if (genreTrendChart) genreTrendChart.destroy();
+        const ctx = document.getElementById('genreTrendChart');
+        if(!ctx) return;
+        genreTrendChart = new Chart(ctx, { type: 'line', data: { labels: days, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { backgroundColor: '#1f2937' }, legend: { labels: { color: '#e5e7eb' } } }, scales: { y: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }, x: { ticks: { color: '#d1d5db' } } } } });
+    }
+    async function loadMovieSuccess() {
+        const res = await fetch('/api/movie-success');
+        const data = await res.json();
+        if (movieSuccessChart) movieSuccessChart.destroy();
+        const ctx = document.getElementById('movieSuccessChart');
+        if(!ctx) return;
+        movieSuccessChart = new Chart(ctx, { type: 'bar', data: { labels: data.map(d => truncate(d.title, 12)), datasets: [{ label: 'Success Score', data: data.map(d => d.score), backgroundColor: '#f97316', borderRadius: 8 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { backgroundColor: '#1f2937' }, legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }, x: { ticks: { color: '#d1d5db' } } } } });
+    }
+    async function loadRetention() {
+        const res = await fetch('/api/user-retention');
+        const data = await res.json();
+        if (retentionChart) retentionChart.destroy();
+        const ctx = document.getElementById('retentionChart');
+        if(!ctx) return;
+        retentionChart = new Chart(ctx, { type: 'line', data: { labels: data.map(d => d.day), datasets: [{ label: 'New Users', data: data.map(d => d.new_users), borderColor: '#22c55e', backgroundColor: 'transparent', tension: 0.3 }, { label: 'Returning Users', data: data.map(d => d.returning_users), borderColor: '#3b82f6', backgroundColor: 'transparent', tension: 0.3 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { backgroundColor: '#1f2937' }, legend: { labels: { color: '#e5e7eb' } } }, scales: { y: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }, x: { ticks: { color: '#d1d5db' } } } } });
+    }
+
+    // Initialize advanced charts & refresh loop
+    loadUserGrowth(); loadGenreTrend(); loadMovieSuccess(); loadRetention();
+    setInterval(() => { loadUserGrowth(); loadGenreTrend(); loadMovieSuccess(); loadRetention(); }, 5000);
+
+    // Live model metrics
+    let trainingChartInstance = null;
+    async function loadModelMetrics() {
+        try {
+            const res = await fetch('/api/model-metrics');
+            const data = await res.json();
+            if (data.error) return;
+            const labels = data.labels || [];
+            const matrix = data.confusion_matrix || [];
+            let tableHTML = `<thead><th class="border px-2 py-1 bg-red-900/30"></th>${labels.map(l => `<th class="border px-2 py-1 bg-red-900/30">${l}</th>`).join('')}</thead><tbody>`;
+            matrix.forEach((row, i) => { tableHTML += `<tr><th class="border px-2 py-1 bg-red-900/30">${labels[i] || ''}</th>${row.map(val => `<td class="border px-2 py-1 text-center">${val}</td>`).join('')}</tr>`; });
+            tableHTML += `</tbody>`;
+            const confusionTable = document.getElementById('confusionMatrixTable');
+            if(confusionTable) confusionTable.innerHTML = tableHTML;
+            const ctx = document.getElementById('trainingChart')?.getContext('2d');
+            if(ctx) {
+                if(trainingChartInstance) trainingChartInstance.destroy();
+                trainingChartInstance = new Chart(ctx, { type: 'line', data: { labels: (data.accuracy || []).map((_, idx) => idx+1), datasets: [{ label: 'Accuracy', data: data.accuracy || [], borderColor: '#4ade80', borderWidth: 3, tension: 0.3 }, { label: 'Val Accuracy', data: data.val_accuracy || [], borderColor: '#22d3ee', borderWidth: 3 }, { label: 'Loss', data: data.loss || [], borderColor: '#f43f5e', borderWidth: 3 }, { label: 'Val Loss', data: data.val_loss || [], borderColor: '#f97316', borderWidth: 3 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { backgroundColor: '#1f2937' }, legend: { labels: { color: '#e5e7eb' } } }, scales: { y: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }, x: { ticks: { color: '#d1d5db' } } } } });
+            }
+        } catch(err) { console.warn(err); }
+    }
+    loadModelMetrics(); setInterval(loadModelMetrics, 5000);
+    
+    // Modal, search, stat tiles logic (identical to original)
+    const statModal = document.getElementById('statModal'), modalTitle=document.getElementById('modalTitle'), modalBody=document.getElementById('modalBody');
+    const closeModal = document.getElementById('closeModal'), movieModal=document.getElementById('movieModal'), movieModalContent=document.getElementById('movieModalContent'), closeMovieModal=document.getElementById('closeMovieModal');
+    closeModal.onclick = ()=>statModal.classList.remove('active');
+    closeMovieModal.onclick = ()=>movieModal.classList.remove('active');
+    window.onclick = e => { if(e.target===statModal) statModal.classList.remove('active'); if(e.target===movieModal) movieModal.classList.remove('active'); };
+    function showStatModal(title, html) { modalTitle.innerText = title; modalBody.innerHTML = html; statModal.classList.add('active'); }
+    function showMovieModal(movie) { const thumb = movie.thumbnail ? movie.thumbnail.split('/').pop() : ''; const imgUrl = thumb ? `/static/uploads/${thumb}` : 'https://placehold.co/300x450/1f2937/red?text=No+Poster'; movieModalContent.innerHTML = `<img src="${imgUrl}" class="w-56 h-72 object-cover rounded-2xl mx-auto mb-5 border-4 border-red-500 shadow-2xl"><h3 class="text-3xl font-black text-red-400">${movie.title}</h3><p class="text-gray-300 mt-3"><span class="text-red-500">Language:</span> ${movie.language || 'N/A'}</p><p class="text-gray-300"><span class="text-red-500">Genre:</span> ${movie.genre || 'N/A'}</p><p class="text-gray-300"><span class="text-red-500">Views:</span> ${movie.views || 0}</p><p class="text-gray-300"><span class="text-red-500">Hearts:</span> ${movie.hearts || 0}</p>`; movieModal.classList.add('active'); }
+    document.querySelectorAll('.poster-card').forEach(card => { card.addEventListener('click', () => { let movieData = null; try { movieData = JSON.parse(card.getAttribute('data-movie')); } catch(e) {} if(movieData) showMovieModal(movieData); }); });
+    document.getElementById('stat-movies').addEventListener('click',()=>{ let html='<div class="grid grid-cols-2 sm:grid-cols-3 gap-5">'; posters.forEach(m=>{ let thumb=m.thumbnail?m.thumbnail.split('/').pop():''; html+=`<div><img src="${thumb?`/static/uploads/${thumb}`:'https://placehold.co/200x300/1f2937/red'}" class="w-full aspect-[2/3] object-cover rounded-xl border-2 border-red-500/30"><p class="text-sm mt-2">${m.title}</p></div>`; }); html+='</div>'; showStatModal('All Movies',html); });
+    document.getElementById('stat-languages').addEventListener('click',()=>{ let html='<ul class="space-y-3 text-lg">'; languages.forEach(l=>{ html+=`<li class="flex justify-between border-b border-gray-700 pb-2"><span>${l.language}</span><span class="text-red-500 font-bold">${l.count}</span></li>`; }); html+='</ul>'; showStatModal('Languages Distribution',html); });
+    document.getElementById('stat-genres').addEventListener('click',()=>{ let html='<ul class="space-y-3 text-lg">'; genres.forEach(g=>{ html+=`<li class="flex justify-between border-b border-gray-700 pb-2"><span>${g.genre}</span><span class="text-red-500 font-bold">${g.count}</span></li>`; }); html+='</ul>'; showStatModal('Genres Breakdown',html); });
+    document.getElementById('stat-views').addEventListener('click',()=>{ let total=mostWatched.reduce((a,w)=>a+w.views,0); let html=`<p class="text-2xl mb-5">Total Views: <span class="text-red-500 font-black">${total}</span></p><h3 class="font-bold text-xl mb-3">Most Watched</h3><ul class="space-y-3">${mostWatched.map(w=>`<li class="flex justify-between border-b border-gray-700 pb-2"><span>${w.title}</span><span class="text-purple-400">${w.views} views</span></li>`).join('')}</ul>`; showStatModal('Total Views Details',html); });
+    
+    // search (simplified working)
+    const searchInput = document.getElementById('searchInput'), searchDropdown = document.getElementById('searchDropdown');
+    let searchItems = []; posters.forEach(m=>searchItems.push({type:'movie', label:m.title, data:m})); heroes.forEach(h=>searchItems.push({type:'hero', label:h.hero, url:`/admin_hero_analysis/${h.hero}`})); heroines.forEach(hn=>searchItems.push({type:'heroine', label:hn.heroine, url:`/admin_heroine_analysis/${hn.heroine}`})); directors.forEach(d=>searchItems.push({type:'director', label:d.director, url:`/admin_director_analysis/${d.director}`})); users.forEach(u=>searchItems.push({type:'user', label:u.username, url:`/admin_user_analysis/${u.id}`})); genres.forEach(g=>searchItems.push({type:'genre', label:g.genre, data:g})); languages.forEach(l=>searchItems.push({type:'language', label:l.language, data:l})); ['section-analytics','section-advanced-analytics','section-ai-models','section-top-performers','section-latest-movies','section-users','section-heroes','section-heroines','section-directors','section-producers'].forEach(id=>searchItems.push({type:'section', label:id.replace('section-','').replace(/-/g,' ').toUpperCase(), targetId:id}));
+    function filterSearch(term){ if(!term.trim()){ searchDropdown.classList.remove('active'); return; } const lower=term.toLowerCase(); const results=searchItems.filter(i=>i.label.toLowerCase().includes(lower)).slice(0,10); if(!results.length){ searchDropdown.classList.remove('active'); return; } let html=''; results.forEach(i=>{ let icon={movie:'🎬',hero:'⭐',heroine:'💖',director:'🎥',user:'👤',genre:'🏷️',language:'🌐',section:'📍'}[i.type]||'🔍'; html+=`<div class="search-item" data-type="${i.type}" data-target="${i.targetId||''}" data-url="${i.url||''}" data-json='${JSON.stringify(i.data||{})}'><span>${icon}</span><span class="flex-1">${i.label}</span><span class="bg-red-500/20 text-red-300 px-3 py-1 rounded-full text-xs">${i.type}</span></div>`; }); searchDropdown.innerHTML=html; searchDropdown.classList.add('active'); document.querySelectorAll('.search-item').forEach(el=>{ el.addEventListener('click',()=>{ const targetId=el.dataset.target, url=el.dataset.url; if(targetId) document.getElementById(targetId)?.scrollIntoView({behavior:'smooth',block:'start'}); else if(url) window.location.href=url; else if(el.dataset.type==='movie'){ let data; try{ data=JSON.parse(el.dataset.json); if(data) showMovieModal(data); }catch(e){} } searchDropdown.classList.remove('active'); searchInput.value=''; }); }); }
+    searchInput.addEventListener('input',e=>filterSearch(e.target.value));
+    document.addEventListener('click',e=>{ if(!searchInput.contains(e.target) && !searchDropdown.contains(e.target)) searchDropdown.classList.remove('active'); });
+    document.getElementById('currentYear').textContent=new Date().getFullYear();
+})();
+</script>
+</body>
+</html>

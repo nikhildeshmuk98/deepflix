@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>DeepFlix Kids · magical movie wall</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --red: #ef4444;
+            --red-dark: #dc2626;
+            --red-glow: rgba(239,68,68,0.45);
+            --bg: #060608;
+            --bg2: #0d0d14;
+            --bg3: #111118;
+            --surface: rgba(255,255,255,0.03);
+            --surface2: rgba(255,255,255,0.06);
+            --border: rgba(255,255,255,0.07);
+            --border-red: rgba(239,68,68,0.3);
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --card-w: 160px;
+            --card-h: 240px;
+        }
+        @media(min-width:640px){:root{--card-w:180px;--card-h:270px;}}
+        @media(min-width:1024px){:root{--card-w:200px;--card-h:300px;}}
+
+        *{box-sizing:border-box;margin:0;padding:0;}
+        html{scroll-behavior:smooth;}
+        body{
+            background:var(--bg);
+            font-family:'Outfit',sans-serif;
+            color:var(--text);
+            min-height:100vh;
+            overflow-x:hidden;
+        }
+
+        ::-webkit-scrollbar{width:5px;height:5px;}
+        ::-webkit-scrollbar-track{background:var(--bg);}
+        ::-webkit-scrollbar-thumb{background:var(--red);border-radius:99px;}
+
+        body::before{
+            content:'';
+            position:fixed;inset:0;
+            background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+            background-size:220px;
+            opacity:0.022;
+            pointer-events:none;
+            z-index:1000;
+        }
+
+        /* ===== HERO SECTION - EXTRA COMPACT ===== */
+        .hero-section{
+            position:relative;
+            width:100%;
+            min-height: 360px;           /* drastically reduced height */
+            overflow:hidden;
+        }
+        @media(min-width:768px){.hero-section{min-height: 380px;}}
+        @media(min-width:1024px){.hero-section{min-height: 400px;}}
+
+        .hero-bg{
+            position:absolute;inset:-12px;
+            background-size:cover;
+            background-position:center 25%;
+            filter: brightness(0.75) saturate(1.1);
+            transform:scale(1.02);
+            transition:background-image 0.7s cubic-bezier(0.2, 0.9, 0.4, 1), opacity 0.6s ease;
+            z-index:0;
+        }
+        .hero-vignette{
+            position:absolute;inset:0;
+            background:
+                linear-gradient(to bottom, rgba(6,6,8,0.65) 0%, rgba(6,6,8,0.2) 40%, rgba(6,6,8,0.4) 75%, rgba(6,6,8,0.9) 100%),
+                linear-gradient(to right, rgba(6,6,8,0.5) 0%, transparent 60%);
+            z-index:1;
+        }
+        .hero-inner{
+            position:relative;z-index:10;
+            max-width:1280px;
+            margin:0 auto;
+            padding:0 20px 20px;          /* smaller bottom padding */
+        }
+        @media(min-width:768px){.hero-inner{padding:0 32px 24px;}}
+
+        .nav{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            padding:12px 0 10px;          /* compact nav */
+            flex-wrap:wrap;
+        }
+
+        .logo img{height:36px;width:auto;filter:drop-shadow(0 0 12px var(--red-glow));}
+        .logo:hover img{filter:drop-shadow(0 0 22px rgba(239,68,68,0.7));transform:scale(1.03);}
+        .logo img,.logo{transition:all .3s ease;}
+
+        .search-bar{
+            flex:1;min-width:160px;max-width:380px;
+            display:flex;align-items:center;gap:6px;
+            background:rgba(255,255,255,0.05);
+            border:1px solid rgba(255,255,255,0.09);
+            border-radius:50px;
+            padding:7px 14px;
+            backdrop-filter:blur(12px);
+            transition:border-color .3s,box-shadow .3s;
+        }
+        .search-bar:focus-within{
+            border-color:var(--red);
+            box-shadow:0 0 0 3px rgba(239,68,68,0.12);
+        }
+        .search-bar i{color:var(--red);font-size:.8rem;flex-shrink:0;}
+        .search-bar input{
+            flex:1;background:transparent;border:none;outline:none;
+            color:#fff;font-size:.85rem;font-family:'Outfit',sans-serif;
+            caret-color:var(--red);
+        }
+        .search-bar input::placeholder{color:rgba(255,255,255,0.35);}
+        .search-bar button{
+            background:transparent;border:none;color:rgba(255,255,255,0.5);
+            cursor:pointer;font-size:.8rem;padding:0;transition:color .25s,transform .25s;
+        }
+        .search-bar button:hover{color:var(--red);transform:scale(1.2);}
+
+        .nav-right{display:flex;align-items:center;gap:8px;}
+
+        .bell-wrap{position:relative;}
+        .bell-btn{
+            width:36px;height:36px;border-radius:50%;
+            display:flex;align-items:center;justify-content:center;
+            background:var(--surface2);border:1px solid var(--border);
+            color:rgba(255,255,255,0.75);font-size:.95rem;cursor:pointer;
+            transition:all .3s;text-decoration:none;
+        }
+        .bell-btn:hover{background:var(--red);border-color:var(--red);color:#fff;box-shadow:0 0 20px var(--red-glow);}
+        .bell-count{
+            position:absolute;top:-3px;right:-3px;
+            background:var(--red);color:#fff;border-radius:99px;
+            padding:2px 5px;font-size:.6rem;font-weight:800;
+            box-shadow:0 0 10px var(--red-glow);
+            pointer-events:none;min-width:16px;text-align:center;
+        }
+        .notif-drop{
+            position:absolute;top:calc(100% + 10px);right:0;
+            width:280px;
+            background:rgba(13,13,20,0.97);
+            backdrop-filter:blur(24px);
+            border:1px solid var(--border-red);
+            border-radius:16px;
+            padding:12px;
+            box-shadow:0 24px 60px rgba(0,0,0,0.85);
+            z-index:300;
+            display:none;
+        }
+        .notif-drop h4{
+            font-size:.85rem;font-weight:800;
+            color:#fff;margin-bottom:8px;
+            display:flex;align-items:center;gap:6px;
+            border-bottom:1px solid var(--border-red);
+            padding-bottom:6px;
+        }
+        .notif-drop ul{list-style:none;max-height:240px;overflow-y:auto;}
+        .notif-drop li{
+            padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);
+            font-size:.75rem;color:var(--muted);line-height:1.4;
+        }
+        .notif-drop li:last-child{border-bottom:none;}
+        .notif-drop li strong{color:var(--red);}
+
+        .logout-btn{
+            display:flex;align-items:center;gap:5px;
+            color:rgba(255,255,255,0.8);
+            border:1px solid rgba(239,68,68,0.35);
+            padding:7px 15px;border-radius:50px;
+            font-size:.75rem;font-weight:600;
+            text-decoration:none;
+            transition:all .3s ease;
+            white-space:nowrap;
+        }
+        .logout-btn:hover{
+            background:var(--red);border-color:var(--red);
+            color:#fff;box-shadow:0 0 22px var(--red-glow);
+            transform:translateY(-1px);
+        }
+        .logout-btn i{transition:transform .3s;}
+        .logout-btn:hover i{transform:translateX(3px);}
+
+        /* hero body compact */
+        .hero-body{
+            display:flex;
+            flex-direction:column;
+            gap:15px;
+            align-items:flex-start;
+            padding-top:4px;
+        }
+        @media(min-width:900px){
+            .hero-body{flex-direction:row;gap:24px;}
+        }
+
+        .hero-poster-wrap{
+            flex-shrink:0;
+            width:140px;
+        }
+        @media(min-width:640px){.hero-poster-wrap{width:150px;}}
+        @media(min-width:900px){.hero-poster-wrap{width:150px;}}
+        @media(min-width:1200px){.hero-poster-wrap{width:160px;}}
+
+        .hero-poster{
+            position:relative;
+            border-radius:16px;
+            overflow:hidden;
+            aspect-ratio:2/3;
+            box-shadow:0 16px 40px -8px rgba(239,68,68,0.4), 0 0 0 1px rgba(255,255,255,0.06);
+            transition:transform .4s,box-shadow .4s;
+        }
+        .hero-poster:hover{
+            transform:translateY(-3px) scale(1.01);
+            box-shadow:0 22px 50px -6px rgba(239,68,68,0.5);
+        }
+        .hero-poster img{width:100%;height:100%;object-fit:cover;display:block;}
+        .hero-poster-overlay{
+            position:absolute;inset:0;
+            background:rgba(0,0,0,0.4);
+            display:flex;align-items:center;justify-content:center;
+            opacity:0;transition:opacity .4s;
+            border-radius:16px;
+        }
+        .hero-poster:hover .hero-poster-overlay{opacity:1;}
+        .play-ripple{
+            width:48px;height:48px;border-radius:50%;
+            background:linear-gradient(135deg,#ef4444,#b91c1c);
+            display:flex;align-items:center;justify-content:center;
+            border:2.5px solid rgba(255,255,255,0.9);
+            box-shadow:0 0 0 0 var(--red-glow);
+            animation:ripple 2.5s infinite;
+        }
+        .play-ripple i{font-size:1rem;margin-left:2px;}
+        @keyframes ripple{
+            0%{box-shadow:0 0 0 0 rgba(239,68,68,.7);}
+            70%{box-shadow:0 0 0 18px rgba(239,68,68,0);}
+            100%{box-shadow:0 0 0 0 rgba(239,68,68,0);}
+        }
+
+        .hero-info{flex:1;min-width:0;}
+        .hero-title{
+            font-family:'Bebas Neue',sans-serif;
+            font-size:clamp(1.6rem,4vw,2.8rem);
+            letter-spacing:1px;
+            line-height:1.05;
+            background:linear-gradient(135deg, #fff 30%, #ef4444 100%);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+            background-clip:text;
+            margin-bottom:6px;
+        }
+        .hero-badges{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;}
+        .badge{
+            display:flex;align-items:center;gap:4px;
+            background:rgba(255,255,255,0.05);
+            border:1px solid rgba(255,255,255,0.1);
+            border-radius:50px;
+            padding:3px 10px;
+            font-size:.7rem;color:#ddd;
+            backdrop-filter:blur(6px);
+        }
+        .badge i{color:var(--red);font-size:.65rem;}
+        .story-label{
+            font-size:.7rem;font-weight:700;
+            color:var(--red);letter-spacing:0.5px;
+            text-transform:uppercase;margin-bottom:3px;
+            gap:4px;
+        }
+        .story-text{color:#b0bec5;line-height:1.5;font-size:.8rem;font-weight:300;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+        .hero-meta-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+        .meta-chip{
+            background:var(--surface);
+            border:1px solid var(--border);
+            border-radius:8px;padding:4px 8px;
+            font-size:.7rem;min-width:70px;
+        }
+        .meta-chip .mc-label{color:var(--muted);font-size:.6rem;text-transform:uppercase;}
+        .meta-chip .mc-val{color:#fff;font-weight:600;margin-top:1px;font-size:.7rem;}
+
+        .cast-section-label{
+            font-size:.7rem;font-weight:700;color:var(--red);
+            text-transform:uppercase;letter-spacing:0.5px;
+            margin-bottom:5px;gap:4px;
+        }
+        .cast-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
+        .cast-chip{
+            display:flex;flex-direction:column;align-items:center;
+            gap:3px;text-align:center;
+            background:rgba(20,20,32,.6);
+            border:1px solid var(--border);
+            border-radius:10px;padding:5px 7px;
+            min-width:60px;
+            transition:all .3s;cursor:default;
+        }
+        .cast-chip:hover{border-color:var(--red);transform:translateY(-2px);}
+        .cast-chip img{
+            width:34px;height:34px;border-radius:50%;object-fit:cover;
+            border:2px solid var(--red);
+            box-shadow:0 0 8px var(--red-glow);
+        }
+        .cast-chip .cc-name{font-size:.65rem;font-weight:700;color:#fff;}
+        .cast-chip .cc-role{font-size:.55rem;color:var(--muted);}
+
+        .watch-now-btn{
+            display:inline-flex;align-items:center;gap:6px;
+            background:linear-gradient(135deg,#ef4444,#b91c1c);
+            color:#fff;font-weight:800;font-size:.8rem;
+            padding:7px 18px;border-radius:50px;
+            border:none;text-decoration:none;
+            box-shadow:0 6px 18px rgba(239,68,68,.4);
+            transition:all .3s;
+        }
+        .watch-now-btn:hover{
+            transform:translateY(-2px) scale(1.02);
+            box-shadow:0 10px 28px rgba(239,68,68,.55);
+        }
+
+        /* content sections */
+        .content-wrap{
+            max-width:1280px;
+            margin:0 auto;
+            padding:0 20px;
+        }
+        @media(min-width:768px){.content-wrap{padding:0 32px;}}
+
+        .sec-title{
+            display:flex;align-items:center;gap:8px;
+            margin-bottom:12px;
+            font-size:1.1rem;font-weight:800;
+            color:#fff;
+        }
+        @media(min-width:768px){.sec-title{font-size:1.2rem;}}
+        .sec-title i{color:var(--red);}
+        .sec-title .divider{
+            flex:1;height:1px;
+            background:linear-gradient(to right,var(--border-red),transparent);
+            margin-left:8px;
+        }
+
+        .h-scroll{
+            display:flex;
+            gap:12px;
+            overflow-x:auto;
+            padding-bottom:10px;
+            scroll-snap-type:x mandatory;
+            -ms-overflow-style:none;scrollbar-width:none;
+        }
+        .h-scroll::-webkit-scrollbar{display:none;}
+
+        .movie-card{
+            flex-shrink:0;
+            width:var(--card-w);
+            scroll-snap-align:start;
+            position:relative;
+            border-radius:14px;
+            overflow:visible;   /* allow number to overflow */
+            border:1px solid var(--border);
+            transition:border-color .35s,transform .35s,box-shadow .35s;
+            background:var(--bg3);
+            cursor:pointer;
+        }
+        .movie-card:hover{
+            border-color:var(--border-red);
+            transform:translateY(-5px) scale(1.02);
+            box-shadow:0 20px 40px rgba(239,68,68,.22);
+        }
+        .movie-card .thumb{
+            width:100%;
+            height:var(--card-h);
+            object-fit:cover;
+            display:block;
+            border-radius:14px;
+            transition:transform .6s cubic-bezier(.2,.9,.3,1);
+        }
+        .movie-card:hover .thumb{transform:scale(1.05);}
+
+        .card-play{
+            position:absolute;inset:0;
+            display:flex;align-items:center;justify-content:center;
+            background:rgba(0,0,0,.45);
+            opacity:0;transition:opacity .35s;
+            z-index:5;
+            border-radius:14px;
+        }
+        .movie-card:hover .card-play{opacity:1;}
+        .play-dot{
+            width:44px;height:44px;border-radius:50%;
+            background:linear-gradient(135deg,#ef4444,#b91c1c);
+            display:flex;align-items:center;justify-content:center;
+            border:2.5px solid rgba(255,255,255,.9);
+            box-shadow:0 0 20px rgba(239,68,68,.6);
+            animation:ripple 2.5s infinite;
+        }
+        .play-dot i{color:#fff;font-size:.75rem;margin-left:2px;}
+
+        .card-title-bar{
+            position:absolute;bottom:0;left:0;right:0;
+            background:linear-gradient(to top, rgba(0,0,0,.85) 0%, transparent 100%);
+            padding:24px 8px 8px;
+            z-index:4;
+            opacity:0;transition:opacity .35s;
+            border-radius:0 0 14px 14px;
+        }
+        .movie-card:hover .card-title-bar{opacity:1;}
+        .card-title-bar span{
+            color:#fff;font-size:.75rem;font-weight:700;
+            display:block;line-height:1.2;
+        }
+        .card-title-bar small{color:#f87171;font-size:.65rem;}
+
+        /* RANK-NUMBER: HALF INSIDE HALF OUTSIDE, LARGE SIZE */
+        .rank-num{
+            position:absolute;
+            bottom:-18px;        /* half outside */
+            left:-12px;
+            font-family:'Bebas Neue',sans-serif;
+            font-size: 4rem;     /* ENLARGED */
+            line-height:0.85;
+            font-weight:900;
+            color:#fff;
+            text-shadow:4px 4px 0 rgba(0,0,0,.85), 0 0 18px rgba(0,0,0,.6);
+            z-index:20;
+            pointer-events:none;
+            transition:transform 0.2s ease;
+            background: linear-gradient(135deg, #ffffff, #facc15);
+            -webkit-background-clip:text;
+            background-clip:text;
+            color: transparent;
+            text-shadow: none;
+            -webkit-text-stroke: 2px rgba(0,0,0,0.7);
+        }
+        /* fallback solid color if gradient not supported */
+        @supports not (background-clip: text) {
+            .rank-num { color: #facc15; text-shadow: 3px 3px 0 #000; }
+        }
+        .movie-card:hover .rank-num{transform:scale(1.15) rotate(2deg);}
+
+        .kids-badge{
+            position:absolute;top:8px;left:8px;
+            background:rgba(239,68,68,.88);
+            backdrop-filter:blur(6px);
+            border:1px solid rgba(255,255,255,.25);
+            color:#fff;font-size:.6rem;font-weight:800;
+            padding:3px 8px;border-radius:99px;z-index:6;
+        }
+
+        .progress-bar-wrap{
+            position:absolute;bottom:0;left:0;right:0;
+            height:3px;background:rgba(255,255,255,.15);z-index:7;
+            border-radius:0 0 14px 14px;
+            overflow:hidden;
+        }
+        .progress-bar-fill{height:100%;background:linear-gradient(to right,#f87171,#ef4444);}
+
+        .lang-row{
+            display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;
+        }
+        .lang-row::-webkit-scrollbar{display:none;}
+        .lang-card{
+            flex-shrink:0;width:170px;border-radius:14px;overflow:hidden;
+            border:1px solid var(--border);transition:all .35s;cursor:pointer;
+            background:var(--bg3);
+        }
+        .lang-card:hover{border-color:rgba(239,68,68,.5);transform:translateY(-4px);}
+        .lang-card img{width:100%;height:100px;object-fit:contain;background:#0d0d18;}
+        .lang-card .lang-label{padding:6px 8px;text-align:center;font-size:.75rem;font-weight:700;color:#fff;}
+
+        .poster-grid{
+            display:grid;
+            grid-template-columns:repeat(2,1fr);
+            gap:12px;
+        }
+        @media(min-width:500px){.poster-grid{grid-template-columns:repeat(3,1fr);}}
+        @media(min-width:768px){.poster-grid{grid-template-columns:repeat(4,1fr);}}
+        @media(min-width:1024px){.poster-grid{grid-template-columns:repeat(5,1fr);}}
+        @media(min-width:1280px){.poster-grid{grid-template-columns:repeat(6,1fr);}}
+
+        .grid-card{
+            position:relative;border-radius:14px;overflow:hidden;
+            border:1px solid var(--border);
+            aspect-ratio:2/3;
+            background:var(--bg3);
+            transition:all .35s;cursor:pointer;
+        }
+        .grid-card:hover{border-color:var(--border-red);transform:translateY(-4px) scale(1.01);}
+        .grid-card img{width:100%;height:100%;object-fit:cover;transition:transform .6s;}
+        .grid-card:hover img{transform:scale(1.05);}
+        .grid-card-play{
+            position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+            background:rgba(0,0,0,.45);opacity:0;transition:opacity .35s;z-index:5;
+        }
+        .grid-card:hover .grid-card-play{opacity:1;}
+        .grid-overlay{
+            position:absolute;inset:0;
+            background:linear-gradient(to top,rgba(0,0,0,.9) 0%,rgba(0,0,0,.3) 45%,transparent 70%);
+            opacity:0;transition:opacity .35s;
+            display:flex;flex-direction:column;justify-content:flex-end;padding:8px;z-index:4;
+        }
+        .grid-card:hover .grid-overlay{opacity:1;}
+        .grid-overlay h3{color:#fff;font-size:.75rem;font-weight:800;}
+        .grid-overlay small{color:#f87171;font-size:.6rem;}
+
+        .site-footer{
+            text-align:center;padding:24px 20px 20px;
+            color:var(--muted);font-size:.75rem;
+            border-top:1px solid var(--border);
+            margin-top:40px;
+        }
+        .sec{margin-bottom:28px;}
+    </style>
+</head>
+<body>
+
+<section class="hero-section" id="heroSection">
+    <div class="hero-bg" id="heroBg" style="background-image:url('https://placehold.co/1400x500/060608/ef4444?text=DeepFlix+Kids')"></div>
+    <div class="hero-vignette"></div>
+    <div class="hero-inner">
+        <nav class="nav">
+            <a href="{{ url_for('kids_dashboard') }}" class="logo">
+                <img src="{{ url_for('static',filename='img/logo.png') }}" alt="DeepFlix Kids">
+            </a>
+            <div class="search-bar">
+                <i class="fas fa-search"></i>
+                <form method="GET" action="{{ url_for('kids_search') }}" style="display:flex;flex:1;gap:6px;">
+                    <input type="text" name="q" placeholder="Search kids movies…">
+                    <button type="submit"><i class="fas fa-arrow-right"></i></button>
+                </form>
+            </div>
+            <div class="nav-right">
+                <div class="bell-wrap">
+                    <a href="#" class="bell-btn" onclick="toggleNotif();return false;"><i class="fas fa-bell"></i></a>
+                    <span class="bell-count" id="bellCount">{{ kids_notifications|length if kids_notifications else 0 }}</span>
+                    <div class="notif-drop" id="notifDrop">
+                        <h4><i class="fas fa-bell" style="color:var(--red)"></i> Notifications</h4>
+                        {% if kids_notifications %}<ul>{% for n in kids_notifications %}<li><strong>{{ n.content_title }}</strong> — {{ n.message }}</li>{% endfor %}</ul>
+                        {% else %}<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:10px;">No new notifications</p>{% endif %}
+                    </div>
+                </div>
+                <a href="{{ url_for('logout') }}" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+            </div>
+        </nav>
+
+        {% if kids_contents %}
+        <div class="hero-body" id="heroBody">
+            <div id="heroData" style="display:none;">[{% for item in kids_contents %}{"id":{{item.id}},"title":{{item.title|tojson}},"thumbnail":{{item.thumbnail|tojson}},"backdrop_url":{{item.backdrop_url|tojson if item.backdrop_url else ''|tojson}},"genre":{{item.genre|tojson}},"language":{{item.language|tojson}},"release_year":{{item.release_year|tojson if item.release_year else '""'}},"rating":{{item.rating|tojson if item.rating else '""'}},"duration":{{item.duration|tojson if item.duration else '""'}},"story":{{item.story|tojson if item.story else '""'}},"director":{{item.director|tojson if item.director else '""'}},"director_image":{{item.director_image|tojson if item.director_image else '""'}},"hero":{{item.hero|tojson if item.hero else '""'}},"hero_image":{{item.hero_image|tojson if item.hero_image else '""'}},"hero_caste":{{item.hero_caste|tojson if item.hero_caste else '""'}},"hero2":{{item.hero2|tojson if item.hero2 else '""'}},"hero2_image":{{item.hero2_image|tojson if item.hero2_image else '""'}},"hero2_caste":{{item.hero2_caste|tojson if item.hero2_caste else '""'}},"hero3":{{item.hero3|tojson if item.hero3 else '""'}},"hero3_image":{{item.hero3_image|tojson if item.hero3_image else '""'}},"hero3_caste":{{item.hero3_caste|tojson if item.hero3_caste else '""'}},"heroine":{{item.heroine|tojson if item.heroine else '""'}},"heroine_image":{{item.heroine_image|tojson if item.heroine_image else '""'}},"heroine_caste":{{item.heroine_caste|tojson if item.heroine_caste else '""'}},"heroine2":{{item.heroine2|tojson if item.heroine2 else '""'}},"heroine2_image":{{item.heroine2_image|tojson if item.heroine2_image else '""'}},"heroine2_caste":{{item.heroine2_caste|tojson if item.heroine2_caste else '""'}},"heroine3":{{item.heroine3|tojson if item.heroine3 else '""'}},"heroine3_image":{{item.heroine3_image|tojson if item.heroine3_image else '""'}},"heroine3_caste":{{item.heroine3_caste|tojson if item.heroine3_caste else '""'}}}{% if not loop.last %},{% endif %}{% endfor %}]</div>
+            <div class="hero-poster-wrap"><div class="hero-poster"><img id="heroPosterImg" src=""><a id="heroPlayLink" href="#" class="hero-poster-overlay"><div class="play-ripple"><i class="fas fa-play"></i></div></a></div></div>
+            <div class="hero-info"><h1 class="hero-title" id="heroTitle">✨ Loading</h1><div class="hero-badges" id="heroBadges"></div><div class="story-label"><i class="fas fa-book-open"></i> Story</div><p class="story-text" id="hStory"></p><div class="hero-meta-row" id="hMeta"></div><div class="cast-section-label"><i class="fas fa-users"></i> Cast & Crew</div><div class="cast-row" id="hCast"></div><a id="heroWatchBtn" href="#" class="watch-now-btn"><i class="fas fa-play"></i> Watch Now</a></div>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- continue watching, language, etc -->
+{% if continue_watching %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-play-circle"></i> Continue Watching <span class="divider"></span></h2><div class="h-scroll">{% for item in continue_watching %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:{{ (item.progress/item.duration*100) if item.duration else 0 }}%"></div></div></div>{% endfor %}</div></div>{% endif %}
+
+<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-language"></i> Browse by Language <span class="divider"></span></h2><div class="lang-row">{% set languages=[{'name':'Telugu','image':'kidstelugu.png'},{'name':'Hindi','image':'kidshindi.png'},{'name':'English','image':'kidsenglish.png'},{'name':'Tamil','image':'kidstamil.png'},{'name':'Malayalam','image':'kidsmalayalam.png'},{'name':'Punjabi','image':'kidspunjab.png'}] %}{% for lang in languages %}<a href="{{ url_for('kids_dashboard',search=request.args.get('search',''),language=lang.name,genre=request.args.get('genre','')) }}" class="lang-card"><img src="{{ url_for('static',filename='uploads/'+lang.image) }}" onerror="this.src='https://placehold.co/400x200/111827/ef4444?text={{ lang.name }}'"><div class="lang-label">{{ lang.name }}</div></a>{% endfor %}</div></div>
+
+{% if trending_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-fire"></i> 🔥 Trending Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in trending_kids %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div><div class="rank-num">{{ loop.index }}</div></div>{% endfor %}</div></div>{% endif %}
+{% if comedy_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-laugh-squint"></i> 😂 Comedy Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in comedy_kids %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
+{% if action_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-bolt"></i> 💥 Action Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in action_kids %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
+{% if deepflix_top %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-crown"></i> 👑 Top 15 Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in deepflix_top %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div></div>{% endfor %}</div></div>{% endif %}
+{% if because_you_watched %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-star"></i> ⭐ Because You Watched <span class="divider"></span></h2><div class="h-scroll">{% for item in because_you_watched %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
+{% if new_arrivals %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-gift"></i> 🆕 New Arrivals <span class="divider"></span></h2><div class="h-scroll">{% for item in new_arrivals %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
+
+<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-film"></i> All Kids Movies <span class="divider"></span></h2><div class="poster-grid">{% for item in kids_contents %}<div class="grid-card"><img src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><span class="kids-badge"><i class="fas fa-child"></i> kids</span><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="grid-card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="grid-overlay"><h3>{{ item.title }}</h3><small>{{ item.genre }}{% if item.language %} · {{ item.language }}{% endif %}</small></div></div>{% else %}<div style="grid-column:1/-1;text-align:center;padding:40px;"><p style="color:var(--red);font-weight:800;">No movies yet — coming soon!</p></div>{% endfor %}</div></div>
+
+<footer class="site-footer"><p><i class="fas fa-star" style="color:var(--red);"></i> DeepFlix Kids — <span>safe & fun</span> for every child <i class="fas fa-star" style="color:var(--red);"></i></p></footer>
+
+<script>
+    function toggleNotif(){const d=document.getElementById('notifDrop');d.style.display=d.style.display==='block'?'none':'block';}
+    document.addEventListener('click',function(e){const drop=document.getElementById('notifDrop');const bell=document.querySelector('.bell-wrap');if(drop&&drop.style.display==='block'&&bell&&!bell.contains(e.target))drop.style.display='none';});
+    {% if kids_contents %}
+    (function(){const dataEl=document.getElementById('heroData');if(!dataEl)return;let items;try{items=JSON.parse(dataEl.innerHTML);}catch(e){console.warn(e);return;}if(!items.length)return;let cur=0;const BASE="{{ url_for('static',filename='uploads/') }}";const WATCH="{{ url_for('kids_watch',content_id=0) }}";const bgEl=document.getElementById('heroBg');const imgEl=document.getElementById('heroPosterImg');const playA=document.getElementById('heroPlayLink');const watchA=document.getElementById('heroWatchBtn');const titleEl=document.getElementById('heroTitle');const gEl=document.getElementById('hGenre');const lEl=document.getElementById('hLang');const yEl=document.getElementById('hYear');const rEl=document.getElementById('hRating');const sEl=document.getElementById('hStory');const metaEl=document.getElementById('hMeta');const castEl=document.getElementById('hCast');function getUrl(path,isBackdrop=false){if(!path||path==='null'||path==='""')return isBackdrop?'https://placehold.co/1400x500/060608/ef4444?text=DeepFlix+Kids':'https://placehold.co/400x600/111827/ef4444?text=Poster';if(path.startsWith('http'))return path;return BASE+path;}function render(i){const it=items[i];if(!it)return;const watchUrl=WATCH.replace('/0','/'+it.id);let backdropImg=it.backdrop_url?getUrl(it.backdrop_url,true):'https://placehold.co/1400x500/060608/ef4444?text=DeepFlix+Kids';bgEl.style.opacity='0';setTimeout(()=>{bgEl.style.backgroundImage=`url('${backdropImg}')`;bgEl.style.opacity='1';},120);imgEl.src=it.thumbnail?getUrl(it.thumbnail,false):'https://placehold.co/400x600/111827/ef4444?text=Poster';playA.href=watchA.href=watchUrl;titleEl.textContent=it.title||'Kids Movie';let badgesHTML=`<div class="badge"><i class="fas fa-tag"></i><span>${it.genre||'—'}</span></div><div class="badge"><i class="fas fa-language"></i><span>${it.language||'—'}</span></div><div class="badge"><i class="fas fa-calendar-alt"></i><span>${it.release_year||'—'}</span></div><div class="badge"><i class="fas fa-star" style="color:#facc15"></i><span>${it.rating||'Kids'}</span></div>`;document.getElementById('heroBadges').innerHTML=badgesHTML;sEl.textContent=it.story||'Magical adventure awaits!';let mc='';if(it.duration)mc+=`<div class="meta-chip"><div class="mc-label">Duration</div><div class="mc-val">${it.duration}min</div></div>`;if(it.director)mc+=`<div class="meta-chip"><div class="mc-label">Director</div><div class="mc-val">${it.director}</div></div>`;metaEl.innerHTML=mc||'<div class="meta-chip"><div class="mc-label">Fun</div><div class="mc-val">✨</div></div>';let cc='';function chip(name,img,role){if(!name||name==='null')return;let imgSrc=img?getUrl(img,false):`https://placehold.co/200x200/1f2937/ef4444?text=${encodeURIComponent(name.charAt(0))}`;cc+=`<div class="cast-chip"><img src="${imgSrc}" onerror="this.src='https://placehold.co/200x200/1f2937/ef4444?text=${encodeURIComponent(name.charAt(0))}'"><div class="cc-name">${name}</div><div class="cc-role">${role}</div></div>`;}chip(it.hero,it.hero_image,it.hero_caste||'Hero');chip(it.hero2,it.hero2_image,it.hero2_caste||'Hero');chip(it.hero3,it.hero3_image,it.hero3_caste||'Hero');chip(it.heroine,it.heroine_image,it.heroine_caste||'Heroine');chip(it.heroine2,it.heroine2_image,it.heroine2_caste||'Heroine');chip(it.heroine3,it.heroine3_image,it.heroine3_caste||'Heroine');chip(it.director,it.director_image,'Director');castEl.innerHTML=cc||'<p style="color:var(--muted);font-size:.7rem;">star cast</p>';}bgEl.style.transition='opacity 0.5s ease';render(0);setInterval(()=>{cur=(cur+1)%items.length;render(cur);},6200);})();
+    {% endif %}
+</script>
+</body>
+</html>

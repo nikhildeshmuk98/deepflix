@@ -1,0 +1,1302 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>DeepFlix | {{ movie.title }} — Cinematic Edition</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --red: #E50914;
+            --red-dark: #9e0610;
+            --red-glow: rgba(229, 9, 20, 0.45);
+            --red-muted: rgba(229, 9, 20, 0.15);
+            --gold: #f5c842;
+            --gold-dim: rgba(245, 200, 66, 0.18);
+            --white: #ffffff;
+            --off-white: #f0ede6;
+            --surface: rgba(10,8,6,0.72);
+            --surface-light: rgba(255,255,255,0.04);
+            --ink: #0a0806;
+            --grain-opacity: 0.035;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            background: var(--ink);
+            min-height: 100vh;
+            font-family: 'DM Sans', system-ui, sans-serif;
+            color: var(--off-white);
+            overflow-x: hidden;
+        }
+
+        /* ─── GRAIN OVERLAY ──────────────────────────────────────────── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: var(--grain-opacity);
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            background-size: 200px 200px;
+        }
+
+        /* ─── HERO BACKDROP ──────────────────────────────────────────── */
+        .hero-wrap {
+            position: relative;
+            width: 100%;
+            isolation: isolate;
+            overflow: hidden;
+        }
+
+        .hero-bg {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            background-size: cover;
+            background-position: center 15%;
+            background-repeat: no-repeat;
+            transform: scale(1.04);
+            filter: brightness(0.38) saturate(1.1);
+            transition: transform 12s ease, filter 0.3s;
+        }
+
+        .hero-wrap:hover .hero-bg {
+            transform: scale(1.0);
+        }
+
+        /* layered vignettes */
+        .hero-wrap::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            background:
+                linear-gradient(to right, rgba(10,8,6,0.88) 0%, rgba(10,8,6,0.0) 55%),
+                linear-gradient(to top, rgba(10,8,6,1) 0%, rgba(10,8,6,0.0) 40%),
+                radial-gradient(ellipse 70% 90% at 20% 30%, rgba(10,8,6,0.55) 0%, transparent 100%);
+            pointer-events: none;
+        }
+
+        /* cinematic letterbox lines */
+        .hero-wrap::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(to right, transparent, var(--red), transparent);
+            z-index: 20;
+        }
+
+        .hero-inner {
+            position: relative;
+            z-index: 10;
+        }
+
+        /* ─── HEADER ─────────────────────────────────────────────────── */
+        .df-header {
+            padding: 1.25rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(to bottom, rgba(10,8,6,0.7) 0%, transparent 100%);
+        }
+
+        @media (max-width: 640px) {
+            .df-header { padding: 1rem 1.1rem; }
+        }
+
+        .df-logo-area {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+        }
+
+        .df-back {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(10,8,6,0.6);
+            border: 1px solid rgba(229,9,20,0.5);
+            color: var(--white);
+            font-size: 0.9rem;
+            transition: background 0.2s, border-color 0.2s, transform 0.2s;
+            text-decoration: none;
+        }
+
+        .df-back:hover {
+            background: var(--red);
+            border-color: var(--gold);
+            transform: translateX(-3px);
+        }
+
+        .df-logo {
+            height: 2.6rem;
+            width: auto;
+            transition: filter 0.2s;
+            filter: drop-shadow(0 0 0 transparent);
+        }
+
+        .df-logo:hover {
+            filter: drop-shadow(0 0 8px var(--red));
+        }
+
+        .df-nav-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .nav-pill {
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.45rem 1.1rem;
+            border-radius: 999px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            letter-spacing: 0.03em;
+            transition: all 0.22s;
+            text-decoration: none;
+            white-space: nowrap;
+            border: 1px solid rgba(229,9,20,0.4);
+            background: rgba(10,8,6,0.55);
+            color: var(--white);
+            backdrop-filter: blur(6px);
+        }
+
+        .nav-pill:hover {
+            background: var(--red);
+            border-color: var(--gold);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px var(--red-glow);
+        }
+
+        .nav-pill.primary {
+            background: var(--red);
+            border-color: rgba(245,200,66,0.35);
+        }
+
+        .nav-pill.primary:hover {
+            background: var(--red-dark);
+            box-shadow: 0 6px 18px var(--red-glow);
+        }
+
+        /* ─── HERO BODY ──────────────────────────────────────────────── */
+        .hero-body {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 3.5rem;
+            align-items: start;
+            padding: 2rem 2rem 5rem;
+            max-width: 1240px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 900px) {
+            .hero-body {
+                grid-template-columns: 1fr;
+                padding: 1.5rem 1.25rem 4rem;
+                gap: 2rem;
+            }
+        }
+
+        /* ─── POSTER ─────────────────────────────────────────────────── */
+        .poster-wrap {
+            position: relative;
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow:
+                0 0 0 1px rgba(229,9,20,0.6),
+                0 32px 60px -10px rgba(0,0,0,0.85),
+                0 0 60px -20px var(--red-glow);
+            transition: transform 0.35s cubic-bezier(0.2,0.9,0.4,1.1), box-shadow 0.35s;
+            background: #0e0a09;
+            max-width: 280px;
+        }
+
+        @media (max-width: 900px) {
+            .poster-wrap {
+                max-width: 220px;
+                margin: 0 auto;
+            }
+        }
+
+        .poster-wrap:hover {
+            transform: translateY(-10px) scale(1.015);
+            box-shadow:
+                0 0 0 2px var(--red),
+                0 40px 70px -12px rgba(0,0,0,0.9),
+                0 0 80px -15px var(--red-glow);
+        }
+
+        .poster-img {
+            width: 100%;
+            aspect-ratio: 2/3;
+            object-fit: cover;
+            display: block;
+        }
+
+        .poster-play {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.72) 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.6rem;
+            opacity: 0;
+            transition: opacity 0.28s;
+            backdrop-filter: blur(3px);
+        }
+
+        .poster-wrap:hover .poster-play { opacity: 1; }
+
+        .play-ring {
+            width: 70px; height: 70px;
+            border-radius: 50%;
+            background: var(--red);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.8rem;
+            color: white;
+            box-shadow: 0 0 28px var(--red-glow), 0 0 60px var(--red-glow);
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .poster-wrap:hover .play-ring:hover { transform: scale(1.1); }
+
+        .play-label {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1rem;
+            letter-spacing: 0.12em;
+            color: var(--off-white);
+            text-shadow: 0 1px 6px rgba(0,0,0,0.9);
+        }
+
+        /* ─── RATING RIBBON ──────────────────────────────────────────── */
+        .rating-ribbon {
+            position: absolute;
+            top: 1rem; right: -1px;
+            background: var(--red);
+            color: white;
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1.05rem;
+            letter-spacing: 0.06em;
+            padding: 0.2rem 0.75rem 0.2rem 0.6rem;
+            border-radius: 4px 0 0 4px;
+            box-shadow: -3px 3px 10px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .rating-ribbon i { font-size: 0.75rem; color: var(--gold); }
+
+        /* ─── MOVIE META ─────────────────────────────────────────────── */
+        .meta-area {
+            display: flex;
+            flex-direction: column;
+            gap: 1.4rem;
+        }
+
+        /* year + genre chips above title */
+        .pre-title {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }
+
+        .chip {
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 0.28rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid rgba(229,9,20,0.5);
+            color: var(--off-white);
+            background: var(--red-muted);
+        }
+
+        .chip.gold {
+            border-color: rgba(245,200,66,0.4);
+            background: var(--gold-dim);
+            color: var(--gold);
+        }
+
+        .chip.outline {
+            border-color: rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.7);
+        }
+
+        /* TITLE */
+        .movie-title {
+            font-family: 'Playfair Display', serif;
+            font-weight: 900;
+            font-size: clamp(2.4rem, 5vw, 4.2rem);
+            line-height: 1.0;
+            color: var(--white);
+            text-shadow: 0 4px 24px rgba(0,0,0,0.7);
+            letter-spacing: -0.02em;
+        }
+
+        .title-accent {
+            display: block;
+            width: 56px;
+            height: 3px;
+            background: linear-gradient(to right, var(--red), var(--gold));
+            border-radius: 999px;
+            margin-top: 0.6rem;
+        }
+
+        /* STATS ROW */
+        .stats-row {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.82rem;
+            color: rgba(240,237,230,0.65);
+            font-weight: 400;
+        }
+
+        .stat-item i { color: var(--red); font-size: 0.75rem; }
+        .stat-item .stat-val { color: var(--off-white); font-weight: 500; }
+        .stat-divider { width: 3px; height: 3px; border-radius: 50%; background: rgba(255,255,255,0.25); }
+
+        /* CTA BUTTONS */
+        .cta-row {
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-play {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.65rem;
+            padding: 0.75rem 2rem;
+            border-radius: 999px;
+            background: var(--red);
+            color: white;
+            font-size: 0.9rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+            text-decoration: none;
+            white-space: nowrap;
+            box-shadow: 0 0 0 0 var(--red-glow);
+        }
+
+        .btn-play:hover {
+            background: var(--red-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 28px var(--red-glow);
+        }
+
+        .btn-play i { font-size: 0.8rem; }
+
+        .btn-ghost {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.72rem 1.5rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.07);
+            color: var(--off-white);
+            font-size: 0.85rem;
+            font-weight: 500;
+            border: 1px solid rgba(255,255,255,0.18);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            white-space: nowrap;
+            backdrop-filter: blur(6px);
+        }
+
+        .btn-ghost:hover {
+            background: rgba(255,255,255,0.14);
+            border-color: rgba(255,255,255,0.35);
+            transform: translateY(-2px);
+        }
+
+        /* STORYLINE */
+        .story-block {
+            position: relative;
+            padding: 1.2rem 1.4rem 1.2rem 1.6rem;
+            border-left: 3px solid var(--red);
+            background: rgba(255,255,255,0.04);
+            border-radius: 0 12px 12px 0;
+            backdrop-filter: blur(4px);
+            transition: border-left-width 0.2s, padding-left 0.2s;
+        }
+
+        .story-block:hover {
+            border-left-width: 5px;
+            padding-left: 1.8rem;
+        }
+
+        .story-label {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 0.16em;
+            color: var(--red);
+            margin-bottom: 0.5rem;
+        }
+
+        .story-text {
+            font-size: 0.95rem;
+            line-height: 1.82;
+            color: rgba(240,237,230,0.78);
+            font-weight: 300;
+        }
+
+        /* DETAILS GRID */
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .detail-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            transition: background 0.2s, border-color 0.2s, transform 0.2s;
+        }
+
+        .detail-card:hover {
+            background: rgba(229,9,20,0.1);
+            border-color: rgba(229,9,20,0.35);
+            transform: translateY(-2px);
+        }
+
+        .detail-icon {
+            width: 34px; height: 34px;
+            border-radius: 8px;
+            background: var(--red-muted);
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            font-size: 0.85rem;
+            color: var(--red);
+        }
+
+        .detail-label {
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.09em;
+            color: rgba(255,255,255,0.38);
+            font-weight: 500;
+        }
+
+        .detail-value {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--off-white);
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ─── CAST SECTION ───────────────────────────────────────────── */
+        .section-label {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1.4rem;
+            letter-spacing: 0.1em;
+            color: var(--white);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .section-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(to right, rgba(229,9,20,0.5), transparent);
+        }
+
+        .cast-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 640px) {
+            .cast-grid { gap: 1rem; justify-content: center; }
+        }
+
+        .cast-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.55rem;
+            width: 110px;
+            cursor: default;
+            transition: transform 0.25s;
+        }
+
+        .cast-card:hover { transform: translateY(-6px); }
+
+        .cast-avatar-wrap {
+            position: relative;
+            width: 88px; height: 88px;
+        }
+
+        .cast-avatar-ring {
+            position: absolute;
+            inset: -3px;
+            border-radius: 50%;
+            background: conic-gradient(var(--red), var(--gold), var(--red));
+            opacity: 0;
+            transition: opacity 0.25s;
+        }
+
+        .cast-card:hover .cast-avatar-ring { opacity: 1; }
+
+        .cast-avatar-bg {
+            position: absolute;
+            inset: 1px;
+            border-radius: 50%;
+            background: var(--ink);
+        }
+
+        .cast-img {
+            position: absolute;
+            inset: 3px;
+            border-radius: 50%;
+            object-fit: cover;
+            width: calc(100% - 6px);
+            height: calc(100% - 6px);
+            border: 2px solid rgba(229,9,20,0.5);
+            transition: border-color 0.25s;
+        }
+
+        .cast-card:hover .cast-img { border-color: var(--gold); }
+
+        .cast-name {
+            font-size: 0.83rem;
+            font-weight: 600;
+            color: var(--white);
+            text-align: center;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+            line-height: 1.2;
+        }
+
+        .cast-role {
+            font-size: 0.72rem;
+            color: var(--gold);
+            font-weight: 400;
+            text-align: center;
+            letter-spacing: 0.02em;
+        }
+
+        /* DIRECTOR badge */
+        .cast-card.is-director .cast-img { border-color: var(--gold); }
+        .cast-card.is-director .cast-role { color: #ff9f43; }
+
+        /* ─── BELOW HERO ─────────────────────────────────────────────── */
+        .below-hero {
+            background: var(--ink);
+            position: relative;
+        }
+
+        /* subtle horizontal rule */
+        .below-hero::before {
+            content: '';
+            display: block;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(to right, transparent, var(--red), transparent);
+            opacity: 0.4;
+        }
+
+        .below-inner {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 3rem 2rem 4rem;
+        }
+
+        @media (max-width: 640px) {
+            .below-inner { padding: 2rem 1.25rem 3rem; }
+        }
+
+        /* ─── SIMILAR MOVIES ─────────────────────────────────────────── */
+        .similar-heading {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(1.4rem, 3vw, 2rem);
+            font-weight: 700;
+            color: var(--white);
+            margin-bottom: 1.5rem;
+        }
+
+        .similar-heading span { color: var(--red); }
+
+        .similar-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        @media (min-width: 480px) {
+            .similar-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (min-width: 768px) {
+            .similar-grid { grid-template-columns: repeat(4, 1fr); }
+        }
+        @media (min-width: 1024px) {
+            .similar-grid { grid-template-columns: repeat(5, 1fr); gap: 1.1rem; }
+        }
+
+        .sim-card {
+            position: relative;
+            border-radius: 14px;
+            overflow: hidden;
+            aspect-ratio: 2/3;
+            background: #111;
+            border: 1px solid rgba(255,255,255,0.06);
+            transition: transform 0.27s cubic-bezier(0.2,0.8,0.4,1.1), border-color 0.27s, box-shadow 0.27s;
+            text-decoration: none;
+            display: block;
+        }
+
+        .sim-card:hover {
+            transform: translateY(-8px) scale(1.025);
+            border-color: var(--red);
+            box-shadow: 0 22px 40px -12px rgba(229,9,20,0.38), 0 0 0 1px var(--red);
+        }
+
+        .sim-img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+            transition: transform 0.32s;
+        }
+
+        .sim-card:hover .sim-img { transform: scale(1.05); }
+
+        .sim-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(0deg, rgba(10,8,6,0.92) 0%, rgba(10,8,6,0.55) 50%, transparent 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 1rem 0.75rem;
+            gap: 0.4rem;
+            opacity: 0;
+            transition: opacity 0.25s;
+        }
+
+        .sim-card:hover .sim-overlay { opacity: 1; }
+
+        .sim-play {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            background: var(--red);
+            display: flex; align-items: center; justify-content: center;
+            color: white;
+            font-size: 1.1rem;
+            box-shadow: 0 0 16px var(--red-glow);
+            transition: transform 0.18s;
+            margin-bottom: 0.3rem;
+        }
+
+        .sim-card:hover .sim-play { transform: scale(1.08); }
+
+        .sim-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: white;
+            text-align: center;
+            line-height: 1.25;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+        }
+
+        .sim-genre {
+            font-size: 0.68rem;
+            color: var(--gold);
+            background: rgba(0,0,0,0.5);
+            border-radius: 999px;
+            padding: 0.18rem 0.6rem;
+            letter-spacing: 0.04em;
+        }
+
+        /* bottom title always visible on mobile */
+        .sim-bottom-title {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            background: linear-gradient(to top, rgba(10,8,6,0.88) 0%, transparent 100%);
+            padding: 1.2rem 0.75rem 0.6rem;
+            pointer-events: none;
+        }
+
+        .sim-bottom-title span {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: rgba(240,237,230,0.85);
+            line-height: 1.2;
+            display: block;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+
+        @media (min-width: 768px) {
+            .sim-bottom-title { display: none; }
+        }
+
+        /* ─── FOOTER ─────────────────────────────────────────────────── */
+        .df-footer {
+            border-top: 1px solid rgba(229,9,20,0.2);
+            padding: 2.5rem 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .footer-socials {
+            display: flex;
+            gap: 1.2rem;
+        }
+
+        .footer-socials a {
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.12);
+            display: flex; align-items: center; justify-content: center;
+            color: rgba(240,237,230,0.45);
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .footer-socials a:hover {
+            border-color: var(--red);
+            color: var(--red);
+            transform: translateY(-2px);
+        }
+
+        .footer-copy {
+            font-size: 0.75rem;
+            color: rgba(240,237,230,0.3);
+            text-align: center;
+            letter-spacing: 0.04em;
+        }
+
+        .footer-logo-text {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1.5rem;
+            letter-spacing: 0.18em;
+            color: var(--red);
+        }
+
+        /* ─── SCROLL REVEAL ──────────────────────────────────────────── */
+        .reveal {
+            opacity: 0;
+            transform: translateY(22px);
+            transition: opacity 0.55s ease, transform 0.55s ease;
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: none;
+        }
+
+        /* staggered delays */
+        .reveal-d1 { transition-delay: 0.08s; }
+        .reveal-d2 { transition-delay: 0.16s; }
+        .reveal-d3 { transition-delay: 0.24s; }
+        .reveal-d4 { transition-delay: 0.32s; }
+        .reveal-d5 { transition-delay: 0.40s; }
+
+        /* ─── SCROLLBAR ──────────────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--red); border-radius: 999px; }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════════════ HERO BACKDROP SECTION ═══════════════════════════ -->
+<div class="hero-wrap">
+
+    <!-- Background image (sharp, scale animates slowly) -->
+    <div class="hero-bg"
+         style="background-image: url('{% if movie.backdrop_url %}{% if movie.backdrop_url.startswith('http') %}{{ movie.backdrop_url }}{% else %}{{ url_for('static', filename='uploads/' + movie.backdrop_url) }}{% endif %}{% elif movie.thumbnail %}{{ url_for('static', filename='uploads/' + movie.thumbnail) }}{% else %}https://placehold.co/1920x1080/111/red?text=DeepFlix{% endif %}');">
+    </div>
+
+    <div class="hero-inner">
+
+        <!-- ─── HEADER ──────────────────────────────────────────────── -->
+        <header class="df-header">
+            <div class="df-logo-area">
+                <a href="{{ url_for('user_dashboard') }}" class="df-back" aria-label="Back">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <a href="{{ url_for('user_dashboard') }}">
+                    <img src="{{ url_for('static', filename='img/logo.png') }}"
+                         class="df-logo"
+                         alt="DeepFlix"
+                         onerror="this.src='https://placehold.co/130x42/0a0806/E50914?text=DEEPFLIX'">
+                </a>
+            </div>
+
+            <nav class="df-nav-right">
+                <a href="{{ url_for('user_dashboard') }}" class="nav-pill">
+                    <i class="fas fa-home" style="font-size:0.8rem;"></i>
+                    <span class="hidden sm:inline">Home</span>
+                </a>
+                <a href="{{ url_for('logout') }}" class="nav-pill primary">
+                    <i class="fas fa-sign-out-alt" style="font-size:0.8rem;"></i>
+                    <span class="hidden sm:inline">Logout</span>
+                </a>
+            </nav>
+        </header>
+
+        <!-- ─── HERO BODY ───────────────────────────────────────────── -->
+        <div class="hero-body">
+
+            <!-- POSTER -->
+            <div style="display:flex;flex-direction:column;align-items:center;gap:1rem;">
+                <div class="poster-wrap reveal reveal-d1">
+                    {% if movie.rating %}
+                    <div class="rating-ribbon">
+                        <i class="fas fa-star"></i>
+                        {{ movie.rating }}
+                    </div>
+                    {% else %}
+                    <div class="rating-ribbon" style="background:var(--gold);color:#0a0806;">
+                        <i class="fas fa-fire" style="color:#ff4444;"></i> NEW
+                    </div>
+                    {% endif %}
+
+                    <img src="{% if movie.thumbnail %}{{ url_for('static', filename='uploads/' + movie.thumbnail) }}{% else %}https://placehold.co/560x840/111/E50914?text=No+Poster{% endif %}"
+                         alt="{{ movie.title }} poster"
+                         class="poster-img"
+                         onerror="this.src='https://placehold.co/560x840/111/E50914?text=DeepFlix'">
+
+                    <a href="{{ url_for('play_content', content_id=movie.id) }}" class="poster-play">
+                        <div class="play-ring">
+                            <i class="fas fa-play" style="padding-left:3px;"></i>
+                        </div>
+                        <span class="play-label">WATCH NOW</span>
+                    </a>
+                </div>
+
+                <!-- play button below poster on mobile -->
+                <a href="{{ url_for('play_content', content_id=movie.id) }}"
+                   class="btn-play reveal reveal-d2"
+                   style="display:none;"
+                   id="mobile-play-btn">
+                    <i class="fas fa-play"></i> Play Now
+                </a>
+            </div>
+
+            <!-- META AREA -->
+            <div class="meta-area">
+
+                <!-- chips -->
+                <div class="pre-title reveal reveal-d1">
+                    <span class="chip">{{ movie.genre }}</span>
+                    <span class="chip gold">{{ movie.language }}</span>
+                    <span class="chip outline">{{ movie.release_year }}</span>
+                </div>
+
+                <!-- title -->
+                <div class="reveal reveal-d2">
+                    <h1 class="movie-title">{{ movie.title }}</h1>
+                    <div class="title-accent"></div>
+                </div>
+
+                <!-- stats -->
+                <div class="stats-row reveal reveal-d3">
+                    {% if movie.duration %}
+                    <div class="stat-item">
+                        <i class="fas fa-hourglass-half"></i>
+                        <span class="stat-val">{{ movie.duration }} min</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    {% endif %}
+                    {% if movie.director %}
+                    <div class="stat-item">
+                        <i class="fas fa-clapperboard"></i>
+                        <span class="stat-val">{{ movie.director }}</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    {% endif %}
+                    {% if movie.rating %}
+                    <div class="stat-item">
+                        <i class="fas fa-star" style="color:var(--gold);"></i>
+                        <span class="stat-val">{{ movie.rating }}/10</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- CTA -->
+                <div class="cta-row reveal reveal-d3" id="desktop-cta">
+                    <a href="{{ url_for('play_content', content_id=movie.id) }}" class="btn-play">
+                        <i class="fas fa-play"></i> Play Now
+                    </a>
+          
+                    <button class="btn-ghost" onclick="shareMovie()">
+                        <i class="fas fa-share-alt"></i> Share
+                    </button>
+                </div>
+
+                <!-- STORYLINE -->
+                {% if movie.story %}
+                <div class="story-block reveal reveal-d4">
+                    <div class="story-label">Storyline</div>
+                    <p class="story-text">{{ movie.story }}</p>
+                </div>
+                {% else %}
+                <div class="story-block reveal reveal-d4">
+                    <div class="story-label">Storyline</div>
+                    <p class="story-text">✨ No description available. Dive into this cinematic journey and witness the magic unfold on DeepFlix.</p>
+                </div>
+                {% endif %}
+
+                <!-- DETAILS GRID -->
+                <div class="details-grid reveal reveal-d4">
+                    {% if movie.duration %}
+                    <div class="detail-card">
+                        <div class="detail-icon"><i class="fas fa-hourglass-half"></i></div>
+                        <div>
+                            <div class="detail-label">Duration</div>
+                            <div class="detail-value">{{ movie.duration }} min</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if movie.director %}
+                    <div class="detail-card">
+                        <div class="detail-icon"><i class="fas fa-clapperboard"></i></div>
+                        <div>
+                            <div class="detail-label">Director</div>
+                            <div class="detail-value">{{ movie.director }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if movie.cast %}
+                    <div class="detail-card">
+                        <div class="detail-icon"><i class="fas fa-users"></i></div>
+                        <div>
+                            <div class="detail-label">Cast</div>
+                            <div class="detail-value">{{ movie.cast }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div class="detail-card">
+                        <div class="detail-icon"><i class="fas fa-language"></i></div>
+                        <div>
+                            <div class="detail-label">Language</div>
+                            <div class="detail-value">{{ movie.language }}</div>
+                        </div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="detail-icon"><i class="fas fa-tag"></i></div>
+                        <div>
+                            <div class="detail-label">Genre</div>
+                            <div class="detail-value">{{ movie.genre }}</div>
+                        </div>
+                    </div>
+                    <div class="detail-card">
+                        <div class="detail-icon"><i class="fas fa-calendar"></i></div>
+                        <div>
+                            <div class="detail-label">Year</div>
+                            <div class="detail-value">{{ movie.release_year }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CAST -->
+                {% if movie.hero or movie.heroine or movie.director or movie.hero2 or movie.hero3 or movie.heroine2 or movie.heroine3 %}
+                <div class="reveal reveal-d5">
+                    <div class="section-label" style="margin-bottom:1.1rem;">
+                        <i class="fas fa-mask" style="color:var(--red);font-size:1.1rem;"></i>
+                        Cast &amp; Director
+                    </div>
+                    <div class="cast-grid">
+                        {% if movie.hero %}
+                        <div class="cast-card">
+                            <div class="cast-avatar-wrap">
+                                <div class="cast-avatar-ring"></div>
+                                <div class="cast-avatar-bg"></div>
+                                <img src="{{ url_for('static', filename='uploads/' + movie.hero_image) if movie.hero_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
+                                     class="cast-img"
+                                     alt="{{ movie.hero }}"
+                                     onerror="this.src='https://placehold.co/200x200/111/E50914?text=H'">
+                            </div>
+                            <div class="cast-name">{{ movie.hero }}</div>
+                            <div class="cast-role">{{ movie.hero_caste if movie.hero_caste else 'Leading Hero' }}</div>
+                        </div>
+                        {% endif %}
+                        {% if movie.hero2 %}
+                        <div class="cast-card">
+                            <div class="cast-avatar-wrap">
+                                <div class="cast-avatar-ring"></div>
+                                <div class="cast-avatar-bg"></div>
+                                <img src="{{ url_for('static', filename='uploads/' + movie.hero2_image) if movie.hero2_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
+                                     class="cast-img"
+                                     alt="{{ movie.hero2 }}"
+                                     onerror="this.src='https://placehold.co/200x200/111/E50914?text=H'">
+                            </div>
+                            <div class="cast-name">{{ movie.hero2 }}</div>
+                            <div class="cast-role">{{ movie.hero2_caste if movie.hero2_caste else 'Second Hero' }}</div>
+                        </div>
+                        {% endif %}
+                        {% if movie.hero3 %}
+                        <div class="cast-card">
+                            <div class="cast-avatar-wrap">
+                                <div class="cast-avatar-ring"></div>
+                                <div class="cast-avatar-bg"></div>
+                                <img src="{{ url_for('static', filename='uploads/' + movie.hero3_image) if movie.hero3_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
+                                     class="cast-img"
+                                     alt="{{ movie.hero3 }}"
+                                     onerror="this.src='https://placehold.co/200x200/111/E50914?text=H'">
+                            </div>
+                            <div class="cast-name">{{ movie.hero3 }}</div>
+                            <div class="cast-role">{{ movie.hero3_caste if movie.hero3_caste else 'Hero' }}</div>
+                        </div>
+                        {% endif %}
+                        {% if movie.heroine %}
+                        <div class="cast-card">
+                            <div class="cast-avatar-wrap">
+                                <div class="cast-avatar-ring"></div>
+                                <div class="cast-avatar-bg"></div>
+                                <img src="{{ url_for('static', filename='uploads/' + movie.heroine_image) if movie.heroine_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
+                                     class="cast-img"
+                                     alt="{{ movie.heroine }}"
+                                     onerror="this.src='https://placehold.co/200x200/111/f57ef5?text=L'">
+                            </div>
+                            <div class="cast-name">{{ movie.heroine }}</div>
+                            <div class="cast-role">{{ movie.heroine_caste if movie.heroine_caste else 'Leading Lady' }}</div>
+                        </div>
+                        {% endif %}
+                        {% if movie.heroine2 %}
+                        <div class="cast-card">
+                            <div class="cast-avatar-wrap">
+                                <div class="cast-avatar-ring"></div>
+                                <div class="cast-avatar-bg"></div>
+                                <img src="{{ url_for('static', filename='uploads/' + movie.heroine2_image) if movie.heroine2_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
+                                     class="cast-img"
+                                     alt="{{ movie.heroine2 }}"
+                                     onerror="this.src='https://placehold.co/200x200/111/f57ef5?text=L'">
+                            </div>
+                            <div class="cast-name">{{ movie.heroine2 }}</div>
+                            <div class="cast-role">{{ movie.heroine2_caste if movie.heroine2_caste else 'Heroine' }}</div>
+                        </div>
+                        {% endif %}
+                        {% if movie.heroine3 %}
+                        <div class="cast-card">
+                            <div class="cast-avatar-wrap">
+                                <div class="cast-avatar-ring"></div>
+                                <div class="cast-avatar-bg"></div>
+                                <img src="{{ url_for('static', filename='uploads/' + movie.heroine3_image) if movie.heroine3_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
+                                     class="cast-img"
+                                     alt="{{ movie.heroine3 }}"
+                                     onerror="this.src='https://placehold.co/200x200/111/f57ef5?text=L'">
+                            </div>
+                            <div class="cast-name">{{ movie.heroine3 }}</div>
+                            <div class="cast-role">{{ movie.heroine3_caste if movie.heroine3_caste else 'Heroine' }}</div>
+                        </div>
+                        {% endif %}
+                        {% if movie.director %}
+                        <div class="cast-card is-director">
+                            <div class="cast-avatar-wrap">
+                                <div class="cast-avatar-ring"></div>
+                                <div class="cast-avatar-bg"></div>
+                                <img src="{{ url_for('static', filename='uploads/' + movie.director_image) if movie.director_image else 'https://placehold.co/200x200/111/f5c842?text=D' }}"
+                                     class="cast-img"
+                                     style="border-color:rgba(245,200,66,0.6);"
+                                     alt="{{ movie.director }}"
+                                     onerror="this.src='https://placehold.co/200x200/111/f5c842?text=D'">
+                            </div>
+                            <div class="cast-name">{{ movie.director }}</div>
+                            <div class="cast-role">🎬 Director</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+            </div><!-- /meta-area -->
+        </div><!-- /hero-body -->
+    </div><!-- /hero-inner -->
+</div><!-- /hero-wrap -->
+
+
+<!-- ═══════════════════ BELOW HERO ═══════════════════════════════════════ -->
+<div class="below-hero">
+    <div class="below-inner">
+
+        {% if similar_movies %}
+        <section>
+            <h2 class="similar-heading reveal">
+                More Like <span>{{ movie.genre }}</span>
+            </h2>
+
+            <div class="similar-grid">
+                {% for similar in similar_movies[:10] %}
+                <a href="{{ url_for('content_page', content_id=similar.id) }}" class="sim-card reveal reveal-d{{ loop.index % 5 + 1 }}">
+                    <img src="{% if similar.thumbnail %}{{ url_for('static', filename='uploads/' + similar.thumbnail) }}{% else %}https://placehold.co/400x600/111/E50914?text=Movie{% endif %}"
+                         alt="{{ similar.title }}"
+                         class="sim-img"
+                         onerror="this.src='https://placehold.co/400x600/111/E50914?text=DeepFlix'">
+
+                    <!-- hover overlay (desktop) -->
+                    <div class="sim-overlay">
+                        <div class="sim-play">
+                            <i class="fas fa-play" style="padding-left:2px;font-size:0.9rem;"></i>
+                        </div>
+                        <div class="sim-title">{{ similar.title }}</div>
+                        <div class="sim-genre">{{ similar.genre if similar.genre else 'Trending' }}</div>
+                    </div>
+
+                    <!-- always-visible title on mobile -->
+                    <div class="sim-bottom-title">
+                        <span>{{ similar.title }}</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="df-footer">
+        <div class="footer-logo-text">DEEPFLIX</div>
+
+        <div class="footer-socials">
+            <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
+            <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+            <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
+            <a href="#" aria-label="YouTube"><i class="fab fa-youtube"></i></a>
+        </div>
+
+        <p class="footer-copy">© 2025 DeepFlix — Cinematic Edition &nbsp;·&nbsp; Stream with passion</p>
+    </footer>
+</div>
+
+
+<script>
+(function () {
+    /* ── Responsive: show mobile play btn below poster ── */
+    function checkMobile() {
+        var btn = document.getElementById('mobile-play-btn');
+        var cta = document.getElementById('desktop-cta');
+        if (!btn) return;
+        if (window.innerWidth < 900) {
+            btn.style.display = 'inline-flex';
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    /* ── Scroll-reveal ── */
+    var revealEls = document.querySelectorAll('.reveal');
+    var io = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+            if (e.isIntersecting) {
+                e.target.classList.add('visible');
+                io.unobserve(e.target);
+            }
+        });
+    }, { threshold: 0.08 });
+
+    revealEls.forEach(function(el) { io.observe(el); });
+
+    /* Immediately reveal elements in viewport on load */
+    setTimeout(function() {
+        revealEls.forEach(function(el) {
+            var rect = el.getBoundingClientRect();
+            if (rect.top < window.innerHeight) {
+                el.classList.add('visible');
+            }
+        });
+    }, 60);
+
+    /* ── Buttons ── */
+    window.addToList = function() {
+        var btn = event.currentTarget;
+        var icon = btn.querySelector('i');
+        if (icon.classList.contains('fa-plus')) {
+            icon.classList.replace('fa-plus', 'fa-check');
+            btn.querySelector('i').nextSibling.textContent = ' Added';
+            btn.style.borderColor = 'rgba(245,200,66,0.5)';
+            btn.style.color = 'var(--gold)';
+        } else {
+            icon.classList.replace('fa-check', 'fa-plus');
+            btn.querySelector('i').nextSibling.textContent = ' My List';
+            btn.style.borderColor = '';
+            btn.style.color = '';
+        }
+    };
+
+    window.shareMovie = function() {
+        if (navigator.share) {
+            navigator.share({ title: document.title, url: window.location.href });
+        } else {
+            navigator.clipboard.writeText(window.location.href).then(function() {
+                var btn = document.activeElement;
+                var orig = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                setTimeout(function() { btn.innerHTML = orig; }, 1800);
+            });
+        }
+    };
+
+    /* ── Image fallbacks ── */
+    document.querySelectorAll('img').forEach(function(img) {
+        img.addEventListener('error', function() {
+            if (!this.src.includes('placehold.co')) {
+                if (this.classList.contains('cast-img')) {
+                    this.src = 'https://placehold.co/200x200/111/E50914?text=Cast';
+                } else if (this.classList.contains('sim-img')) {
+                    this.src = 'https://placehold.co/400x600/111/E50914?text=Movie';
+                } else {
+                    this.src = 'https://placehold.co/560x840/111/E50914?text=DeepFlix';
+                }
+            }
+        });
+    });
+
+    console.log('✅ DeepFlix Cinematic Edition — Playfair + Bebas Neue + DM Sans / grain overlay / scroll reveal / conic cast rings');
+})();
+
+
+
+
+</script>
+
+</body>
+</html>

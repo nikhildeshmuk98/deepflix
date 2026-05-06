@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Analysis - {{ user['username'] }}</title>
+    <!-- Tailwind CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            background: #0a0a0a;
+            color: #ededed;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .hover-lift {
+            transition: transform 0.2s ease;
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+        }
+        .gradient-border {
+            position: relative;
+            border-radius: 0.75rem;
+            background: linear-gradient(135deg, #3b3b3b, #1f1f1f);
+            padding: 1px;
+        }
+        .gradient-border > * {
+            background: #1a1a1a;
+            border-radius: 0.75rem;
+            height: 100%;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- HEADER with logo & logout (unchanged) -->
+    <header class="sticky top-0 z-50 glass-card border-b border-gray-800" style="background: rgba(26,26,26,0.8); backdrop-filter: blur(8px);">
+        <div class="container mx-auto px-6 py-3 flex items-center justify-between">
+            <!-- Logo -->
+            <a href="/" class="flex items-center space-x-2">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" class="h-10 w-auto">
+                <span class="text-xl font-semibold tracking-tight text-white">Analytics</span>
+            </a>
+            <!-- Logout Button -->
+            <a href="{{ url_for('logout') }}" 
+               class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-full text-sm font-medium transition-all shadow-lg hover:shadow-red-600/20">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>Logout</span>
+            </a>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-8 md:px-6 lg:px-8">
+        <!-- PROFILE SECTION (unchanged) -->
+        <div class="text-center mb-12">
+            <div class="relative inline-block">
+                <div class="gradient-border inline-block">
+                    <img src="{{ profile_image_url }}" 
+                         class="w-28 h-28 rounded-full object-cover border-4 border-transparent"
+                         alt="{{ user['username'] }}">
+                </div>
+                {% if user['is_online'] %}
+                <span class="absolute bottom-1 right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-black shadow-lg"></span>
+                {% else %}
+                <span class="absolute bottom-1 right-1 w-5 h-5 bg-red-500 rounded-full border-2 border-black shadow-lg"></span>
+                {% endif %}
+            </div>
+            <h2 class="text-4xl font-bold mt-4 bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+                {{ user['username'] }}
+            </h2>
+            <p class="text-gray-400 mt-1">Member since • content analyst</p>
+        </div>
+
+        <!-- WORD CLOUD SECTION (card background removed) -->
+        <div class="rounded-2xl p-6 mb-10 text-center hover-lift">
+            <h3 class="text-2xl font-semibold mb-4 flex items-center justify-center space-x-2">
+                <i class="fas fa-cloud text-blue-400"></i>
+                <span>Word Cloud</span>
+            </h3>
+            <div class="flex justify-center">
+                {% if wordcloud_img %}
+                    <img src="{{ wordcloud_img }}" class="max-h-80 rounded-xl shadow-2xl" alt="Word cloud">
+                {% else %}
+                    <div class="bg-gray-800 rounded-xl p-12 text-gray-400">
+                        <i class="fas fa-chart-pie text-4xl mb-3"></i>
+                        <p>No word cloud data available</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- TOP WATCHED CONTENT (card background removed, chart colors vibrant) -->
+        <div class="rounded-2xl p-6 mb-10 hover-lift">
+            <h3 class="text-2xl font-semibold mb-6 flex items-center space-x-2">
+                <i class="fas fa-chart-bar text-green-400"></i>
+                <span>Top Watched Content</span>
+            </h3>
+            <!-- Chart container: no background, just the canvas -->
+            <div class="relative">
+                <canvas id="chart" class="w-full h-64"></canvas>
+
+                <!-- Hover preview box (same as before) -->
+                <div id="previewBox"
+                     class="hidden absolute z-50 bg-black p-3 rounded-xl shadow-2xl border border-gray-700 w-44">
+                    <img id="previewImg" class="rounded-lg mb-2">
+                    <p id="previewTitle" class="text-xs text-gray-200"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- RECENTLY WATCHED (card background removed) -->
+        <div class="rounded-2xl p-6 hover-lift">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-2xl font-semibold flex items-center space-x-2">
+                    <i class="fas fa-clock text-purple-400"></i>
+                    <span>Recently Watched</span>
+                </h3>
+                <span class="text-sm text-gray-400">{{ recent_contents|length }} items</span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {% for item in recent_contents %}
+                <div class="group relative">
+                    <div class="rounded-xl overflow-hidden bg-gray-800 aspect-video shadow-lg">
+                        <img src="{{ url_for('static', filename='uploads/' + item.thumbnail) }}" 
+                             alt="{{ item.title }}"
+                             class="w-full h-full object-cover transition duration-300 group-hover:scale-110 group-hover:brightness-75">
+                    </div>
+                    <div class="mt-2">
+                        <p class="text-sm font-medium truncate text-gray-200 group-hover:text-white transition">{{ item.title }}</p>
+                    </div>
+                    <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                        <i class="fas fa-play-circle text-white text-4xl drop-shadow-lg"></i>
+                    </div>
+                </div>
+                {% else %}
+                <div class="col-span-full text-center py-10 text-gray-400">
+                    <i class="fas fa-film text-4xl mb-3"></i>
+                    <p>No recently watched content</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+
+    <footer class="text-center text-gray-600 text-sm py-6 border-t border-gray-800 mt-10">
+        <p>© 2025 YourBrand — intelligent insights</p>
+    </footer>
+
+    <script>
+        // Data from backend
+        const labels = {{ watch_time_data | map(attribute='title') | list | tojson }};
+        const views = {{ watch_time_data | map(attribute='views') | list | tojson }};
+        const thumbnails = {{ watch_time_data | map(attribute='thumbnail') | list | tojson }};
+
+        // Generate a different color for each bar (vibrant palette)
+        const colorPalette = [
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+            '#FF9F40', '#E7E9ED', '#76C2AF', '#F7464A', '#949FB1'
+        ];
+        const backgroundColors = views.map((_, i) => colorPalette[i % colorPalette.length]);
+
+        const data = {
+            labels: labels,
+            datasets: [{
+                label: 'Views',
+                data: views,
+                backgroundColor: backgroundColors,  // now multi‑color
+                borderRadius: 6
+            }]
+        };
+
+        const chart = new Chart(document.getElementById('chart'), {
+            type: 'bar',
+            data: data,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#e5e7eb' } }
+                },
+                scales: {
+                    y: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } },
+                    x: { ticks: { color: '#9ca3af' }, grid: { display: false } }
+                },
+                // Hover preview logic (improved positioning)
+                onHover: (event, elements) => {
+                    const preview = document.getElementById('previewBox');
+                    const img = document.getElementById('previewImg');
+                    const title = document.getElementById('previewTitle');
+
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+
+                        img.src = "{{ url_for('static', filename='uploads/') }}" + thumbnails[index];
+                        title.innerText = labels[index];
+
+                        // Position preview near mouse with offset
+                        const offsetX = 20;
+                        const offsetY = 20;
+                        preview.style.left = (event.x + offsetX) + 'px';
+                        preview.style.top = (event.y + offsetY) + 'px';
+
+                        preview.classList.remove('hidden');
+                    } else {
+                        preview.classList.add('hidden');
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

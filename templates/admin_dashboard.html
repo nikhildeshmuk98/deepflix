@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepFlixAI - Admin Dashboard</title>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --netflix-red: #e50914;
+            --netflix-red-hover: #f40612;
+            --netflix-red-soft: rgba(229, 9, 20, 0.15);
+            --dark-bg: #0a0a0a;
+            --card-bg: rgba(18, 18, 18, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.05);
+            --glass-border-hover: rgba(229, 9, 20, 0.3);
+            --text-primary: #ffffff;
+            --text-secondary: #b3b3b3;
+            --text-muted: #6b6b6b;
+            --transition-speed: 0.2s;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* Smooth scrolling */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Glassmorphism base */
+        .glass {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px) saturate(180%);
+            -webkit-backdrop-filter: blur(12px) saturate(180%);
+            border: 1px solid var(--glass-border);
+            transition: all var(--transition-speed) ease;
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px) saturate(180%);
+            -webkit-backdrop-filter: blur(12px) saturate(180%);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.5rem;
+            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-6px);
+            border-color: var(--glass-border-hover);
+            box-shadow: 0 25px 40px -12px rgba(229, 9, 20, 0.35);
+        }
+
+        /* Header with extra blur */
+        .glass-header {
+            background: rgba(8, 8, 8, 0.85);
+            backdrop-filter: blur(16px) saturate(200%);
+            -webkit-backdrop-filter: blur(16px) saturate(200%);
+            border-bottom: 1px solid rgba(229, 9, 20, 0.2);
+        }
+
+        /* Netflix-style button */
+        .btn-red-netflix {
+            background: linear-gradient(145deg, #e50914, #b20710);
+            transition: all 0.2s ease;
+            box-shadow: 0 8px 20px rgba(229, 9, 20, 0.3);
+            border: none;
+            color: white;
+            font-weight: 600;
+            border-radius: 9999px;
+            padding: 0.6rem 1.5rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-red-netflix::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.4s ease, height 0.4s ease;
+        }
+
+        .btn-red-netflix:hover::before {
+            width: 200%;
+            height: 200%;
+        }
+
+        .btn-red-netflix:hover {
+            background: linear-gradient(145deg, #f40612, #c00914);
+            transform: scale(1.03);
+            box-shadow: 0 12px 30px rgba(229, 9, 20, 0.7);
+        }
+
+        /* Table styling */
+        .table-container {
+            background: rgba(12, 12, 12, 0.6);
+            backdrop-filter: blur(10px);
+            border-radius: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.03);
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 8px;
+        }
+
+        thead tr {
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 1rem;
+        }
+
+        th {
+            padding: 1rem 1.5rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        tbody tr {
+            background: rgba(22, 22, 22, 0.6);
+            backdrop-filter: blur(4px);
+            border-radius: 1rem;
+            transition: background 0.2s, transform 0.1s;
+            cursor: default;
+        }
+
+        tbody tr:hover {
+            background: rgba(38, 38, 38, 0.8);
+            transform: scale(1.002);
+        }
+
+        td {
+            padding: 1rem 1.5rem;
+            color: #e5e5e5;
+            font-size: 0.9rem;
+            vertical-align: middle;
+        }
+
+        td:first-child {
+            border-top-left-radius: 1rem;
+            border-bottom-left-radius: 1rem;
+        }
+
+        td:last-child {
+            border-top-right-radius: 1rem;
+            border-bottom-right-radius: 1rem;
+        }
+
+        /* Table image */
+        .table-img {
+            width: 50px;
+            height: 70px;
+            object-fit: cover;
+            border-radius: 0.5rem;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.6);
+            transition: transform 0.2s;
+        }
+
+        .table-img:hover {
+            transform: scale(1.05);
+            box-shadow: 0 12px 24px rgba(229,9,20,0.3);
+        }
+
+        /* Action buttons */
+        .action-btn {
+            padding: 0.4rem 1.2rem;
+            border-radius: 2rem;
+            font-weight: 600;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            text-decoration: none;
+            border: 1px solid transparent;
+        }
+
+        .action-btn.edit {
+            background: rgba(37, 99, 235, 0.12);
+            color: #90caf9;
+            border-color: rgba(37, 99, 235, 0.3);
+        }
+
+        .action-btn.edit:hover {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+            box-shadow: 0 6px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .action-btn.delete {
+            background: rgba(220, 38, 38, 0.12);
+            color: #fca5a5;
+            border-color: rgba(220, 38, 38, 0.3);
+        }
+
+        .action-btn.delete:hover {
+            background: #dc2626;
+            color: white;
+            border-color: #dc2626;
+            box-shadow: 0 6px 12px rgba(220, 38, 38, 0.3);
+        }
+
+        /* Search input */
+        .search-box {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            padding: 0.75rem 1.5rem 0.75rem 3rem;
+            border-radius: 3rem;
+            width: 100%;
+            max-width: 380px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+            font-size: 0.95rem;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: var(--netflix-red);
+            box-shadow: 0 0 0 4px rgba(229,9,20,0.2);
+            background: rgba(10,10,10,0.7);
+        }
+
+        .search-box::placeholder {
+            color: #7a7a7a;
+            font-weight: 300;
+        }
+
+        /* Background overlay */
+        .bg-overlay {
+            background: rgba(8, 8, 8, 0.6);
+            backdrop-filter: blur(12px);
+            border-radius: 2rem;
+            padding: 2rem;
+            border: 1px solid rgba(255,255,255,0.03);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8);
+        }
+
+        /* Fade-in animation */
+        .fade-in {
+            animation: fadeInUp 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+
+        @keyframes fadeInUp {
+            0% {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Flash message styling */
+        .flash-message {
+            border-radius: 1rem;
+            padding: 1rem 1.5rem;
+            backdrop-filter: blur(10px);
+            border-left: 5px solid;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* Card icon container */
+        .card-icon {
+            width: 4rem;
+            height: 4rem;
+            background: rgba(229, 9, 20, 0.15);
+            border-radius: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s, transform 0.2s;
+        }
+
+        .glass-card:hover .card-icon {
+            background: rgba(229, 9, 20, 0.3);
+            transform: scale(1.02);
+        }
+
+        /* Sticky header */
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        /* Responsive tweaks */
+        @media (max-width: 640px) {
+            .bg-overlay {
+                padding: 1rem;
+            }
+            th, td {
+                padding: 0.75rem 0.5rem;
+                font-size: 0.8rem;
+            }
+            .glass-card {
+                padding: 1rem !important;
+            }
+        }
+    </style>
+</head>
+<body class="font-sans antialiased">
+    <div class="min-h-screen flex flex-col bg-dark-theme relative">
+        <!-- Fixed background image with overlay -->
+        <div class="fixed inset-0 z-0 opacity-20" style="background-image: url('{{ url_for('static', filename='img/bg2.png') }}'); background-size: cover; background-position: center;"></div>
+        <div class="fixed inset-0 z-0 bg-gradient-to-b from-black via-transparent to-black opacity-60"></div>
+
+        <!-- Glass Header -->
+        <header class="glass-header p-4 flex justify-between items-center fixed top-0 left-0 w-full z-50 border-b border-red-900/30 shadow-2xl">
+            <div class="flex items-center">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="DeepFlixAI Logo" class="h-12 md:h-16 drop-shadow-2xl">
+            </div>
+            <div class="flex items-center space-x-4">
+                <h1 class="text-xl md:text-2xl font-extrabold text-white hidden sm:block tracking-wide drop-shadow-lg">
+                    Admin <span class="text-red-500">Portal</span>
+                </h1>
+                <a href="{{ url_for('logout') }}" class="btn-red-netflix text-white px-5 py-2 rounded-full font-semibold text-sm shadow-lg hover:shadow-xl transition flex items-center gap-2">
+                    <i class="fas fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="flex-grow container mx-auto p-6 pt-28 relative z-10">
+            <div class="bg-overlay fade-in">
+                <!-- Flash Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="mb-8 space-y-3">
+                            {% for category, message in messages %}
+                                <div class="flash-message flex items-center gap-3 
+                                    {% if category == 'success' %}bg-green-900/40 border-green-500 text-green-100
+                                    {% elif category == 'danger' %}bg-red-900/40 border-red-500 text-red-100
+                                    {% else %}bg-blue-900/40 border-blue-500 text-blue-100{% endif %}">
+                                    <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-exclamation-circle{% else %}fa-info-circle{% endif %} text-xl"></i>
+                                    <span>{{ message }}</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <!-- ================= STATS CARDS (Users, Content, Model Status) ================= -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+                    <!-- Total Users -->
+                    <div class="glass-card p-6 flex items-center gap-4">
+                        <div class="card-icon w-14 h-14 rounded-2xl bg-red-900/30 flex items-center justify-center">
+                            <i class="fas fa-users text-2xl text-red-400"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-400 text-sm">Total Users</p>
+                            <p class="text-3xl font-extrabold text-white">{{ user_count | default(0) }}</p>
+                        </div>
+                    </div>
+                    <!-- Total Content -->
+                    <div class="glass-card p-6 flex items-center gap-4">
+                        <div class="card-icon w-14 h-14 rounded-2xl bg-red-900/30 flex items-center justify-center">
+                            <i class="fas fa-film text-2xl text-red-400"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-400 text-sm">Total Content</p>
+                            <p class="text-3xl font-extrabold text-white">{{ content_count | default(0) }}</p>
+                        </div>
+                    </div>
+                    <!-- Model Training Status (with accuracy) -->
+                    <div class="glass-card p-6 flex items-center gap-4">
+                        <div class="card-icon w-14 h-14 rounded-2xl bg-red-900/30 flex items-center justify-center">
+                            <i class="fas fa-brain text-2xl text-red-400"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-400 text-sm">Model Status</p>
+                            {% if model_trained %}
+                                <p class="text-lg font-semibold text-green-400 flex items-center gap-1"><i class="fas fa-check-circle"></i> Trained</p>
+                                <p class="text-xs text-gray-500">Last: {{ last_trained | default('N/A') }}</p>
+                                <p class="text-xs text-gray-300">Accuracy: {{ accuracy | default('N/A') }}%</p>
+                            {% else %}
+                                <p class="text-lg font-semibold text-red-400 flex items-center gap-1"><i class="fas fa-exclamation-triangle"></i> Not Trained</p>
+                                <p class="text-xs text-gray-500">Train the model for recommendations</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Action Cards (glass cards) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-10">
+                    <!-- Upload Content -->
+                    <div class="glass-card p-6 flex flex-col items-center text-center group">
+                        <div class="card-icon mb-4">
+                            <img src="{{ url_for('static', filename='img/upload.png') }}" alt="Upload" class="h-8 w-8 opacity-90">
+                        </div>
+                        <h3 class="font-bold text-lg mb-2">Upload Content</h3>
+                        <p class="text-sm text-gray-400 mb-4">Add a new movie or series</p>
+                        <a href="{{ url_for('upload_content') }}" class="btn-red-netflix text-white py-2 px-5 rounded-full text-sm font-semibold w-full flex items-center justify-center gap-2">
+                            <i class="fas fa-plus"></i> Upload
+                        </a>
+                    </div>
+                   
+                    <!-- Upload CSV -->
+                    <div class="glass-card p-6 flex flex-col items-center text-center group">
+                        <div class="card-icon mb-4">
+                            <img src="{{ url_for('static', filename='img/csv.png') }}" alt="CSV" class="h-8 w-8 opacity-90">
+                        </div>
+                        <h3 class="font-bold text-lg mb-2">CSV Upload</h3>
+                        <p class="text-sm text-gray-400 mb-4">Bulk-add via .csv</p>
+                        <a href="{{ url_for('upload_csv') }}" class="btn-red-netflix text-white py-2 px-5 rounded-full text-sm font-semibold w-full flex items-center justify-center gap-2">
+                            <i class="fas fa-file-csv"></i> Upload CSV
+                        </a>
+                    </div>
+
+                    <!-- Train Model (updated with loading and accuracy) -->
+                    <div class="glass-card p-6 flex flex-col items-center text-center group">
+                        <div class="card-icon mb-4">
+                            <img src="{{ url_for('static', filename='img/train.png') }}" alt="Train" class="h-8 w-8 opacity-90">
+                        </div>
+                        <h3 class="font-bold text-lg mb-2">Train Model</h3>
+                        <p class="text-sm text-gray-400 mb-4">Generate new recommendation model</p>
+                        <form method="POST" action="{{ url_for('train_model') }}" onsubmit="startTraining()" class="w-full">
+                            <button id="trainBtn" type="submit" class="btn-red-netflix text-white py-2 px-5 rounded-full text-sm font-semibold w-full flex items-center justify-center gap-2">
+                                <i class="fas fa-brain"></i> Train
+                            </button>
+                        </form>
+                        <!-- Loading indicator (hidden by default) -->
+                        <p id="loadingText" style="display:none; color: #fbbf24; margin-top: 0.5rem; font-size: 0.9rem;">
+                            ⏳ Training in progress...
+                        </p>
+                    </div>
+
+                    <!-- Model Analysis -->
+                    <div class="glass-card p-6 flex flex-col items-center text-center group">
+                        <div class="card-icon mb-4">
+                            <img src="{{ url_for('static', filename='img/analysis.png') }}" alt="Analysis" class="h-8 w-8 opacity-90">
+                        </div>
+                        <h3 class="font-bold text-lg mb-2">Model Analysis</h3>
+                        <p class="text-sm text-gray-400 mb-4">View graphs & confusion matrix</p>
+                        <a href="{{ url_for('admin_analysis') }}" class="btn-red-netflix text-white py-2 px-5 rounded-full text-sm font-semibold w-full flex items-center justify-center gap-2">
+                            <i class="fas fa-chart-bar"></i> Analyze
+                        </a>
+                    </div>
+
+                    <!-- Analytics Dashboard -->
+                    <div class="glass-card p-6 flex flex-col items-center text-center group">
+                        <div class="card-icon mb-4">
+                            <img src="{{ url_for('static', filename='img/dashboard.png') }}" alt="Dashboard" class="h-8 w-8 opacity-90">
+                        </div>
+                        <h3 class="font-bold text-lg mb-2">Analytics Dashboard</h3>
+                        <p class="text-sm text-gray-400 mb-4">Advanced metrics & charts</p>
+                        <a href="/admin_dashboard_analysis" class="btn-red-netflix text-white py-2 px-5 rounded-full text-sm font-semibold w-full flex items-center justify-center gap-2">
+                            <i class="fas fa-chart-pie"></i> Dashboard
+                        </a>
+                    </div>
+
+                    <!-- Manage Users -->
+                    <div class="glass-card p-6 flex flex-col items-center text-center group">
+                        <div class="card-icon mb-4">
+                            <img src="{{ url_for('static', filename='img/users.png') }}" alt="Users" class="h-8 w-8 opacity-90">
+                        </div>
+                        <h3 class="font-bold text-lg mb-2">Manage Users</h3>
+                        <p class="text-sm text-gray-400 mb-4">View user data & word clouds</p>
+                        <a href="{{ url_for('admin_users') }}" class="btn-red-netflix text-white py-2 px-5 rounded-full text-sm font-semibold w-full flex items-center justify-center gap-2">
+                            <i class="fas fa-users"></i> Users
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Content List Section with Search -->
+                <div class="glass-card p-6 rounded-2xl">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                        <h2 class="text-2xl font-bold flex items-center gap-2">
+                            <i class="fas fa-film text-red-500"></i> All Content
+                        </h2>
+                        <!-- Search bar with icon -->
+                        <div class="relative w-full sm:w-auto">
+                            <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input type="text" id="searchInput" placeholder="Search by title, genre, hero, director..." class="search-box">
+                        </div>
+                    </div>
+
+                    {% if contents %}
+                    <div class="overflow-x-auto rounded-2xl">
+                        <table id="contentTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Image</th>
+                                    <th>Title</th>
+                                    <th>Type</th>
+                                    <th>Genre</th>
+                                    <th>Language</th>
+                                    <th>Year</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for content in contents %}
+                                <tr class="content-row" 
+                                    data-hero="{{ content['hero']|default('')|lower }}"
+                                    data-heroine="{{ content['heroine']|default('')|lower }}"
+                                    data-director="{{ content['director']|default('')|lower }}">
+                                    <td class="font-mono text-red-400">{{ content['id'] }}</td>
+                                    <td>
+                                        <img src="{{ url_for('static', filename='uploads/' + content['thumbnail']) }}" 
+                                             alt="{{ content['title'] }}" 
+                                             class="table-img"
+                                             onerror="this.onerror=null; this.src='https://via.placeholder.com/50x70?text=No+Image';">
+                                    </td>
+                                    <td class="font-semibold text-white">{{ content['title'] }}</td>
+                                    <td><span class="px-2 py-1 rounded-full bg-red-900/30 text-red-200 text-xs">{{ content['content_type'] }}</span></td>
+                                    <td>{{ content['genre'] }}</td>
+                                    <td>{{ content['language'] }}</td>
+                                    <td>{{ content['release_year'] }}</td>
+                                    <td>
+                                        <div class="flex flex-wrap gap-2">
+                                            <a href="{{ url_for('edit_content', content_id=content['id']) }}" class="action-btn edit">
+    <i class="fas fa-edit"></i> Edit
+</a>
+                                            <a href="{{ url_for('delete_content', content_id=content['id']) }}" 
+                                               class="action-btn delete"
+                                               onclick="return confirm('Are you sure you want to delete this content?');">
+                                                <i class="fas fa-trash"></i> Delete
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-16 bg-black/20 rounded-2xl backdrop-blur-sm">
+                        <i class="fas fa-video text-6xl text-gray-700 mb-4"></i>
+                        <p class="text-gray-400 text-lg">No content uploaded yet.</p>
+                        <p class="text-gray-500 text-sm mt-2">Use the buttons above to add your first movie or series.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- JavaScript for Live Search Filter and Training Button -->
+    <script>
+        // Search filter
+        (function() {
+            const searchInput = document.getElementById('searchInput');
+            if (!searchInput) return;
+
+            const rows = document.querySelectorAll('.content-row');
+
+            function filterTable() {
+                const searchTerm = searchInput.value.toLowerCase().trim();
+
+                rows.forEach(row => {
+                    // Get data from data-* attributes
+                    const hero = row.dataset.hero || '';
+                    const heroine = row.dataset.heroine || '';
+                    const director = row.dataset.director || '';
+
+                    // Visible columns text
+                    const title = row.children[2]?.textContent.toLowerCase() || '';
+                    const type = row.children[3]?.textContent.toLowerCase() || '';
+                    const genre = row.children[4]?.textContent.toLowerCase() || '';
+                    const language = row.children[5]?.textContent.toLowerCase() || '';
+                    const year = row.children[6]?.textContent.toLowerCase() || '';
+
+                    const combinedText = `${title} ${type} ${genre} ${language} ${year} ${hero} ${heroine} ${director}`;
+                    const matches = combinedText.includes(searchTerm);
+
+                    row.style.display = matches ? '' : 'none';
+                });
+            }
+
+            searchInput.addEventListener('input', filterTable);
+            filterTable(); // initial filter
+        })();
+
+        // Training button handler
+        function startTraining() {
+            const btn = document.getElementById('trainBtn');
+            const loadingText = document.getElementById('loadingText');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-pulse"></i> Training...';
+            }
+            if (loadingText) {
+                loadingText.style.display = 'block';
+            }
+            // Allow form submission (the POST will happen)
+            return true;
+        }
+    </script>
+</body>
+</html>

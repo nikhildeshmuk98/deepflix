@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepFlixAI · Edit Content</title>
+
+    <!-- Tailwind + Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #0b0b0b;
+            color: #e5e5e5;
+        }
+
+        /* Smooth background overlay */
+        .bg-overlay {
+            background: linear-gradient(135deg, rgba(10,10,10,0.95) 0%, rgba(20,20,20,0.9) 100%);
+            backdrop-filter: blur(6px);
+        }
+
+        /* Glassmorphic card */
+        .glass-card {
+            background: rgba(26, 26, 26, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 20px 40px -12px rgba(0,0,0,0.8), 0 0 0 1px rgba(229, 9, 20, 0.1) inset;
+        }
+
+        /* Input fields */
+        .input-field {
+            background-color: rgba(51, 51, 51, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            width: 100%;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #e50914;
+            box-shadow: 0 0 0 3px rgba(229, 9, 20, 0.3);
+            background-color: #3a3a3a;
+        }
+        .input-field::placeholder {
+            color: #6b6b6b;
+            font-weight: 300;
+        }
+
+        /* Labels */
+        label {
+            color: #b3b3b3;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* File input styling */
+        input[type="file"] {
+            padding: 0.5rem;
+            background: #2a2a2a;
+            border: 1px dashed #4a4a4a;
+            border-radius: 0.75rem;
+            color: #ccc;
+            cursor: pointer;
+        }
+        input[type="file"]::file-selector-button {
+            background: #e50914;
+            border: none;
+            color: white;
+            padding: 0.4rem 1rem;
+            border-radius: 0.5rem;
+            margin-right: 1rem;
+            font-weight: 500;
+            transition: 0.2s;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background: #f40612;
+        }
+
+        /* Current image previews */
+        .cast-preview {
+            border-radius: 0.75rem;
+            border: 2px solid rgba(229, 9, 20, 0.3);
+            box-shadow: 0 10px 20px -8px rgba(0,0,0,0.6);
+            transition: transform 0.2s;
+            object-fit: cover;
+        }
+        .cast-preview:hover {
+            transform: scale(1.02);
+            border-color: #e50914;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            background: #e50914;
+            color: white;
+            padding: 0.75rem 2rem;
+            border-radius: 2rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            transition: all 0.2s;
+            box-shadow: 0 8px 16px -6px rgba(229, 9, 20, 0.4);
+        }
+        .btn-primary:hover {
+            background: #f40612;
+            transform: translateY(-2px);
+            box-shadow: 0 12px 20px -8px #e50914;
+        }
+        .btn-secondary {
+            background: rgba(75, 75, 75, 0.8);
+            backdrop-filter: blur(4px);
+            color: #ddd;
+            padding: 0.75rem 2rem;
+            border-radius: 2rem;
+            font-weight: 500;
+            transition: 0.2s;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn-secondary:hover {
+            background: #4f4f4f;
+            color: white;
+            border-color: rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+<div class="min-h-screen flex flex-col">
+
+    <!-- ========== HEADER ========== -->
+    <header class="fixed top-0 left-0 w-full z-50 bg-black bg-opacity-90 backdrop-blur-md border-b border-gray-800 shadow-lg">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <span class="text-3xl font-bold text-red-600">DeepFlixAI</span>
+                <span class="bg-red-600/20 text-red-400 text-xs px-3 py-1 rounded-full border border-red-500/30">admin</span>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="{{ url_for('admin_dashboard') }}" class="text-gray-300 hover:text-white transition flex items-center gap-1">
+                    <i class="fas fa-tachometer-alt"></i> <span class="hidden sm:inline">Dashboard</span>
+                </a>
+                <a href="{{ url_for('logout') }}" class="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-full text-sm font-medium transition shadow-lg shadow-red-600/20 flex items-center gap-2">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ========== MAIN CONTENT (with background) ========== -->
+    <main class="flex-grow container mx-auto px-4 sm:px-6 py-8 mt-24 relative"
+          style="background-image: url('{{ url_for('static', filename='img/bg2.png') }}'); background-size: cover; background-position: center;">
+
+        <!-- Overlay for readability -->
+        <div class="absolute inset-0 bg-black bg-opacity-70 backdrop-blur-sm"></div>
+
+        <!-- Content card (glassmorphic) -->
+        <div class="relative z-10 max-w-4xl mx-auto">
+            <!-- Flash messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="mb-6 space-y-3">
+                        {% for category, message in messages %}
+                            <div class="flex items-center gap-3 p-4 rounded-xl bg-red-600/20 border border-red-500/30 text-red-200 backdrop-blur-sm">
+                                <i class="fas fa-exclamation-circle text-red-400 text-xl"></i>
+                                <span>{{ message }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <!-- Main edit card -->
+            <div class="glass-card rounded-2xl p-6 md:p-8 shadow-2xl">
+                <div class="flex items-center gap-3 border-b border-gray-700 pb-5 mb-6">
+                    <i class="fas fa-pen-square text-3xl text-red-500"></i>
+                    <h2 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-red-500 to-orange-400 bg-clip-text text-transparent">
+                        Edit Content
+                    </h2>
+                </div>
+
+                <!-- Form with enctype -->
+                <form method="POST" enctype="multipart/form-data">
+
+                    <!-- Two‑column grid for most fields -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                        <!-- LEFT COLUMN -->
+                        <div class="space-y-5">
+                            <div>
+                                <label><i class="fas fa-tag text-red-400 w-4"></i> Title</label>
+                                <input type="text" name="title" value="{{ content.title }}" required class="input-field" placeholder="e.g., Inception">
+                            </div>
+
+                            <div>
+                                <label><i class="fas fa-globe text-red-400 w-4"></i> Language</label>
+                                <input type="text" name="language" value="{{ content.language }}" class="input-field" placeholder="English, Hindi, ...">
+                            </div>
+
+                            <div>
+                                <label><i class="fas fa-calendar-alt text-red-400 w-4"></i> Release Year</label>
+                                <input type="number" name="release_year" value="{{ content.release_year }}" class="input-field" placeholder="2024">
+                            </div>
+
+                            <div>
+                                <label><i class="fas fa-film text-red-400 w-4"></i> Genre</label>
+                                <input type="text" name="genre" value="{{ content.genre }}" class="input-field" placeholder="Action, Drama, ...">
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN -->
+                        <div class="space-y-5">
+                            <div>
+                                <label><i class="fas fa-fire text-red-400 w-4"></i> Trending Rank</label>
+                                <select name="trending_rank" class="input-field">
+                                    <option value="0" class="bg-gray-800">Not Trending</option>
+                                    {% for i in range(1,11) %}
+                                        <option value="{{ i }}" {% if content.trending_rank == i %}selected{% endif %} class="bg-gray-800">
+                                            {{ i }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label><i class="fas fa-crown text-red-400 w-4"></i> Deepflix Rank (1-15)</label>
+                                <input type="number"
+                                       name="deepflix_rank"
+                                       min="1"
+                                       max="15"
+                                       value="{{ content.deepflix_rank }}"
+                                       class="input-field"
+                                       placeholder="e.g., 5">
+                            </div>
+
+                            <div>
+                                <label><i class="fab fa-youtube text-red-400 w-4"></i> YouTube URL / Video ID</label>
+                                <input type="text" name="youtube_video_id" value="{{ content.youtube_video_id }}" class="input-field" placeholder="dQw4w9WgXcQ">
+                            </div>
+
+                            <div class="flex items-center gap-3 mt-2">
+                                <input type="checkbox"
+                                       name="is_90s"
+                                       value="1"
+                                       {% if content.is_90s == 1 %}checked{% endif %}
+                                       class="w-5 h-5 text-red-600 bg-gray-800 border-gray-600 rounded">
+                                <label class="text-sm text-gray-300">90's Movie</label>
+                            </div>
+
+                            <div>
+                                <label><i class="fas fa-image text-red-400 w-4"></i> Current Thumbnail</label>
+                                <div class="flex items-center gap-4">
+                                    <img src="{{ url_for('static', filename='uploads/' + content.thumbnail) }}"
+                                         class="w-28 h-28 object-cover rounded-lg thumbnail-preview"
+                                         onerror="this.onerror=null; this.src='https://placehold.co/200x300/1f1f1f/red?text=No+Image';">
+                                    <span class="text-xs text-gray-400">{{ content.thumbnail }}</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label><i class="fas fa-upload text-red-400 w-4"></i> Change Thumbnail</label>
+                                <input type="file" name="thumbnail" accept="image/*" class="input-field">
+                                <p class="text-xs text-gray-500 mt-1">Leave empty to keep current image.</p>
+                            </div>
+                        </div>
+                    </div>  <!-- end two-column grid -->
+
+                    <!-- ========== NEW: BACKDROP URL FIELD (full-width after grid, before cast) ========== -->
+                    <div class="mt-8 pt-2">
+                        <div class="bg-gray-800/20 p-4 rounded-xl border border-gray-700/50">
+                            <label class="flex items-center gap-2 text-white/90">
+                                <i class="fas fa-panorama text-red-400 text-lg"></i> Backdrop URL (Full background image)
+                            </label>
+                            <input type="text" 
+                                   name="backdrop_url" 
+                                   value="{{ content.backdrop_url }}" 
+                                   class="input-field mt-1" 
+                                   placeholder="https://example.com/images/backdrop.jpg or relative path">
+                            <p class="text-xs text-gray-400 mt-2">High-resolution backdrop shown on movie detail page. Leave empty to use default.</p>
+                        </div>
+                    </div>
+
+                    <!-- ========== CAST DETAILS (expanded with all heroes/heroines, director, comedian, producer) ========== -->
+                    <div class="mt-8 pt-6 border-t border-gray-700">
+                        <h3 class="text-xl font-semibold text-gray-200 mb-6 flex items-center gap-2">
+                            <i class="fas fa-users text-red-500"></i> Cast & Crew
+                        </h3>
+
+                        <!-- Hero (primary) -->
+                        <div class="mb-8 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-user"></i> Hero
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label>Name</label>
+                                    <input type="text" name="hero" value="{{ content.hero }}" class="input-field" placeholder="e.g., Mahesh Babu">
+                                </div>
+                                <div>
+                                    <label>Caste (optional)</label>
+                                    <input type="text" name="hero_caste" value="{{ content.hero_caste }}" class="input-field" placeholder="e.g., Kamma, Reddy...">
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Hero Image</label>
+                                    <input type="file" name="hero_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.hero_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.hero_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Hero 2 -->
+                        <div class="mb-8 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-user"></i> Hero 2
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label>Name</label>
+                                    <input type="text" name="hero2" value="{{ content.hero2 }}" class="input-field" placeholder="Second hero">
+                                </div>
+                                <div>
+                                    <label>Caste (optional)</label>
+                                    <input type="text" name="hero2_caste" value="{{ content.hero2_caste }}" class="input-field">
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Hero 2 Image</label>
+                                    <input type="file" name="hero2_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.hero2_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.hero2_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Hero 3 -->
+                        <div class="mb-8 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-user"></i> Hero 3
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label>Name</label>
+                                    <input type="text" name="hero3" value="{{ content.hero3 }}" class="input-field" placeholder="Third hero">
+                                </div>
+                                <div>
+                                    <label>Caste (optional)</label>
+                                    <input type="text" name="hero3_caste" value="{{ content.hero3_caste }}" class="input-field">
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Hero 3 Image</label>
+                                    <input type="file" name="hero3_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.hero3_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.hero3_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Heroine (primary) -->
+                        <div class="mb-8 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-user-friends"></i> Heroine
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label>Name</label>
+                                    <input type="text" name="heroine" value="{{ content.heroine }}" class="input-field" placeholder="e.g., Samantha">
+                                </div>
+                                <div>
+                                    <label>Caste (optional)</label>
+                                    <input type="text" name="heroine_caste" value="{{ content.heroine_caste }}" class="input-field" placeholder="e.g., Brahmin, ...">
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Heroine Image</label>
+                                    <input type="file" name="heroine_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.heroine_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.heroine_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Heroine 2 -->
+                        <div class="mb-8 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-user-friends"></i> Heroine 2
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label>Name</label>
+                                    <input type="text" name="heroine2" value="{{ content.heroine2 }}" class="input-field">
+                                </div>
+                                <div>
+                                    <label>Caste (optional)</label>
+                                    <input type="text" name="heroine2_caste" value="{{ content.heroine2_caste }}" class="input-field">
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Heroine 2 Image</label>
+                                    <input type="file" name="heroine2_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.heroine2_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.heroine2_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Heroine 3 -->
+                        <div class="mb-8 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-user-friends"></i> Heroine 3
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label>Name</label>
+                                    <input type="text" name="heroine3" value="{{ content.heroine3 }}" class="input-field">
+                                </div>
+                                <div>
+                                    <label>Caste (optional)</label>
+                                    <input type="text" name="heroine3_caste" value="{{ content.heroine3_caste }}" class="input-field">
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Heroine 3 Image</label>
+                                    <input type="file" name="heroine3_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.heroine3_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.heroine3_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Director -->
+                        <div class="mb-8 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-video"></i> Director
+                            </h4>
+                            <div class="mb-4">
+                                <label>Name</label>
+                                <input type="text" name="director" value="{{ content.director }}" class="input-field" placeholder="e.g., Rajamouli">
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Director Image</label>
+                                    <input type="file" name="director_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.director_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.director_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- ========== COMEDIAN SECTION ========== -->
+                        <div class="mb-8 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-laugh-squint"></i> Comedian
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label>Name</label>
+                                    <input type="text" name="comedian" value="{{ content.comedian }}" class="input-field" placeholder="e.g., Brahmanandam">
+                                </div>
+                                <div>
+                                    <label>Caste (optional)</label>
+                                    <input type="text" name="comedian_caste" value="{{ content.comedian_caste }}" class="input-field" placeholder="e.g., Kapu, Brahmin">
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Comedian Image</label>
+                                    <input type="file" name="comedian_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.comedian_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.comedian_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- ========== PRODUCER SECTION ========== -->
+                        <div class="mb-4 bg-gray-800/30 p-5 rounded-xl">
+                            <h4 class="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
+                                <i class="fas fa-chart-line"></i> Producer
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label>Name</label>
+                                    <input type="text" name="producer" value="{{ content.producer }}" class="input-field" placeholder="e.g., D.V.V. Danayya">
+                                </div>
+                                <div>
+                                    <label>Caste (optional)</label>
+                                    <input type="text" name="producer_caste" value="{{ content.producer_caste }}" class="input-field" placeholder="e.g., Reddy, Chettiar">
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-6">
+                                <div class="flex-1">
+                                    <label>Producer Image</label>
+                                    <input type="file" name="producer_image" accept="image/*" class="input-field">
+                                </div>
+                                {% if content.producer_image %}
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Current:</span>
+                                    <img src="{{ url_for('static', filename='uploads/' + content.producer_image) }}"
+                                         class="w-16 h-16 object-cover rounded-full border-2 border-red-500/50"
+                                         onerror="this.onerror=null; this.style.display='none';">
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Story (full width) -->
+                    <div class="mt-6">
+                        <label><i class="fas fa-scroll text-red-400"></i> Story</label>
+                        <textarea name="story" rows="5" required class="input-field" placeholder="Write a compelling description...">{{ content.story }}</textarea>
+                    </div>
+
+                    <!-- Form actions -->
+                    <div class="flex flex-col sm:flex-row justify-end gap-4 mt-8 pt-4 border-t border-gray-700">
+                        <a href="{{ url_for('admin_dashboard') }}" class="btn-secondary text-center">
+                            <i class="fas fa-times mr-2"></i>Cancel
+                        </a>
+                        <button type="submit" class="btn-primary">
+                            <i class="fas fa-save mr-2"></i>Update Content
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center text-gray-600 text-xs py-4 border-t border-gray-800">
+        DeepFlixAI · Admin Panel
+    </footer>
+</div>
+
+<!-- Tiny script to handle image fallback (already covered by onerror) -->
+</body>
+</html>

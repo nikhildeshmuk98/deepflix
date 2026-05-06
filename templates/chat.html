@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Chat · FilmFlix</title>
+
+    <!-- Google Fonts + Font Awesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0f;   /* deep black base */
+            font-family: 'Inter', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            color: #ededed;
+        }
+
+        /* ----- custom scrollbar ----- */
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f1f2b;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #b8476f;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #d45a82;
+        }
+
+        /* ----- HEADER (glass style) ----- */
+        .chat-header {
+            display: flex;
+            align-items: center;
+            padding: 14px 20px;
+            background: rgba(18, 18, 24, 0.96);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(75, 75, 100, 0.3);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            color: #b0b0c0;
+            font-size: 1.6rem;
+            cursor: pointer;
+            margin-right: 16px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .back-btn:hover {
+            background: #2a2a36;
+            color: #ffffff;
+            transform: scale(0.96);
+        }
+
+        .avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #b8476f, #8f2d56);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.2rem;
+            color: white;
+            overflow: hidden;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+            flex-shrink: 0;
+        }
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .user-info {
+            margin-left: 14px;
+            flex: 1;
+        }
+        .username {
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+            background: linear-gradient(to right, #fff, #d9d9e6);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .online-status {
+            font-size: 0.7rem;
+            color: #6fbf73;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 2px;
+        }
+        .online-status i {
+            font-size: 0.55rem;
+        }
+
+        /* ----- CHAT AREA (beautiful bubbles) ----- */
+        .chat-box {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 18px;
+            background: radial-gradient(circle at 10% 20%, #0c0c12, #050507);
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            display: flex;
+            margin-bottom: 20px;
+            align-items: flex-end;
+            animation: fadeSlideUp 0.2s ease-out;
+        }
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.me {
+            justify-content: flex-end;
+        }
+
+        /* bubble container */
+        .bubble-wrapper {
+            max-width: 70%;
+            display: flex;
+            flex-direction: column;
+        }
+        .message:not(.me) .bubble-wrapper {
+            margin-left: 10px;
+        }
+        .message.me .bubble-wrapper {
+            align-items: flex-end;
+        }
+
+        /* username + timestamp */
+        .msg-meta {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 4px;
+            padding: 0 4px;
+        }
+        .sender-name {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #b0b0ca;
+        }
+        .timestamp {
+            font-size: 0.6rem;
+            color: #7a7a8a;
+        }
+
+        /* bubble */
+        .bubble {
+            background: #1f1f2c;
+            padding: 10px 16px;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            color: #f0f0f0;
+            word-wrap: break-word;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            transition: background 0.2s;
+        }
+
+        .message.me .bubble {
+            background: linear-gradient(135deg, #b8476f, #9f3c62);
+            color: white;
+            border-bottom-right-radius: 8px;
+        }
+        .message:not(.me) .bubble {
+            border-bottom-left-radius: 8px;
+            background: #262635;
+        }
+
+        /* avatar inside messages (only for others) */
+        .msg-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #2a2a3a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: 500;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .msg-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* empty state */
+        .empty-chat {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6c6c80;
+            font-size: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+        .empty-chat i {
+            font-size: 3rem;
+            opacity: 0.5;
+        }
+
+        /* ----- INPUT AREA (stylish) ----- */
+        .chat-input-area {
+            background: rgba(18, 18, 26, 0.95);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid #2a2a38;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .chat-input-area input {
+            flex: 1;
+            background: #12121c;
+            border: 1px solid #2d2d3a;
+            border-radius: 40px;
+            padding: 12px 20px;
+            font-size: 0.95rem;
+            color: white;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .chat-input-area input:focus {
+            border-color: #b8476f;
+            box-shadow: 0 0 0 2px rgba(184, 71, 111, 0.3);
+            background: #181824;
+        }
+        .chat-input-area input::placeholder {
+            color: #5c5c70;
+        }
+        .send-btn {
+            background: #b8476f;
+            border: none;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            color: white;
+            font-size: 1.3rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 5px 12px rgba(184, 71, 111, 0.4);
+        }
+        .send-btn:hover {
+            background: #d45a82;
+            transform: scale(1.02);
+        }
+        .send-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* tooltip / loading indicator */
+        .loading-messages {
+            display: flex;
+            justify-content: center;
+            padding: 8px;
+            color: #b8476f;
+        }
+
+        /* responsiveness */
+        @media (max-width: 550px) {
+            .bubble-wrapper {
+                max-width: 85%;
+            }
+            .chat-box {
+                padding: 14px;
+            }
+            .chat-header {
+                padding: 10px 14px;
+            }
+            .avatar {
+                width: 42px;
+                height: 42px;
+            }
+            .username {
+                font-size: 1rem;
+            }
+        }
+
+        /* shimmer effect for new message? optional */
+        .new-message-highlight {
+            animation: gentlePulse 0.5s ease;
+        }
+        @keyframes gentlePulse {
+            0% { background: rgba(184,71,111,0.2); }
+            100% { background: transparent; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- HEADER with back button -->
+<div class="chat-header">
+    <button class="back-btn" onclick="window.location.href='{{ url_for('social_hub') }}';">
+        <i class="fas fa-arrow-left"></i>
+    </button>
+
+    <div class="avatar">
+        {% if chat_user.profile_image %}
+            <img src="{{ chat_user.profile_image }}" alt="avatar">
+        {% else %}
+            {{ chat_user.initial }}
+        {% endif %}
+    </div>
+
+    <div class="user-info">
+        <div class="username">{{ chat_user.username }}</div>
+        <div class="online-status">
+            <i class="fas fa-circle"></i>
+            <span>Active now</span>
+        </div>
+    </div>
+</div>
+
+<!-- CHAT MESSAGES AREA -->
+<div id="chatBox" class="chat-box">
+    <div class="empty-chat" id="emptyPlaceholder" style="display: none;">
+        <i class="fas fa-comment-dots"></i>
+        <p>No messages yet. Start the conversation!</p>
+    </div>
+</div>
+
+<!-- INPUT -->
+<div class="chat-input-area">
+    <input type="text" id="messageInput" placeholder="Type a message...">
+    <button class="send-btn" onclick="sendMessage()">
+        <i class="fas fa-paper-plane"></i>
+    </button>
+</div>
+
+<script>
+    // DOM elements
+    const chatBox = document.getElementById("chatBox");
+    const messageInput = document.getElementById("messageInput");
+    const emptyPlaceholder = document.getElementById("emptyPlaceholder");
+
+    // user data from Jinja
+    const receiverId = {{ chat_user.id }};
+    const myId = {{ me.id }};
+    let lastMessageCount = 0;
+    let fetchInterval = null;
+
+    // Helper: format timestamp (optional, if backend provides created_at)
+    function formatTime(timestamp) {
+        if (!timestamp) return '';
+        try {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
+        } catch(e) { return ''; }
+    }
+
+    // Render messages beautifully
+    function renderMessages(messages) {
+        if (!messages || messages.length === 0) {
+            if (emptyPlaceholder) emptyPlaceholder.style.display = 'flex';
+            chatBox.innerHTML = '';
+            chatBox.appendChild(emptyPlaceholder);
+            return;
+        }
+        if (emptyPlaceholder) emptyPlaceholder.style.display = 'none';
+
+        let html = '';
+        messages.forEach((msg, idx) => {
+            // determine avatar content for sender (only if not me)
+            let senderAvatarHtml = '';
+            if (!msg.is_me) {
+                if (msg.profile_image) {
+                    senderAvatarHtml = `<img src="${msg.profile_image}" alt="avatar">`;
+                } else {
+                    senderAvatarHtml = msg.initial || (msg.username ? msg.username[0].toUpperCase() : '?');
+                }
+            }
+
+            const timeString = msg.created_at ? formatTime(msg.created_at) : '';
+            const messageClass = msg.is_me ? 'me' : '';
+            const senderName = msg.is_me ? 'You' : (msg.username || 'User');
+
+            html += `
+                <div class="message ${messageClass}" data-msg-id="${msg.id || idx}">
+                    ${!msg.is_me ? `<div class="msg-avatar">${senderAvatarHtml}</div>` : ''}
+                    <div class="bubble-wrapper">
+                        <div class="msg-meta">
+                            <span class="sender-name">${escapeHtml(senderName)}</span>
+                            ${timeString ? `<span class="timestamp">${timeString}</span>` : ''}
+                        </div>
+                        <div class="bubble">
+                            ${escapeHtml(msg.message)}
+                        </div>
+                    </div>
+                    ${msg.is_me ? `<div class="msg-avatar" style="background: #b8476f;">${senderAvatarHtml}</div>` : ''}
+                </div>
+            `;
+        });
+
+        // preserve scroll position after adding new messages
+        const wasScrolledToBottom = chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 50;
+        chatBox.innerHTML = html;
+        if (wasScrolledToBottom) {
+            chatBox.scrollTop = chatBox.scrollHeight;
+        } else if (messages.length > lastMessageCount) {
+            // new message arrived but user is not at bottom — subtle notification
+            const lastMsg = chatBox.lastElementChild;
+            if (lastMsg && !lastMsg.classList.contains('message') && lastMsg.classList) {
+                // no action
+            }
+        }
+        lastMessageCount = messages.length;
+    }
+
+    // simple XSS protection
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+            return c;
+        });
+    }
+
+    // fetch messages from server
+    async function fetchMessages() {
+        try {
+            const res = await fetch(`/fetch_messages/${receiverId}`);
+            if (!res.ok) throw new Error('Network error');
+            const data = await res.json();
+            // data should be array of messages with fields: id, message, is_me, username, profile_image, initial, created_at
+            renderMessages(data);
+        } catch (err) {
+            console.error("Error fetching messages:", err);
+            // optional: show offline indicator but keep silent
+            if (chatBox.children.length === 0) {
+                chatBox.innerHTML = `<div class="empty-chat"><i class="fas fa-wifi-slash"></i><p>Can't load messages. Check connection.</p></div>`;
+            }
+        }
+    }
+
+    // send message
+    async function sendMessage() {
+        let message = messageInput.value.trim();
+        if (!message) return;
+
+        // Disable button briefly to avoid double send
+        const sendBtn = document.querySelector('.send-btn');
+        if (sendBtn) sendBtn.disabled = true;
+
+        try {
+            const res = await fetch(`/send_message/${receiverId}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message })
+            });
+            if (res.ok) {
+                messageInput.value = "";
+                // optimistic update? we just refetch immediately after sending
+                await fetchMessages();
+                // auto-scroll after send
+                setTimeout(() => {
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }, 50);
+            } else {
+                console.warn("send failed");
+            }
+        } catch (err) {
+            console.error("Send error:", err);
+        } finally {
+            if (sendBtn) sendBtn.disabled = false;
+            messageInput.focus();
+        }
+    }
+
+    // enter key
+    messageInput.addEventListener("keypress", function(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    // Auto refresh every 1.5 seconds (smooth, less aggressive)
+    if (fetchInterval) clearInterval(fetchInterval);
+    fetchInterval = setInterval(() => {
+        fetchMessages();
+    }, 1500);
+
+    // initial load
+    fetchMessages().then(() => {
+        // scroll to bottom after initial messages are loaded
+        setTimeout(() => {
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }, 100);
+    });
+
+    // Focus input on load
+    messageInput.focus();
+
+    // Optional: when user scrolls up, we don't force scroll down (but new message will not auto-scroll if far up)
+    // we already handled that in renderMessages based on position
+
+    // cleanup on page unload (optional)
+    window.addEventListener('beforeunload', () => {
+        if (fetchInterval) clearInterval(fetchInterval);
+    });
+</script>
+</body>
+</html>

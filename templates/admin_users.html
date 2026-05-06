@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Users · Deepflix Admin</title>
+
+    <!-- Tailwind + Inter font -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome 6 (free icons) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <!-- favicon -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(145deg, #0f0f0f 0%, #1a1a1a 100%);
+            color: #ededed;
+            min-height: 100vh;
+        }
+
+        /* glassmorphic header */
+        .glass-header {
+            background: rgba(18, 18, 18, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(229, 9, 20, 0.2);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        /* card with blur */
+        .stats-card {
+            background: rgba(26, 26, 26, 0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 24px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .stats-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 30px -10px rgba(229, 9, 20, 0.3);
+            border-color: rgba(229, 9, 20, 0.3);
+        }
+
+        /* modern table */
+        .modern-table {
+            border-collapse: separate;
+            border-spacing: 0 8px;
+            width: 100%;
+        }
+        .modern-table th {
+            background: rgba(0, 0, 0, 0.5);
+            color: #e50914;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.7rem;
+            padding: 1rem 0.75rem;
+            border-bottom: 1px solid #e50914;
+        }
+        .modern-table td {
+            background: rgba(30, 30, 30, 0.6);
+            backdrop-filter: blur(4px);
+            padding: 1rem 0.75rem;
+            border: none;
+            color: #d1d5db;
+            font-size: 0.9rem;
+            transition: background 0.15s;
+        }
+        .modern-table tr {
+            border-radius: 16px;
+            transition: all 0.2s;
+        }
+        .modern-table tr:hover td {
+            background: rgba(229, 9, 20, 0.1);
+        }
+
+        /* online indicator pulse */
+        .online-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            box-shadow: 0 0 8px currentColor;
+        }
+        .online-dot.online {
+            background: #10b981;
+            box-shadow: 0 0 10px #10b981;
+            animation: pulse 1.8s infinite;
+        }
+        .online-dot.offline {
+            background: #6b7280;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        /* search bar */
+        .search-input {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #333;
+            border-radius: 40px;
+            padding: 0.9rem 1.5rem 0.9rem 3rem;
+            width: 100%;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%23999' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 1.2rem center;
+            background-size: 1.2rem;
+        }
+        .search-input:focus {
+            border-color: #e50914;
+            outline: none;
+            background-color: rgba(0,0,0,0.6);
+            box-shadow: 0 0 0 3px rgba(229,9,20,0.2);
+        }
+
+        /* pagination */
+        .pagination-item {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #2a2a2a;
+            color: #ccc;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border-radius: 30px;
+            margin: 0 4px;
+            transition: 0.2s;
+        }
+        .pagination-item.active {
+            background: #e50914;
+            border-color: #e50914;
+            color: white;
+        }
+        .pagination-item:hover:not(.active) {
+            background: rgba(229,9,20,0.2);
+            border-color: #e50914;
+            color: white;
+        }
+
+        /* profile image */
+        .profile-img {
+            width: 44px;
+            height: 44px;
+            border-radius: 999px;
+            object-fit: cover;
+            border: 2px solid rgba(229,9,20,0.5);
+            transition: border 0.2s;
+        }
+        .profile-img:hover {
+            border-color: #e50914;
+        }
+
+        /* back button */
+        .back-link {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255,255,255,0.1);
+            padding: 8px 18px;
+            border-radius: 40px;
+            font-weight: 500;
+            transition: 0.2s;
+            border: 1px solid transparent;
+        }
+        .back-link:hover {
+            background: rgba(229,9,20,0.2);
+            border-color: #e50914;
+            color: white;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- Glass header -->
+    <header class="glass-header fixed top-0 left-0 w-full z-50 px-6 py-3 flex justify-between items-center">
+        <a href="{{ url_for('admin_dashboard') }}" class="back-link text-sm text-gray-300 no-underline">
+            <i class="fas fa-arrow-left text-xs"></i> Dashboard
+        </a>
+
+        <img src="{{ url_for('static', filename='img/logo.png') }}" class="h-12 md:h-14 object-contain" alt="Deepflix">
+
+        <a href="{{ url_for('logout') }}" class="btn-red px-5 py-2 rounded-full text-sm font-semibold flex items-center gap-2 shadow-lg" style="background:#e50914;">
+            <i class="fas fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+        </a>
+    </header>
+
+    <!-- Main content (pushes below fixed header) -->
+    <main class="pt-28 pb-12 px-4 md:px-8 max-w-7xl mx-auto">
+
+        <!-- subtle decorative gradient -->
+        <div class="absolute left-0 top-40 w-72 h-72 bg-red-900/10 rounded-full blur-3xl -z-10"></div>
+        <div class="absolute right-0 bottom-20 w-96 h-96 bg-red-800/10 rounded-full blur-3xl -z-10"></div>
+
+        <!-- Page title with icon -->
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <h1 class="text-4xl md:text-5xl font-black tracking-tight">
+                    <span class="text-red-600">👥</span> Users
+                </h1>
+                <p class="text-gray-400 mt-1 text-sm md:text-base">Manage your community – view profiles, watch time & more</p>
+            </div>
+            <!-- optional small summary (static for now, can be dynamic) -->
+            <div class="hidden md:block bg-white/5 backdrop-blur-sm px-5 py-2 rounded-full border border-white/10">
+                <i class="fas fa-users text-red-500 mr-2"></i> total: <span class="font-bold">{{ users|length if users else 0 }}</span>
+            </div>
+        </div>
+
+        <!-- Main card -->
+        <div class="stats-card p-6 md:p-8 w-full">
+
+            <!-- SEARCH FORM (GET) -->
+            <form method="GET" action="{{ url_for('admin_users') }}" class="relative mb-8">
+                <input type="text" name="search" value="{{ search }}" placeholder="Search by username, genre, language..." class="search-input">
+                <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full text-sm font-semibold transition flex items-center gap-2">
+                    <i class="fas fa-search"></i> <span class="hidden sm:inline">Search</span>
+                </button>
+            </form>
+
+            <!-- Users table -->
+            {% if users %}
+            <div class="overflow-x-auto pb-2">
+                <table class="modern-table w-full">
+                    <thead>
+                        <tr>
+                            <th class="rounded-tl-2xl">#</th>
+                            <th>ID</th>
+                            <th>Profile</th>
+                            <th>Username</th>
+                            <th>Status</th>
+                            <th>Genre</th>
+                            <th>Language</th>
+                            <th>Watch time</th>
+                            <th class="rounded-tr-2xl">Word Cloud</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td class="font-mono text-gray-400">{{ (page - 1) * 10 + loop.index }}</td>
+                            <td class="text-xs text-gray-500">{{ user['id'] }}</td>
+                            <td>
+                                {% if user['profile_image'] %}
+                                    <img src="{{ url_for('static', filename='uploads/' ~ user['profile_image']) }}" class="profile-img">
+                                {% else %}
+                                    {% if user['gender'] and user['gender']|lower == 'female' %}
+                                        <img src="{{ url_for('static', filename='f_profile.png') }}" class="profile-img">
+                                    {% else %}
+                                        <img src="{{ url_for('static', filename='m_profile.png') }}" class="profile-img">
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="font-semibold text-white">{{ user['username'] }}</td>
+                            <td>
+                                {% if user['is_online'] %}
+                                    <span class="online-dot online"></span> <span class="text-green-400 text-xs font-medium">Online</span>
+                                {% else %}
+                                    <span class="online-dot offline"></span> <span class="text-gray-400 text-xs">Offline</span>
+                                {% endif %}
+                            </td>
+                            <td><span class="bg-white/10 px-3 py-1 rounded-full text-xs">{{ user['fav_genre'] or '—' }}</span></td>
+                            <td>{{ user['fav_language'] or '—' }}</td>
+                            <td class="font-mono text-sm">{{ user['watch_time'] or 0 }} <span class="text-gray-500 text-xs">min</span></td>
+                            <td>
+                                <a href="{{ url_for('user_wordcloud', user_id=user['id']) }}" class="inline-flex items-center gap-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 px-4 py-2 rounded-full text-xs font-medium transition border border-blue-500/30">
+                                    <i class="fas fa-chart-pie"></i> Word Cloud
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- PAGINATION (elegant) -->
+            <div class="mt-10 flex flex-wrap justify-center items-center gap-2">
+                {% if page > 1 %}
+                <a href="{{ url_for('admin_users', page=page-1, search=search) }}" class="pagination-item flex items-center gap-1">
+                    <i class="fas fa-chevron-left text-xs"></i> Prev
+                </a>
+                {% endif %}
+
+                {% for p in range(1, total_pages + 1) %}
+                    <a href="{{ url_for('admin_users', page=p, search=search) }}" class="pagination-item {% if p == page %}active{% endif %}">
+                        {{ p }}
+                    </a>
+                {% endfor %}
+
+                {% if page < total_pages %}
+                <a href="{{ url_for('admin_users', page=page+1, search=search) }}" class="pagination-item flex items-center gap-1">
+                    Next <i class="fas fa-chevron-right text-xs"></i>
+                </a>
+                {% endif %}
+            </div>
+
+            {% else %}
+            <!-- No users state (beautiful) -->
+            <div class="flex flex-col items-center justify-center py-20 px-4">
+                <i class="fas fa-user-slash text-6xl text-gray-700 mb-4"></i>
+                <p class="text-xl text-gray-400 font-medium">No users found</p>
+                <p class="text-gray-600 text-sm mt-1">Try a different search or check back later</p>
+                <a href="{{ url_for('admin_users') }}" class="mt-6 bg-red-600/30 border border-red-500/50 px-6 py-2 rounded-full text-sm hover:bg-red-600/50 transition">
+                    <i class="fas fa-undo-alt mr-2"></i> Reset filter
+                </a>
+            </div>
+            {% endif %}
+        </div> <!-- end card -->
+
+        <!-- subtle footer note -->
+        <p class="text-center text-xs text-gray-700 mt-8">
+            <i class="far fa-eye mr-1"></i> showing real‑time data · deepflix admin
+        </p>
+    </main>
+
+    <!-- optional tiny script for interactive feel (nothing heavy) -->
+    <script>
+        // just to keep the online dot animation feeling fresh – no logic needed
+        // we could add a tooltip, but not necessary
+    </script>
+</body>
+</html>

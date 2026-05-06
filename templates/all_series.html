@@ -1,0 +1,786 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>DeepFlix - Series Vault | Hover Magic</title>
+
+    <!-- Tailwind CSS + Font Awesome + Google Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif;
+        }
+        
+        body {
+            background-color: #0a0a0a;
+            scroll-behavior: smooth;
+        }
+
+        /* modern card transition + hover scaling (soft) */
+        .series-card {
+            transition: transform 0.3s cubic-bezier(0.2, 0.95, 0.4, 1.05), box-shadow 0.3s ease;
+            will-change: transform;
+            background: #0f0f0f;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.5);
+        }
+        
+        .series-card:hover {
+            transform: scale(1.03) translateY(-6px);
+            box-shadow: 0 28px 35px -14px rgba(0, 0, 0, 0.8);
+        }
+        
+        .thumbnail-wrapper {
+            position: relative;
+            overflow: hidden;
+            background: #080808;
+            aspect-ratio: 2 / 3;
+        }
+        
+        .card-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+        
+        .series-card:hover .card-img {
+            transform: scale(1.02);
+        }
+        
+        /* HOVER OVERLAY — SHOWS TITLE, GENRE, YEAR, PLAY BUTTON */
+        .hover-details-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(0deg, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.75) 40%, rgba(0,0,0,0.4) 100%);
+            backdrop-filter: blur(2px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.25s ease-in-out, visibility 0.25s ease-in-out;
+            z-index: 15;
+        }
+        
+        .series-card:hover .hover-details-overlay {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .play-btn-circle {
+            background-color: #e50914;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s cubic-bezier(0.2, 0.9, 0.6, 1.1);
+            box-shadow: 0 8px 20px rgba(229, 9, 20, 0.5);
+            cursor: pointer;
+        }
+        
+        .play-btn-circle:hover {
+            background-color: #ff1a2c;
+            transform: scale(1.08);
+            box-shadow: 0 12px 24px rgba(229, 9, 20, 0.7);
+        }
+        
+        .play-btn-circle i {
+            font-size: 1.7rem;
+            margin-left: 4px;
+            color: white;
+        }
+        
+        .overlay-title {
+            font-weight: 800;
+            font-size: 1.2rem;
+            line-height: 1.3;
+            text-shadow: 0 2px 6px black;
+            letter-spacing: -0.2px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        .genre-year-badge {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 0.1rem;
+        }
+        
+        .genre-chip {
+            background: rgba(229, 9, 20, 0.85);
+            padding: 0.25rem 0.9rem;
+            border-radius: 40px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            backdrop-filter: blur(2px);
+        }
+        
+        .year-chip {
+            background: rgba(20, 20, 30, 0.85);
+            backdrop-filter: blur(2px);
+            padding: 0.25rem 0.9rem;
+            border-radius: 40px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            border-left: 1px solid #e50914;
+        }
+        
+        /* filter bar */
+        .filter-letter {
+            transition: all 0.2s;
+            font-weight: 600;
+            min-width: 44px;
+            text-align: center;
+            background: #1f1f2a;
+            color: #ccc;
+            border-radius: 40px;
+            padding: 8px 0;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .filter-letter.active-letter {
+            background: #e50914;
+            color: white;
+            box-shadow: 0 6px 12px rgba(229, 9, 20, 0.4);
+        }
+        
+        .filter-letter:hover:not(.active-letter) {
+            background: #2f2f3c;
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        .clear-filter-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #333;
+            transition: all 0.2s;
+        }
+        
+        .clear-filter-btn:hover {
+            background: #e50914;
+            border-color: #e50914;
+            color: white;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #e50914;
+            border-radius: 8px;
+        }
+        
+        .notif-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .profile-image {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #e50914;
+        }
+        
+        .profile-icon {
+            width: 36px;
+            height: 36px;
+            background: #2c2c2c;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #e50914;
+            font-size: 1.2rem;
+        }
+        
+        @media (max-width: 640px) {
+            .overlay-title {
+                font-size: 0.9rem;
+            }
+            .play-btn-circle {
+                width: 44px;
+                height: 44px;
+            }
+            .play-btn-circle i {
+                font-size: 1.3rem;
+            }
+            .genre-chip, .year-chip {
+                font-size: 0.6rem;
+                padding: 0.2rem 0.6rem;
+            }
+        }
+        
+        #noResultsMsg {
+            transition: all 0.2s;
+        }
+        
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        /* smaller cards for continue & recent */
+        .simple-card {
+            background: #111;
+            border-radius: 0.8rem;
+            overflow: hidden;
+            transition: transform 0.2s ease, box-shadow 0.2s;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.4);
+        }
+        .simple-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 15px 25px -8px rgba(229,9,20,0.3);
+        }
+        .simple-card img {
+            width: 100%;
+            aspect-ratio: 2/3;
+            object-fit: cover;
+        }
+        .progress-bar-container {
+            background: #2d2d2d;
+            border-radius: 20px;
+            height: 5px;
+            overflow: hidden;
+            margin: 6px 0;
+        }
+        .progress-fill {
+            background: #e50914;
+            height: 100%;
+            width: 0%;
+            border-radius: 20px;
+        }
+        .simple-card .p-3 {
+            padding: 0.6rem;
+        }
+        .simple-card h6 {
+            font-size: 0.8rem;
+        }
+        .simple-card a {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.8rem;
+        }
+        
+        /* featured carousel */
+        .featured-carousel {
+            background: linear-gradient(135deg, #0f0f1a 0%, #050508 100%);
+            border-radius: 1.5rem;
+            overflow: hidden;
+        }
+        .carousel-dot {
+            width: 8px;
+            height: 8px;
+            background: #4b5563;
+            border-radius: 50%;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .carousel-dot.active {
+            background: #e50914;
+            width: 24px;
+            border-radius: 20px;
+        }
+        .featured-thumb {
+            width: 180px;
+            height: 260px;
+            object-fit: cover;
+            border-radius: 1rem;
+            box-shadow: 0 15px 30px -10px black;
+        }
+        @media (min-width: 768px) {
+            .featured-thumb {
+                width: 220px;
+                height: 320px;
+            }
+        }
+        @media (max-width: 640px) {
+            .featured-thumb {
+                width: 130px;
+                height: 190px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-black text-white antialiased">
+
+    <!-- ==================== HEADER ==================== -->
+    <header class="bg-gray-900 bg-opacity-95 backdrop-blur-sm border-b border-gray-800 p-4 flex flex-wrap items-center justify-between sticky top-0 z-50 gap-3">
+        <div class="flex items-center space-x-6">
+            <a href="{{ url_for('user_dashboard') }}" class="shrink-0">
+                <img src="{{ url_for('static', filename='img/logo.png') }}"
+                     class="h-10 w-auto"
+                     alt="DeepFlix"
+                     onerror="this.src='https://placehold.co/120x40/1f1f1f/red?text=DeepFlix'">
+            </a>
+            <a href="{{ url_for('user_dashboard') }}" class="hover:text-red-500 transition flex items-center gap-1 text-sm sm:text-base"><i class="fas fa-home"></i> <span class="hidden sm:inline">Home</span></a>
+            <a href="{{ url_for('all_movies') }}" class="hover:text-red-500 transition flex items-center gap-1 text-sm sm:text-base"><i class="fas fa-film"></i> <span class="hidden sm:inline">Movies</span></a>
+            <a href="{{ url_for('all_series') }}" class="text-red-500 font-semibold border-b-2 border-red-500 pb-1"><i class="fas fa-tv"></i> <span class="hidden sm:inline">Series</span></a>
+            <a href="{{ url_for('social_hub') }}" class="hover:text-red-500 transition flex items-center gap-1 text-sm sm:text-base"><i class="fas fa-users"></i> <span class="hidden sm:inline">Social Hub</span></a>
+        </div>
+
+        <form id="searchForm" method="GET" class="order-last sm:order-none w-full sm:w-auto sm:flex-1 max-w-xl mx-auto sm:mx-6 mt-2 sm:mt-0">
+            <div class="relative">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                <input type="text" id="globalSearchInput" name="search" value="{{ request.args.get('search','') }}" placeholder="Search series by title, genre..." class="w-full bg-gray-800 border border-gray-700 rounded-full py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-transparent text-sm">
+            </div>
+        </form>
+
+        <div class="flex items-center space-x-4">
+            <div class="relative" id="notificationsContainer">
+                <button id="notificationsToggle" class="relative p-2 text-gray-300 hover:text-red-500 transition-colors focus:outline-none">
+                    <i class="fas fa-bell text-xl"></i>
+                    <span id="notificationBadge" class="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center shadow-lg {% if not notifications or notifications|length == 0 %}hidden{% endif %}">{{ notifications|length if notifications else 0 }}</span>
+                </button>
+                <div id="notificationsDropdown" class="absolute right-0 mt-3 w-96 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl hidden z-50">
+                    <div class="flex justify-between items-center px-4 py-3 border-b border-gray-700">
+                        <h3 class="text-white font-semibold flex items-center gap-2"><i class="fas fa-bell text-red-500"></i> Notifications</h3>
+                        {% if notifications %}<a href="#" onclick="markAllNotificationsRead(); return false;" class="text-sm text-gray-400 hover:text-red-500"><i class="fas fa-check-double"></i> Mark all read</a>{% endif %}
+                    </div>
+                    <div class="max-h-96 overflow-y-auto notif-scroll">
+
+    {% if notifications and notifications|length > 0 %}
+        {% for n in notifications %}
+
+        <a href="{% if n.content_id %}{{ url_for('series_play', content_id=n.content_id) }}{% else %}#{% endif %}" 
+           class="flex items-center gap-3 px-4 py-3 hover:bg-gray-800 border-b border-gray-800 transition {% if not n.read %}bg-gray-800{% endif %}" 
+           data-id="{{ n.id }}">
+
+            <!-- Thumbnail -->
+            <div class="w-14 h-20 flex-shrink-0 rounded overflow-hidden bg-gray-700">
+                {% if n.content_thumbnail %}
+                    <img src="{{ url_for('static', filename='uploads/' + n.content_thumbnail) }}"
+                         class="w-full h-full object-cover"
+                         alt="poster"
+                         onerror="this.parentNode.innerHTML='<div class=\'flex items-center justify-center h-full text-gray-400\'><i class=\'fas fa-film\'></i></div>'">
+                {% else %}
+                    <div class="flex items-center justify-center h-full text-gray-400">
+                        <i class="fas fa-film"></i>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Text -->
+            <div class="flex-1">
+                <h4 class="text-sm font-semibold text-white">
+                    {{ n.title if n.title else 'New Series Update' }}
+                </h4>
+
+                <p class="text-xs text-gray-400 line-clamp-2">
+                    {{ n.message }}
+                </p>
+
+                <small class="text-gray-500 text-xs flex items-center gap-1">
+                    <i class="far fa-clock"></i> {{ n.created_at }}
+                </small>
+            </div>
+
+            <!-- Play Icon -->
+            <div class="text-red-500 text-lg">
+                <i class="fas fa-play-circle"></i>
+            </div>
+
+        </a>
+
+        {% endfor %}
+
+    {% else %}
+
+    <!-- Empty State -->
+    <div class="flex flex-col items-center justify-center py-10 text-gray-500">
+        <i class="far fa-bell-slash text-3xl mb-2"></i>
+        <p>No notifications yet</p>
+    </div>
+
+    {% endif %}
+
+</div>
+                </div>
+            </div>
+
+            <a href="{{ url_for('profile') }}" class="profile-link flex items-center gap-2">
+                <div class="relative">
+                    {% if session.get('profile_type') == 'extra' %}
+                        {% if session.get('profile_gender')|lower == 'female' %}<img src="{{ url_for('static', filename='img/female_icon.png') }}" class="profile-image">{% else %}<img src="{{ url_for('static', filename='img/male_icon.png') }}" class="profile-image">{% endif %}
+                    {% elif session.get('profile_type') == 'guest' %}<img src="{{ url_for('static', filename='main_profile.png') }}" class="profile-image">
+                    {% else %}{% if user and user.profile_image %}<img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" class="profile-image">{% else %}<div class="profile-icon"><i class="fas fa-user"></i></div>{% endif %}{% endif %}
+                </div>
+                <span class="profile-text hidden md:inline flex items-center gap-1">{{ session.get('profile_name', session.get('username','Profile')) }}{% if session.get('profile_type') == 'extra' %}<span class="text-yellow-400 text-sm">⭐</span>{% endif %}<i class="fas fa-chevron-right ml-1"></i></span>
+            </a>
+            <a href="{{ url_for('logout') }}" class="bg-red-600 px-4 py-2 rounded-full text-sm font-medium hover:bg-red-700 transition shadow-lg shadow-red-600/20 flex items-center"><i class="fas fa-sign-out-alt mr-1"></i> Logout</a>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+
+        <!-- ================= NEW: AUTO-PLAY FEATURED SECTION (using recently added series) ================= -->
+        {% if recently_added_series and recently_added_series|length > 0 %}
+        <div class="featured-carousel mb-12 p-5 md:p-6" id="featuredCarouselSection">
+            <div class="flex flex-col md:flex-row gap-6 items-center md:items-start">
+                <!-- left thumbnail -->
+                <div class="shrink-0">
+                    <img id="featuredThumbnail" class="featured-thumb rounded-xl shadow-2xl" src="" alt="Featured">
+                </div>
+                <!-- right details -->
+                <div class="flex-1 w-full">
+                    <div class="flex flex-col h-full justify-between">
+                        <div>
+                            <h3 id="featuredTitle" class="text-2xl md:text-3xl font-bold text-white mb-2"></h3>
+                            <div class="flex flex-wrap gap-2 text-sm text-gray-300 mb-3">
+                                <span id="featuredGenre" class="bg-gray-800 px-3 py-1 rounded-full text-xs"></span>
+                                <span id="featuredYear" class="bg-gray-800 px-3 py-1 rounded-full text-xs"></span>
+                                <span id="featuredLanguage" class="bg-gray-800 px-3 py-1 rounded-full text-xs"></span>
+                            </div>
+                            <p id="featuredStory" class="text-gray-400 text-sm line-clamp-3 max-w-2xl"></p>
+                        </div>
+                        <div class="mt-5 flex items-center gap-4 flex-wrap">
+                            <a id="featuredPlayBtn" href="#" class="bg-red-600 hover:bg-red-700 transition px-5 py-2.5 rounded-full font-semibold shadow-lg flex items-center gap-2"><i class="fas fa-play"></i> Play Now</a>
+                        </div>
+                        <!-- dots for carousel -->
+                        <div class="flex gap-2 mt-4" id="carouselDots"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ================= SECTION 1: CONTINUE WATCHING (fixed thumbnails, smaller size) ================= -->
+        {% if continue_watching_series and continue_watching_series|length > 0 %}
+        <div class="mb-10">
+            <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-play-circle text-red-500"></i> Continue Watching</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {% for s in continue_watching_series %}
+                <div class="simple-card group cursor-pointer" onclick="window.location.href='/series_play/{{ s.id }}'">
+                    <div class="relative">
+                        <img src="{{ url_for('static', filename='uploads/' + s.thumbnail) if s.thumbnail else 'https://placehold.co/600x900/111111/e50914?text=No+Poster' }}" 
+                             alt="{{ s.title }}" 
+                             onerror="this.src='https://placehold.co/600x900/111111/e50914?text=No+Poster'">
+                    </div>
+                    <div class="p-2">
+                        <h6 class="font-semibold text-xs line-clamp-1">{{ s.title }}</h6>
+                        <div class="progress-bar-container mt-1">
+                            <div class="progress-fill" style="width: {{ s.progress|default(0) }}%;"></div>
+                        </div>
+                        <a href="/series_play/{{ s.id }}" class="inline-block mt-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-2 py-1 rounded-full transition">Continue <i class="fas fa-arrow-right ml-1"></i></a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ================= SECTION 2: RECENTLY ADDED SERIES (fixed thumbnails, smaller size) ================= -->
+        {% if recently_added_series and recently_added_series|length > 0 %}
+        <div class="mb-10">
+            <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-clock text-green-500"></i> Recently Added Series</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {% for s in recently_added_series %}
+                <div class="simple-card group cursor-pointer" onclick="window.location.href='/series_play/{{ s.id }}'">
+                    <div class="relative">
+                        <img src="{{ url_for('static', filename='uploads/' + s.thumbnail) if s.thumbnail else 'https://placehold.co/600x900/111111/e50914?text=No+Poster' }}" 
+                             alt="{{ s.title }}" 
+                             onerror="this.src='https://placehold.co/600x900/111111/e50914?text=No+Poster'">
+                    </div>
+                    <div class="p-2">
+                        <h6 class="font-semibold text-xs line-clamp-1">{{ s.title }}</h6>
+                        <a href="/series_play/{{ s.id }}" class="inline-block mt-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-2 py-1 rounded-full transition">Watch Now <i class="fas fa-play ml-1"></i></a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ================= A-Z FILTER + ALL SERIES ================= -->
+        <div class="mb-8 bg-gray-900/40 rounded-2xl p-4 backdrop-blur-sm border border-gray-800">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-sm text-gray-300 mr-1 hidden sm:inline"><i class="fas fa-filter"></i> Filter:</span>
+                    <div class="flex flex-wrap gap-2">
+                        <button data-letter="all" class="filter-letter active-letter px-5">All</button>
+                        <button data-letter="A" class="filter-letter">A</button><button data-letter="B" class="filter-letter">B</button>
+                        <button data-letter="C" class="filter-letter">C</button><button data-letter="D" class="filter-letter">D</button>
+                        <button data-letter="E" class="filter-letter">E</button><button data-letter="F" class="filter-letter">F</button>
+                        <button data-letter="G" class="filter-letter">G</button><button data-letter="H" class="filter-letter">H</button>
+                        <button data-letter="I" class="filter-letter">I</button><button data-letter="J" class="filter-letter">J</button>
+                        <button data-letter="K" class="filter-letter">K</button><button data-letter="L" class="filter-letter">L</button>
+                        <button data-letter="M" class="filter-letter">M</button><button data-letter="N" class="filter-letter">N</button>
+                        <button data-letter="O" class="filter-letter">O</button><button data-letter="P" class="filter-letter">P</button>
+                        <button data-letter="Q" class="filter-letter">Q</button><button data-letter="R" class="filter-letter">R</button>
+                        <button data-letter="S" class="filter-letter">S</button><button data-letter="T" class="filter-letter">T</button>
+                        <button data-letter="U" class="filter-letter">U</button><button data-letter="V" class="filter-letter">V</button>
+                        <button data-letter="W" class="filter-letter">W</button><button data-letter="X" class="filter-letter">X</button>
+                        <button data-letter="Y" class="filter-letter">Y</button><button data-letter="Z" class="filter-letter">Z</button>
+                    </div>
+                </div>
+                <button id="clearFiltersBtn" class="clear-filter-btn text-sm px-5 py-2 rounded-full flex items-center gap-2"><i class="fas fa-times-circle"></i> Clear filters</button>
+            </div>
+        </div>
+       
+        <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
+            <div class="text-sm text-gray-400 flex items-center gap-2">
+                <i class="fas fa-layer-group text-red-500"></i>
+                <span id="seriesCountDisplay">{{ series_list|length }}</span> premium series
+            </div>
+            <div id="searchActiveBadge" class="hidden bg-gray-800/80 backdrop-blur-sm px-4 py-1.5 rounded-full text-xs text-red-400 border border-gray-700">
+                <i class="fas fa-search"></i> <span id="searchTermDisplay"></span>
+            </div>
+        </div>
+
+        <!-- ALL SERIES GRID (with hover overlay) -->
+        <h3 class="text-2xl font-bold mb-5 flex items-center gap-2"><i class="fas fa-tv text-red-500"></i> All Series</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 gap-y-8" id="seriesGridContainer">
+            {% for series in series_list %}
+            <div class="series-card group cursor-pointer" 
+                 data-title="{{ series.title|lower }}" 
+                 data-genre="{{ series.genre|lower }}"
+                 data-first-letter="{{ series.title[0]|upper if series.title else '' }}"
+                 data-id="{{ series.id }}">
+                
+                <div class="thumbnail-wrapper relative w-full bg-gray-900">
+                    <img src="{{ url_for('static', filename='uploads/' + series.thumbnail) }}" 
+                         class="card-img w-full h-full object-cover"
+                         alt="{{ series.title }}"
+                         loading="lazy"
+                         onerror="this.src='https://placehold.co/600x900/111111/e50914?text=No+Poster'">
+                    
+                    <div class="hover-details-overlay">
+                        <h3 class="overlay-title text-white drop-shadow-md">{{ series.title }}</h3>
+                        <div class="genre-year-badge">
+                            <span class="genre-chip"><i class="fas fa-tag mr-1 text-xs"></i> {{ series.genre }}</span>
+                            <span class="year-chip"><i class="far fa-calendar-alt mr-1"></i> {{ series.release_year }}</span>
+                        </div>
+                        <div class="play-btn-circle play-hover-btn" data-id="{{ series.id }}">
+                            <i class="fas fa-play"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div id="noResultsMsg" class="hidden flex flex-col items-center justify-center py-20 text-center">
+            <i class="fas fa-tv-slash text-7xl text-gray-700 mb-5"></i>
+            <p class="text-gray-400 text-lg font-medium">No series match your selection</p>
+            <button id="resetFiltersBtn" class="mt-5 bg-red-600 hover:bg-red-700 px-6 py-2.5 rounded-full text-sm font-semibold transition shadow-md">Clear all filters</button>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // ---------- FILTER & SEARCH LOGIC ----------
+            const seriesCards = Array.from(document.querySelectorAll('.series-card'));
+            const noResultsDiv = document.getElementById('noResultsMsg');
+            const seriesCountSpan = document.getElementById('seriesCountDisplay');
+            const searchInput = document.getElementById('globalSearchInput');
+            const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+            const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+            const searchActiveBadge = document.getElementById('searchActiveBadge');
+            const searchTermDisplay = document.getElementById('searchTermDisplay');
+            
+            let activeLetter = 'all';
+            let currentSearchTerm = '';
+            
+            function filterSeries() {
+                let visibleCount = 0;
+                const searchLower = currentSearchTerm.trim().toLowerCase();
+                seriesCards.forEach(card => {
+                    const title = card.getAttribute('data-title') || '';
+                    const genre = card.getAttribute('data-genre') || '';
+                    const firstLetter = card.getAttribute('data-first-letter') || '';
+                    let letterMatch = (activeLetter === 'all') || (firstLetter === activeLetter);
+                    let searchMatch = true;
+                    if (searchLower !== '') {
+                        searchMatch = title.includes(searchLower) || genre.includes(searchLower);
+                    }
+                    const isVisible = letterMatch && searchMatch;
+                    if (isVisible) {
+                        card.style.display = 'block';
+                        visibleCount++;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+                seriesCountSpan.innerText = visibleCount;
+                if (visibleCount === 0) noResultsDiv.classList.remove('hidden');
+                else noResultsDiv.classList.add('hidden');
+                if (currentSearchTerm.trim() !== '') {
+                    searchActiveBadge.classList.remove('hidden');
+                    searchTermDisplay.innerText = `"${currentSearchTerm}"`;
+                } else {
+                    searchActiveBadge.classList.add('hidden');
+                }
+            }
+            
+            const letterBtns = document.querySelectorAll('.filter-letter');
+            function setActiveLetter(letter) {
+                activeLetter = letter;
+                letterBtns.forEach(btn => {
+                    const btnLetter = btn.getAttribute('data-letter');
+                    if (btnLetter === letter) btn.classList.add('active-letter');
+                    else btn.classList.remove('active-letter');
+                });
+                filterSeries();
+            }
+            letterBtns.forEach(btn => {
+                btn.addEventListener('click', () => setActiveLetter(btn.getAttribute('data-letter')));
+            });
+            
+            let debounceTimer;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(debounceTimer);
+                currentSearchTerm = e.target.value;
+                debounceTimer = setTimeout(() => filterSeries(), 260);
+            });
+            
+            function clearAllFilters() {
+                currentSearchTerm = '';
+                searchInput.value = '';
+                setActiveLetter('all');
+                filterSeries();
+            }
+            clearFiltersBtn.addEventListener('click', clearAllFilters);
+            if (resetFiltersBtn) resetFiltersBtn.addEventListener('click', clearAllFilters);
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const initialSearch = urlParams.get('search') || '';
+            if (initialSearch) {
+                currentSearchTerm = initialSearch;
+                searchInput.value = initialSearch;
+            }
+            filterSeries();
+            
+            // ---------- CARD NAVIGATION ----------
+            function navigateToSeries(contentId) {
+                if (contentId) window.location.href = "{{ url_for('series_play', content_id=0) }}".replace('0', contentId);
+            }
+            seriesCards.forEach(card => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.play-btn-circle')) return;
+                    const contentId = card.getAttribute('data-id');
+                    if (contentId) navigateToSeries(contentId);
+                });
+            });
+            function attachPlayButtonListeners() {
+                document.querySelectorAll('.play-btn-circle').forEach(btn => {
+                    btn.removeEventListener('click', playBtnHandler);
+                    btn.addEventListener('click', playBtnHandler);
+                });
+            }
+            function playBtnHandler(e) {
+                e.stopPropagation();
+                const id = this.getAttribute('data-id');
+                if (id) navigateToSeries(id);
+            }
+            attachPlayButtonListeners();
+            
+            // ---------- NOTIFICATIONS ----------
+            const notifToggle = document.getElementById('notificationsToggle');
+            const notifDropdown = document.getElementById('notificationsDropdown');
+            const notificationBadge = document.getElementById('notificationBadge');
+            if (notifToggle) {
+                notifToggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    notifDropdown.classList.toggle('hidden');
+                });
+                document.addEventListener('click', function(event) {
+                    if (notifToggle && notifDropdown && !notifToggle.contains(event.target) && !notifDropdown.contains(event.target)) {
+                        notifDropdown.classList.add('hidden');
+                    }
+                });
+            }
+            window.markAllNotificationsRead = function() {
+                fetch('/notifications/mark_all_read', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(res => res.json()).then(data => {
+                    if (data.success && notificationBadge) notificationBadge.classList.add('hidden');
+                    document.querySelectorAll('#notificationsDropdown a.bg-gray-800').forEach(item => item.classList.remove('bg-gray-800'));
+                }).catch(() => {});
+                return false;
+            };
+            
+            // ---------- FEATURED CAROUSEL (auto-play using recently_added_series) ----------
+            {% if recently_added_series and recently_added_series|length > 0 %}
+            const featuredData = {{ recently_added_series|tojson|safe }};
+            let currentIndex = 0;
+            let autoInterval = null;
+            const featuredThumb = document.getElementById('featuredThumbnail');
+            const featuredTitle = document.getElementById('featuredTitle');
+            const featuredGenre = document.getElementById('featuredGenre');
+            const featuredYear = document.getElementById('featuredYear');
+            const featuredLanguage = document.getElementById('featuredLanguage');
+            const featuredStory = document.getElementById('featuredStory');
+            const featuredPlayBtn = document.getElementById('featuredPlayBtn');
+            const dotsContainer = document.getElementById('carouselDots');
+            
+            function updateFeaturedCarousel(index) {
+                if (!featuredData.length) return;
+                const item = featuredData[index % featuredData.length];
+                const thumbUrl = item.thumbnail ? "{{ url_for('static', filename='uploads/') }}" + item.thumbnail : "https://placehold.co/600x900/111111/e50914?text=No+Poster";
+                featuredThumb.src = thumbUrl;
+                featuredThumb.onerror = function() { this.src = "https://placehold.co/600x900/111111/e50914?text=No+Poster"; };
+                featuredTitle.innerText = item.title || "Untitled";
+                featuredGenre.innerText = item.genre || "Series";
+                featuredYear.innerText = item.release_year || "N/A";
+                featuredLanguage.innerText = item.language || "Multi";
+                featuredStory.innerText = item.story || item.description || "No story available. Get ready for an amazing series!";
+                featuredPlayBtn.href = "/series_play/" + item.id;
+                if (dotsContainer) {
+                    dotsContainer.innerHTML = '';
+                    featuredData.forEach((_, i) => {
+                        const dot = document.createElement('div');
+                        dot.className = `carousel-dot ${i === index ? 'active' : ''}`;
+                        dot.addEventListener('click', () => {
+                            stopAutoPlay();
+                            currentIndex = i;
+                            updateFeaturedCarousel(currentIndex);
+                            startAutoPlay();
+                        });
+                        dotsContainer.appendChild(dot);
+                    });
+                }
+            }
+            
+            function nextSlide() { currentIndex = (currentIndex + 1) % featuredData.length; updateFeaturedCarousel(currentIndex); }
+            function startAutoPlay() { if (autoInterval) clearInterval(autoInterval); autoInterval = setInterval(nextSlide, 5500); }
+            function stopAutoPlay() { if (autoInterval) { clearInterval(autoInterval); autoInterval = null; } }
+            
+            const carouselSection = document.getElementById('featuredCarouselSection');
+            if (carouselSection) {
+                carouselSection.addEventListener('mouseenter', stopAutoPlay);
+                carouselSection.addEventListener('mouseleave', startAutoPlay);
+            }
+            if (featuredData.length) {
+                currentIndex = 0;
+                updateFeaturedCarousel(0);
+                startAutoPlay();
+            }
+            {% endif %}
+        })();
+    </script>
+</body>
+</html>

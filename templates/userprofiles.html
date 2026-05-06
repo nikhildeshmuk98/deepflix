@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Who's Watching</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+</head>
+
+<body class="bg-black text-white flex flex-col items-center justify-center min-h-screen">
+
+<h1 class="text-4xl mb-12">Who's watching?</h1>
+
+<div class="flex gap-10 flex-wrap justify-center">
+
+<!-- MAIN USER -->
+
+<a href="/select_profile/main">
+
+<div class="text-center">
+
+<img
+src="{{ user.profile_image if user.profile_image else '/static/avatars/avatar1.png' }}"
+class="w-32 h-32 rounded-xl object-cover">
+
+<p class="mt-3">{{user.username}}</p>
+
+</div>
+
+</a>
+
+
+<!-- KIDS PROFILE -->
+
+<a href="/select_profile/kids">
+
+<div class="text-center">
+
+<img src="/static/avatars/avatar2.png"
+class="w-32 h-32 rounded-xl">
+
+<p class="mt-3">Kids</p>
+
+</div>
+
+</a>
+
+
+<!-- GUEST PROFILE -->
+
+<a href="/select_profile/guest">
+
+<div class="text-center">
+
+<div class="w-32 h-32 bg-gray-700 rounded-xl flex items-center justify-center text-3xl">
+
+👤
+
+</div>
+
+<p class="mt-3">Guest</p>
+
+</div>
+
+</a>
+
+
+<!-- EXTRA PROFILES -->
+
+{% for p in profiles %}
+
+<div class="text-center">
+
+<img src="/static/avatars/{{p.avatar}}"
+class="w-32 h-32 rounded-xl">
+
+<p class="mt-3">{{p.name}}</p>
+
+<a href="/delete_profile/{{p.id}}" class="text-red-500 text-sm">
+
+Delete
+
+</a>
+
+</div>
+
+{% endfor %}
+
+
+<!-- ADD PROFILE -->
+
+<a href="/add_profile">
+
+<div class="text-center">
+
+<div class="w-32 h-32 border border-gray-500 rounded-xl flex items-center justify-center text-4xl">
+
++
+
+</div>
+
+<p class="mt-3">Add</p>
+
+</div>
+
+</a>
+
+</div>
+
+</body>
+
+</html>

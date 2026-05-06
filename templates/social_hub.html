@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Hub · FilmFlix</title>
+    <!-- Google Fonts & Font Awesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: #0a0a0f;
+            min-height: 100vh;
+            padding: 2rem 1.5rem;
+            color: #e0e0e0;
+        }
+
+        .hub-container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* ---------- TOP NAVIGATION ---------- */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+        }
+        .logo a {
+            display: flex;
+            align-items: center;
+        }
+        .logo img {
+            height: 48px;
+            width: auto;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        .logout-btn {
+            background: rgba(255,255,255,0.05);
+            color: #f0f0f0;
+            padding: 10px 22px;
+            border-radius: 40px;
+            text-decoration: none;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(8px);
+            transition: 0.2s;
+        }
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.3);
+        }
+        .logout-btn i {
+            font-size: 1.1rem;
+        }
+
+        /* ---------- GLASS CARD (dark) ---------- */
+        .glass-card {
+            background: rgba(18, 18, 24, 0.8);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 32px;
+            box-shadow: 0 30px 50px -20px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255,255,255,0.06);
+            padding: 2rem;
+        }
+
+        /* ---------- PROFILE CARD (current user) ---------- */
+        .profile-row {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 3rem;
+        }
+        .avatar-lg {
+            width: 90px;
+            height: 90px;
+            background: linear-gradient(135deg, #3b3b5c, #5f3b7a, #b8476f);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.4rem;
+            font-weight: 600;
+            color: white;
+            box-shadow: 0 10px 25px -5px #b8476f80;
+            border: 3px solid rgba(255,255,255,0.15);
+            transition: transform 0.2s;
+        }
+        .avatar-lg:hover {
+            transform: scale(1.02);
+        }
+        .avatar-lg img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .welcome-text h2 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        .welcome-text p {
+            color: #a0a0b0;
+            margin-top: 4px;
+            font-size: 1.1rem;
+        }
+
+        /* ---------- SECTION TITLE ---------- */
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 2rem 0 1.5rem;
+        }
+        .section-title i {
+            font-size: 1.8rem;
+            color: #b8476f;
+            background: rgba(184, 71, 111, 0.2);
+            padding: 12px;
+            border-radius: 18px;
+        }
+        .section-title h3 {
+            font-size: 1.8rem;
+            font-weight: 550;
+            color: #ffffff;
+        }
+
+        /* ---------- USER GRID ---------- */
+        .user-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+            gap: 1.8rem;
+        }
+        .user-card {
+            background: #1a1a24;
+            border-radius: 28px;
+            padding: 1.6rem 1.4rem;
+            box-shadow: 0 15px 30px -12px rgba(0, 0, 0, 0.7);
+            transition: transform 0.2s ease, box-shadow 0.2s;
+            border: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+        }
+        .user-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 25px 40px -16px #b8476f40;
+            border-color: rgba(184,71,111,0.3);
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        /* clickable avatar + name */
+        .card-header a {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            text-decoration: none;
+            color: inherit;
+            flex: 1;
+        }
+        .avatar-md {
+            width: 58px;
+            height: 58px;
+            background: linear-gradient(145deg, #62437a, #b8476f);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: white;
+            box-shadow: 0 8px 16px -6px #b8476f;
+            border: 2px solid rgba(255,255,255,0.1);
+            flex-shrink: 0;
+            transition: transform 0.2s;
+        }
+        .avatar-md:hover {
+            transform: scale(1.02);
+        }
+        .avatar-md img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .user-info h4 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        .user-info h4:hover {
+            color: #b8476f;
+        }
+        .user-info .badge {
+            background: #2d2d3a;
+            color: #c0c0d0;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 40px;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        .user-details {
+            margin: 0.8rem 0 1.2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            color: #b0b0c0;
+            font-size: 0.95rem;
+        }
+        .user-details i {
+            width: 22px;
+            color: #b8476f;
+        }
+        .follow-btn {
+            background: #2d2d3a;
+            border: none;
+            border-radius: 40px;
+            padding: 12px 0;
+            font-weight: 600;
+            font-size: 1rem;
+            color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-top: auto;
+            border: 1px solid rgba(255,255,255,0.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .follow-btn.following {
+            background: #b8476f;
+            color: white;
+        }
+        .follow-btn i {
+            font-size: 1.1rem;
+        }
+        .follow-btn:active { transform: scale(0.97); }
+        .follow-btn:not(.following):hover {
+            background: #3d3d50;
+        }
+
+        /* ---------- EMPTY STATE ---------- */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            background: rgba(255,255,255,0.02);
+            border-radius: 40px;
+            color: #808090;
+            font-size: 1.2rem;
+            border: 1px dashed rgba(255,255,255,0.1);
+        }
+        hr {
+            border: none;
+            height: 1px;
+            background: rgba(255,255,255,0.08);
+            margin: 2rem 0;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 1rem; }
+            .glass-card { padding: 1.5rem; }
+            .top-bar { flex-direction: column; gap: 1rem; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+<div class="hub-container">
+
+    <!-- top bar with logo + logout -->
+    <div class="top-bar">
+        <div class="logo">
+            <a href="{{ url_for('social_hub') }}">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="FilmFlix">
+            </a>
+        </div>
+        <a href="{{ url_for('logout') }}" class="logout-btn">
+            <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
+    </div>
+
+    <!-- main glass panel -->
+    <div class="glass-card">
+
+        <!-- current user profile row (clickable avatar) -->
+        <div class="profile-row">
+            <a href="{{ url_for('socialhub_profile', user_id=current_user.id) }}" style="text-decoration: none;">
+                <div class="avatar-lg">
+                    {% if current_user.profile_image %}
+                        <img src="{{ url_for('static', filename='uploads/' + current_user.profile_image) }}" alt="profile">
+                    {% else %}
+                        {{ current_user.initial }}
+                    {% endif %}
+                </div>
+            </a>
+            <div class="welcome-text">
+                <h2>Welcome back, {{ current_user.username }} ✨</h2>
+                <p><i class="far fa-compass" style="margin-right: 6px;"></i> Discover people who love movies just like you</p>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- other users section -->
+        <div class="section-title">
+            <i class="fas fa-users"></i>
+            <h3>People you might enjoy</h3>
+        </div>
+
+        {% if users %}
+        <div class="user-grid">
+            {% for user in users %}
+            <div class="user-card" data-user-id="{{ user.id }}">
+                <div class="card-header">
+                    <!-- entire avatar + name area is a link to profile -->
+                    <a href="{{ url_for('socialhub_profile', user_id=user.id) }}">
+                        <div class="avatar-md">
+                            {% if user.profile_image %}
+                                <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" alt="{{ user.username }}">
+                            {% else %}
+                                {{ user.initial }}
+                            {% endif %}
+                        </div>
+                        <div class="user-info">
+                            <h4>{{ user.username }}</h4>
+                            {% if user.age %}<span class="badge">{{ user.age }} y.o.</span>{% endif %}
+                        </div>
+                    </a>
+                </div>
+                <div class="user-details">
+                    {% if user.fav_genre %}<span><i class="fas fa-film"></i> {{ user.fav_genre }}</span>{% endif %}
+                    <span><i class="fas fa-venus-mars"></i> {{ user.gender or 'Not specified' }}</span>
+                </div>
+                <button class="follow-btn {% if user.id in following %}following{% endif %}"
+                        data-followed-id="{{ user.id }}">
+                    <i class="fas {% if user.id in following %}fa-user-check{% else %}fa-user-plus{% endif %}"></i>
+                    <span class="btn-text">{% if user.id in following %}Following{% else %}Follow{% endif %}</span>
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="fas fa-smile-wink" style="font-size: 3rem; opacity: 0.6; margin-bottom: 1rem;"></i>
+            <p>No other users yet — but you're the pioneer!</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    (function() {
+        // Attach click handlers to all follow buttons
+        const followButtons = document.querySelectorAll('.follow-btn');
+
+        async function handleFollowClick(event) {
+            const btn = event.currentTarget;
+            const followedId = btn.dataset.followedId;
+            const icon = btn.querySelector('i');
+            const textSpan = btn.querySelector('.btn-text');
+
+            // Disable button during request
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`/toggle_follow/${followedId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    // Update button state
+                    if (data.following) {
+                        btn.classList.add('following');
+                        textSpan.innerText = 'Following';
+                        icon.className = 'fas fa-user-check';
+                    } else {
+                        btn.classList.remove('following');
+                        textSpan.innerText = 'Follow';
+                        icon.className = 'fas fa-user-plus';
+                    }
+                } else {
+                    alert('Something went wrong: ' + data.message);
+                }
+            } catch (err) {
+                alert('Network error, please try again.');
+                console.error(err);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        followButtons.forEach(btn => btn.addEventListener('click', handleFollowClick));
+    })();
+</script>
+</body>
+</html>

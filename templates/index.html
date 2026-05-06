@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">  
+    <title>DeepFlixAI · cinematic intelligence</title>
+    <!-- fonts & icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* MAGICAL PAGE LOAD ANIMATION */
+        @keyframes magicalReveal {
+            0% {
+                opacity: 0;
+                transform: scale(0.95) translateY(20px);
+                filter: blur(10px);
+            }
+            50% {
+                opacity: 0.7;
+                transform: scale(1.02) translateY(-5px);
+                filter: blur(2px);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+                filter: blur(0);
+            }
+        }
+        
+        @keyframes glowPulse {
+            0% { text-shadow: 0 0 20px rgba(229,9,20,0.3); }
+            50% { text-shadow: 0 0 40px rgba(229,9,20,0.8), 0 0 60px rgba(229,9,20,0.4); }
+            100% { text-shadow: 0 0 20px rgba(229,9,20,0.3); }
+        }
+        
+        @keyframes slideUpFade {
+            0% { opacity: 0; transform: translateY(30px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes cardPop {
+            0% { opacity: 0; transform: scale(0.8); }
+            50% { transform: scale(1.05); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        
+        /* Apply animations to different elements */
+        .magical-header {
+            animation: slideUpFade 1s ease-out forwards;
+        }
+        
+        .magical-hero {
+            animation: magicalReveal 1.2s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+        }
+        
+        .magical-title {
+            animation: glowPulse 3s infinite, slideUpFade 1s ease-out forwards;
+        }
+        
+        .magical-section {
+            animation: slideUpFade 1s ease-out 0.3s both;
+        }
+        
+        .movie-card {
+            animation: cardPop 0.6s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+            opacity: 0;
+        }
+        
+        /* Stagger card animations */
+        .movie-card:nth-child(1) { animation-delay: 0.1s; }
+        .movie-card:nth-child(2) { animation-delay: 0.2s; }
+        .movie-card:nth-child(3) { animation-delay: 0.3s; }
+        .movie-card:nth-child(4) { animation-delay: 0.4s; }
+        .movie-card:nth-child(5) { animation-delay: 0.5s; }
+        .movie-card:nth-child(6) { animation-delay: 0.6s; }
+        .movie-card:nth-child(7) { animation-delay: 0.7s; }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #030712;
+            color: white;
+            scroll-behavior: smooth;
+            overflow-x: hidden;
+            width: 100%;
+            position: relative;
+        }
+        
+        /* hero background (fixed) */
+        .bg-hero {
+            background: url('{{ url_for("static", filename="img/bg.png") }}') center/cover no-repeat;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            z-index: -2;
+            filter: brightness(0.4) saturate(1.2);
+            transition: filter 0.2s;
+            animation: glowPulse 8s infinite;
+        }
+        
+        /* subtle animated overlay */
+        .bg-hero::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at 30% 30%, rgba(229,9,20,0.15) 0%, transparent 70%);
+            pointer-events: none;
+            animation: glowPulse 5s infinite;
+        }
+        
+        /* glass header */
+        .header {
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .btn-red {
+            background: #e50914;
+            box-shadow: 0 8px 20px -8px rgba(229,9,20,0.5);
+            transition: all 0.2s ease;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+        .btn-red:hover {
+            background: #f40612;
+            transform: scale(1.05) translateY(-2px);
+            box-shadow: 0 14px 28px -8px rgba(229,9,20,0.7);
+        }
+
+        /* ---------- MOVIE CARD - MATCHING REFERENCE IMAGE ---------- */
+        .movie-card {
+            width: min(220px, 45vw);
+            max-width: 220px;
+            min-width: 160px;
+            flex: 0 0 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.35s cubic-bezier(0.2, 0, 0, 1);
+            position: relative;
+            cursor: pointer;
+            box-shadow: 0 15px 25px -8px rgba(0,0,0,0.9);
+            border: 1px solid rgba(255,255,255,0.03);
+            background: #0b0f19;
+        }
+        .movie-card:hover {
+            transform: scale(1.08) translateY(-10px);
+            box-shadow: 0 30px 35px -12px black;
+            border-color: rgba(255,255,255,0.2);
+            z-index: 10;
+        }
+
+        .poster {
+            height: min(330px, 65vw);
+            max-height: 330px;
+            min-height: 240px;
+            width: 100%;
+            object-fit: cover;
+            transition: transform 0.4s;
+            display: block;
+            background: #1f2937;
+        }
+        .movie-card:hover .poster {
+            transform: scale(1.03);
+        }
+
+        /* ---------- NUMBER RANK - BOTTOM RIGHT (HALF ON CARD, HALF OUTSIDE — PLAIN WHITE, NO GLOW) ---------- */
+        .rank-number {
+            position: absolute;
+            bottom: -0.4em;               /* pushes half of the number outside the card bottom */
+            right: 8px;
+            color: #ffffff;                /* pure white, no glow */
+            font-weight: 900;
+            font-size: clamp(5rem, 18vw, 7rem);
+            line-height: 0.8;
+            z-index: 15;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: -0.1em;
+            /* text-shadow completely removed */
+            text-shadow: none;
+            opacity: 0.95;
+            transition: all 0.2s ease;
+            pointer-events: none;
+        }
+        
+        /* all ranks consistently white, no glow */
+        .movie-card:nth-child(1) .rank-number,
+        .movie-card:nth-child(2) .rank-number,
+        .movie-card:nth-child(3) .rank-number,
+        .movie-card:nth-child(4) .rank-number,
+        .movie-card:nth-child(5) .rank-number,
+        .movie-card:nth-child(6) .rank-number,
+        .movie-card:nth-child(7) .rank-number {
+            color: #ffffff;
+            text-shadow: none;
+        }
+        
+        .movie-card:hover .rank-number {
+            transform: scale(1.1);
+            opacity: 1;
+            /* no glow on hover either */
+            text-shadow: none;
+        }
+
+        /* heart button - minimal like reference */
+        .heart-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            padding: 6px 12px;
+            border-radius: 30px;
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.2);
+            display: none;
+            align-items: center;
+            gap: 6px;
+            z-index: 25;
+            transition: all 0.15s;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: white;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .heart-btn i {
+            font-size: 1rem;
+        }
+        .heart-btn.active {
+            background: #e50914;
+            border-color: #e50914;
+        }
+        .heart-btn.active i {
+            color: white;
+        }
+
+        /* meta info overlay - minimal */
+        .meta-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(0deg, rgba(0,0,0,0.95) 10%, rgba(0,0,0,0.4) 70%, transparent);
+            padding: 30px 12px 15px 12px;
+            text-align: left;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .movie-title {
+            font-size: 1.1rem;
+            font-weight: 800;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: white;
+            text-shadow: 0 2px 5px black;
+            letter-spacing: -0.02em;
+        }
+        .movie-year {
+            font-size: 0.9rem;
+            color: #d1d5db;
+            font-weight: 500;
+            margin-top: 2px;
+        }
+
+        /* on card hover: show heart & meta-info */
+        @media (hover: hover) {
+            .movie-card:hover .heart-btn {
+                display: flex;
+            }
+            .movie-card:hover .meta-info {
+                opacity: 1;
+            }
+        }
+        
+        /* Touch devices - show on tap */
+        @media (hover: none) {
+            .movie-card:active .heart-btn {
+                display: flex;
+            }
+            .movie-card:active .meta-info {
+                opacity: 1;
+            }
+        }
+
+        /* carousel wrapper */
+        .carousel-wrapper {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            padding: 0 10px;
+        }
+        
+        .carousel {
+            display: flex;
+            overflow-x: auto;
+            gap: 40px;  /* INCREASED SPACE BETWEEN CARDS - was 20px, now 40px */
+            scroll-behavior: smooth;
+            padding: 15px 4px 30px 4px;
+            scrollbar-width: none;
+            width: 100%;
+            max-width: calc(220px * 4 + 40px * 3);  /* Updated to match new gap */
+            margin: 0 auto;
+            justify-content: flex-start;
+            -webkit-overflow-scrolling: touch;
+        }
+        .carousel::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* carousel container */
+        .carousel-container {
+            position: relative;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 1.5rem;
+        }
+
+        /* carousel navigation buttons */
+        .carousel-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            color: white;
+            cursor: pointer;
+            transition: 0.2s;
+            z-index: 40;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.7);
+            font-weight: 300;
+        }
+        .carousel-btn:hover {
+            background: #e50914;
+            border-color: #e50914;
+            transform: translateY(-50%) scale(1.15);
+        }
+        
+        .left { left: -10px; }
+        .right { right: -10px; }
+        
+        @media (max-width: 1024px) {
+            .left { left: 0px; }
+            .right { right: 0px; }
+        }
+
+        /* section headers - TRENDING NOW like reference */
+        .section-title {
+            font-size: 2.2rem;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            color: white;
+            margin-bottom: 1rem;  /* Slightly increased */
+            margin-left: max(15px, calc((100% - (220px * 4 + 40px * 3)) / 2));  /* Updated */
+            display: block;
+            line-height: 1.2;
+            text-transform: uppercase;
+        }
+
+        /* HERO SECTION */
+        .hero-title {
+            font-size: clamp(2rem, 6vw, 2.5rem);
+            font-weight: 900;
+            line-height: 1.1;
+            background: linear-gradient(to right, #ffffff, #f0f0f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 50px rgba(229,9,20,0.5);
+            margin-bottom: 0.75rem;
+        }
+        
+        .hero-sub {
+            color: #d1d5db;
+            font-size: clamp(1.2rem, 4vw, 1.5rem);
+            font-weight: 300;
+            max-width: min(750px, 90%);
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.4;
+        }
+        
+        .hero-cta-text {
+            font-size: clamp(0.9rem, 3vw, 1.1rem);
+            color: #9ca3af;
+            margin-top: 0.8rem;
+            margin-bottom: 1.5rem;
+            padding: 0 15px;
+        }
+        
+        .hero-button-text {
+            font-size: clamp(0.9rem, 3vw, 1.1rem);
+            font-weight: 400;
+            color: #f3f4f6;
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(5px);
+            display: inline-block;
+            padding: 0.5rem 2rem;
+            border-radius: 50px;
+            border: 1px solid rgba(255,255,255,0.15);
+            margin-bottom: 2rem;
+        }
+
+        /* container */
+        .max-w-6xl {
+            max-width: 1200px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Responsive fixes */
+        @media (max-width: 768px) {
+            .section-title {
+                font-size: 1.8rem;
+                margin-left: 15px;
+            }
+            .rank-number {
+                font-size: 5.5rem;
+                bottom: -0.4em;
+                right: 5px;
+            }
+            .carousel {
+                gap: 30px;  /* More space on tablet */
+            }
+        }
+
+        @media (max-width: 480px) {
+            .movie-card {
+                width: 160px;
+            }
+            .poster {
+                height: 240px;
+            }
+            .rank-number {
+                font-size: 4.5rem;
+                bottom: -0.4em;
+                right: 4px;
+                line-height: 0.7;
+            }
+            .section-title {
+                font-size: 1.6rem;
+                margin-left: 10px;
+            }
+            .hero-title {
+                font-size: 1.8rem;
+            }
+            .hero-sub {
+                font-size: 1.1rem;
+            }
+            .carousel {
+                gap: 20px;  /* Still good spacing on mobile */
+            }
+        }
+
+        /* Touch device optimizations */
+        @media (pointer: coarse) {
+            .carousel-btn {
+                width: 50px;
+                height: 50px;
+                background: rgba(229, 9, 20, 0.9);
+            }
+            .heart-btn {
+                padding: 8px 14px;
+            }
+        }
+
+        /* Ensure images don't break layout */
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* Smooth transitions */
+        .btn-red, .movie-card, .heart-btn, .carousel-btn {
+            transition: all 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
+        }
+        
+        /* Better text rendering */
+        * {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* foot-note styling */
+        .foot-note {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #4b5563;
+            font-size: 0.9rem;
+            border-top: 1px solid #1f2937;
+            letter-spacing: 0.5px;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="bg-hero"></div>
+
+<!-- HEADER (glass) with animation -->
+<header class="header flex justify-between items-center px-6 py-3 sticky top-0 z-50 magical-header">
+    <img src="{{ url_for('static', filename='img/logo.png') }}" class="h-9 md:h-10" alt="DeepFlixAI" style="max-width: 150px;">
+    <a href="{{ url_for('login') }}" class="btn-red px-5 py-2 rounded-full text-sm md:text-base shadow-lg whitespace-nowrap">
+        Sign In
+    </a>
+</header>
+
+<!-- HERO SECTION with magical animation -->
+<section class="text-center py-16 px-4 max-w-6xl mx-auto magical-hero">
+    <h1 class="hero-title font-extrabold mb-4 magical-title">
+        AI-Powered Movie & OTT Recommendation
+    </h1>
+    <p class="hero-sub text-gray-300 mb-2">
+        Analyzing Scripts with NLP & CNN for personalized content just for you.
+    </p>
+    <div class="hero-cta-text">
+        Unlimited entertainment, AI-powered recommendations.
+    </div>
+    <div class="hero-button-text">
+        ready to watch? sign up to receive tailored suggestions
+    </div>
+    <div class="mt-6">
+        <a href="{{ url_for('register') }}" class="btn-red px-8 py-3 md:px-10 md:py-4 rounded-full text-lg md:text-xl font-bold inline-block tracking-wide">
+            Get Started
+        </a>
+    </div>
+</section>
+
+<!-- TRENDING NOW CAROUSEL - MATCHING REFERENCE IMAGE (WITH EXTRA SPACE BETWEEN CARDS) -->
+<section class="px-4 md:px-6 lg:px-12 mb-20 md:mb-28 relative magical-section">
+
+    <h2 class="section-title">🔥 TRENDING NOW</h2>
+
+    <!-- carousel container -->
+    <div class="carousel-container">
+
+        <!-- navigation arrows -->
+        <button class="carousel-btn left hidden sm:flex" onclick="scrollCarousel(-1)" aria-label="previous">‹</button>
+        <button class="carousel-btn right hidden sm:flex" onclick="scrollCarousel(1)" aria-label="next">›</button>
+
+        <!-- carousel wrapper -->
+        <div class="carousel-wrapper">
+            <div id="moviesCarousel" class="carousel">
+
+                {% if trending_movies and trending_movies|length > 0 %}
+
+                    {% for movie in trending_movies[:10] %}
+                    <div class="movie-card" data-id="{{ movie.id }}">
+
+                        <!-- poster -->
+                        <img src="{{ url_for('static', filename='uploads/' + (movie.thumbnail or 'default.jpg')) }}"
+                             class="poster"
+                             alt="{{ movie.title }}"
+                             loading="lazy"
+                             style="aspect-ratio:2/3; object-fit:cover; width:100%"
+                             onerror="this.onerror=null; this.src='https://placehold.co/300x450/1f2937/red?text=No+Poster';">
+
+                        <!-- rank -->
+                        <div class="rank-number">{{ loop.index }}</div>
+
+                        <!-- heart -->
+                        <div onclick="event.stopPropagation(); toggleHeart({{ movie.id }}, this)"
+                             class="heart-btn {% if movie.user_hearted %}active{% endif %}">
+
+                            <i class="{% if movie.user_hearted %}fas{% else %}far{% endif %} fa-heart"></i>
+                            <span class="heart-count">{{ movie.hearts or 0 }}</span>
+                        </div>
+
+                        <!-- overlay -->
+                        <div class="meta-info">
+                            <div class="movie-title">{{ movie.title }}</div>
+                            <div class="movie-year">
+                                {{ movie.release_year or '—' }}
+                            </div>
+                        </div>
+
+                        <!-- click navigation -->
+                        <a href="{{ url_for('watch_content', content_id=movie.id) }}" class="absolute inset-0"></a>
+
+                    </div>
+                    {% endfor %}
+
+                {% else %}
+
+                <!-- empty state -->
+                <div class="text-gray-400 p-6">
+                    No trending movies available.
+                </div>
+
+                {% endif %}
+
+            </div>
+        </div>
+
+    </div>
+</section>
+
+<!-- Simple footer with animation -->
+<div class="foot-note magical-section" style="animation-delay: 0.8s;">
+    ✦ DeepFlixAI · where every click reveals a story ✦
+</div>
+
+<script>
+    // CAROUSEL SCROLL - optimized for all devices
+    function scrollCarousel(direction) {
+        const container = document.getElementById('moviesCarousel');
+        if (container) {
+            let scrollAmount = window.innerWidth <= 480 ? 180 : 
+                              window.innerWidth <= 768 ? 200 : 260;  // Adjusted for new gap
+            
+            container.scrollBy({
+                left: direction * scrollAmount,
+                behavior: 'smooth'
+            });
+        }
+    }
+
+    // TOGGLE HEART (AJAX) with better error handling
+    function toggleHeart(contentId, btnElement) {
+        btnElement.style.transform = 'scale(0.9)';
+        setTimeout(() => {
+            btnElement.style.transform = '';
+        }, 200);
+        
+        fetch('/ajax_toggle_heart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content_id: contentId })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                const countSpan = btnElement.querySelector('.heart-count');
+                if (countSpan) countSpan.innerText = data.hearts;
+
+                const icon = btnElement.querySelector('i');
+                if (btnElement.classList.contains('active')) {
+                    btnElement.classList.remove('active');
+                    icon.classList.replace('fas', 'far');
+                } else {
+                    btnElement.classList.add('active');
+                    icon.classList.replace('far', 'fas');
+                }
+            } else {
+                if (window.innerWidth <= 768) {
+                    showMessage('🔐 Login required to heart movies');
+                } else {
+                    alert("🔐 Login required to heart movies");
+                }
+            }
+        })
+        .catch(() => {
+            showMessage('⚠️ Something went wrong');
+        });
+    }
+
+    function showMessage(text) {
+        const alertDiv = document.createElement('div');
+        alertDiv.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#e50914; color:white; padding:12px 24px; border-radius:50px; z-index:9999; font-size:14px; box-shadow:0 10px 25px rgba(0,0,0,0.5);';
+        alertDiv.textContent = text;
+        document.body.appendChild(alertDiv);
+        setTimeout(() => alertDiv.remove(), 3000);
+    }
+
+    // Image error fallback and responsive adjustments
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.poster').forEach(img => {
+            img.addEventListener('error', function() {
+                this.onerror = null;
+                this.src = 'https://placehold.co/300x450/1f2937/red?text=No+Poster';
+            });
+        });
+        
+        if ('ontouchstart' in window) {
+            document.querySelectorAll('.movie-card').forEach(card => {
+                card.addEventListener('touchstart', function() {}, { passive: true });
+            });
+        }
+    });
+    
+    // Prevent zoom on double tap
+    document.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 1) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+</script>
+
+<style>
+    /* Final touch-ups matching reference image */
+    .movie-card .heart-btn {
+        z-index: 25;
+    }
+    .meta-info {
+        pointer-events: none;
+    }
+    .error-fallback {
+        object-fit: cover;
+    }
+    
+    /* Hide arrows on small phones, use swipe instead */
+    @media (max-width: 640px) {
+        .carousel-btn {
+            display: none !important;
+        }
+    }
+    
+    /* Exactly like reference - numbers on bottom right, half outside, plain white (no glow) */
+    .rank-number {
+        text-align: right;
+        line-height: 0.8;
+    }
+    
+    /* Make trending section pop */
+    .section-title {
+        text-shadow: 0 0 20px rgba(229,9,20,0.3);
+    }
+    
+    /* Better hover states */
+    .movie-card {
+        will-change: transform;
+    }
+    
+    /* Match reference image exactly - numbers fully visible & half outside */
+    @media (min-width: 1024px) {
+        .rank-number {
+            font-size: 6.5rem;
+            bottom: -0.4em;
+            right: 8px;
+        }
+    }
+    
+    /* Ensure number is never cut off (overflow visible) and half spills out */
+    .movie-card {
+        overflow: visible !important;
+    }
+    
+    /* But keep image clipped to card */
+    .poster {
+        border-radius: 12px;
+    }
+    
+    /* Additional spacing for the trending section */
+    section.mb-20 {
+        margin-bottom: 5rem;
+    }
+</style>
+
+</body>
+</html>

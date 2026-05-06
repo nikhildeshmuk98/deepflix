@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>DeepFlix · Immersive Sign Up | Slideshow Background</title>
+    <!-- Tailwind (v2.2.19) + Inter font + Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            /* No static background image here — it will be set and rotated dynamically by JS */
+            background-color: #0b0b0b;
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-attachment: fixed;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: background-image 0.9s ease-in-out; /* subtle crossfade-like effect */
+        }
+
+        /* soft dark overlay to keep card readable while background images shine through */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 0;
+            pointer-events: none;
+            backdrop-filter: brightness(0.92) contrast(1.05);
+        }
+
+        /* SQUARE CARD — crisp, modern, slightly rounded edges (almost square) */
+        .glass-card {
+            background: rgba(16, 16, 18, 0.85);
+            backdrop-filter: blur(18px) saturate(170%);
+            -webkit-backdrop-filter: blur(18px) saturate(170%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 0.9rem;   /* subtle rounding — square-friendly */
+            box-shadow: 0 32px 52px -22px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(229, 9, 20, 0.2) inset;
+            transition: transform 0.25s ease, box-shadow 0.3s;
+            position: relative;
+            z-index: 10;
+        }
+
+        .glass-card:hover {
+            box-shadow: 0 42px 62px -18px rgba(229, 9, 20, 0.28), 0 0 0 1px rgba(229, 9, 20, 0.35) inset;
+        }
+
+        /* floating label + icon styling */
+        .input-icon {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-icon i {
+            position: absolute;
+            left: 1.1rem;
+            color: #a8a8b0;
+            font-size: 1.1rem;
+            transition: color 0.2s;
+            pointer-events: none;
+        }
+
+        .input-icon input,
+        .input-icon select {
+            width: 100%;
+            padding: 0.9rem 1rem 0.9rem 2.8rem;
+            background: rgba(26, 26, 30, 0.8);
+            border: 1.5px solid rgba(90, 90, 100, 0.4);
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            color: #f0f0f2;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .input-icon select {
+            padding-left: 2.8rem;
+            appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%23a0a0b0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 1.2rem center;
+            background-size: 1.1rem;
+        }
+
+        .input-icon input:focus,
+        .input-icon select:focus {
+            border-color: #e50914;
+            background: rgba(35, 35, 40, 0.95);
+            box-shadow: 0 0 0 3px rgba(229, 9, 20, 0.2);
+        }
+
+        .input-icon input:focus~i,
+        .input-icon select:focus~i {
+            color: #e50914;
+        }
+
+        ::placeholder {
+            color: #6e6e7a;
+            font-weight: 300;
+            opacity: 1;
+        }
+
+        /* SIGN UP BUTTON — sleek & powerful */
+        .btn-shine {
+            background: linear-gradient(145deg, #c20912, #e50914);
+            border: none;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: white;
+            transition: all 0.2s;
+            box-shadow: 0 12px 28px -10px rgba(229, 9, 20, 0.6);
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .btn-shine:hover {
+            transform: scale(1.02);
+            background: linear-gradient(145deg, #db0d18, #f6121d);
+            box-shadow: 0 18px 34px -8px #e50914b3;
+        }
+
+        .btn-shine:active {
+            transform: scale(0.98);
+        }
+
+        /* flash message styling */
+        .flash-msg {
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(10px);
+            border-left: 6px solid #3b82f6;
+            border-radius: 0.5rem;
+            padding: 0.8rem 1.3rem;
+            color: #fff;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 10px 18px -6px #000000b3;
+        }
+
+        .flash-msg i {
+            color: #60a5fa;
+            font-size: 1.3rem;
+        }
+
+        /* sign in link */
+        .signin-link {
+            color: #e0e0e8;
+            text-decoration: none;
+            font-weight: 500;
+            border-bottom: 1.5px solid transparent;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        .signin-link:hover {
+            color: white;
+            border-bottom-color: #e50914;
+        }
+
+        /* top left logo (absolute, above all) */
+        .top-logo {
+            position: absolute;
+            top: 1.8rem;
+            left: 2rem;
+            z-index: 30;
+            max-width: 160px;
+            transition: transform 0.2s ease;
+        }
+
+        .top-logo img {
+            width: 100%;
+            height: auto;
+            display: block;
+            filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.55));
+        }
+
+        .top-logo:hover {
+            transform: scale(1.02);
+        }
+
+        /* card logo (center inside card) */
+        .card-logo {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-logo img {
+            max-width: 180px;
+            height: auto;
+            filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.7));
+        }
+
+        /* responsive adjustments */
+        @media (max-width: 640px) {
+            .top-logo {
+                top: 1rem;
+                left: 1rem;
+                max-width: 120px;
+            }
+
+            .card-logo img {
+                max-width: 150px;
+            }
+
+            .glass-card {
+                padding: 1.75rem 1.25rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .grid-cols-2 {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+            }
+        }
+
+        /* optional low-res optimization */
+        .bg-transition {
+            will-change: background-image;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ABSOLUTE TOP LOGO: your DeepFlix brand (stays visible) -->
+    <div class="top-logo">
+        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="DeepFlix" loading="eager">
+    </div>
+
+    <!-- MAIN CENTERED CARD -->
+    <div class="w-full max-w-lg p-4 mt-12 md:mt-0">
+        <div class="glass-card p-8 md:p-10">
+            <!-- CARD LOGO (replaces textual header, keeps consistency) -->
+           
+
+            <!-- flash messages (original behavior preserved) -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="flash-msg mb-6">
+                            <i class="fas fa-circle-info"></i>
+                            <span>{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- REGISTRATION FORM (same fields, same order) -->
+            <form method="POST" action="{{ url_for('register') }}" class="space-y-5">
+                <!-- username -->
+                <div class="input-icon">
+                    <i class="fas fa-user"></i>
+                    <input type="text" name="username" placeholder="Username" required autocomplete="off">
+                </div>
+
+                <!-- password -->
+                <div class="input-icon">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" name="password" placeholder="Password" required>
+                </div>
+
+                <!-- age + gender row -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="input-icon">
+                        <i class="fas fa-calendar-alt"></i>
+                        <input type="number" name="age" placeholder="Age" required>
+                    </div>
+                    <div class="input-icon">
+                        <i class="fas fa-venus-mars"></i>
+                        <select name="gender" class="text-gray-200">
+                            <option value="Male" class="bg-gray-800">Male</option>
+                            <option value="Female" class="bg-gray-800">Female</option>
+                            <option value="Other" class="bg-gray-800">Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- favorite genre -->
+                <div class="input-icon">
+                    <i class="fas fa-tags"></i>
+                    <input type="text" name="fav_genre" placeholder="Favorite genre (e.g. Sci-Fi, Action)">
+                </div>
+
+                <!-- favorite language -->
+                <div class="input-icon">
+                    <i class="fas fa-language"></i>
+                    <input type="text" name="fav_language" placeholder="Preferred language">
+                </div>
+
+                <!-- SIGN UP BUTTON — clean text "Sign Up" with icons -->
+                <button type="submit" class="btn-shine w-full flex items-center justify-center gap-3">
+                    <i class="fas fa-sparkles"></i> 
+                    <span class="tracking-wide">Sign Up</span> 
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+
+            <!-- sign in footer link -->
+            <div class="mt-8 flex flex-wrap items-center justify-center gap-2 text-base text-gray-400">
+                <span>⚡ already part of the grid?</span>
+                <a href="{{ url_for('login') }}" class="signin-link flex items-center gap-1">
+                    Sign in <i class="fas fa-chevron-right text-xs"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- BACKGROUND AUTOPLAY SLIDESHOW (bg.png, bg1.png, bg2.png) -->
+    <script>
+        (function() {
+            // Get the exact URLs for three background images via Flask's url_for
+            // These point to your static/img/ folder: bg.png, bg1.png, bg2.png
+            const imageList = [
+                "{{ url_for('static', filename='img/bg3.png') }}",
+                
+                "{{ url_for('static', filename='img/bg2.png') }}"
+                
+            ];
+
+            // Preload all images to avoid flickering & ensure smooth transitions
+            function preloadImages(urls) {
+                urls.forEach(url => {
+                    const img = new Image();
+                    img.src = url;
+                });
+            }
+            preloadImages(imageList);
+
+            let currentIndex = 0;
+            const bodyElement = document.body;
+
+            // Apply background styles exactly like original (cover / fixed / center)
+            function applyBackgroundImage(url) {
+                // We keep the same background properties: cover, fixed, no-repeat, centered
+                bodyElement.style.backgroundImage = `url('${url}')`;
+                bodyElement.style.backgroundSize = "cover";
+                bodyElement.style.backgroundRepeat = "no-repeat";
+                bodyElement.style.backgroundPosition = "center center";
+                bodyElement.style.backgroundAttachment = "fixed";
+            }
+
+            // Set initial background (first image)
+            if (imageList.length > 0) {
+                applyBackgroundImage(imageList[0]);
+            }
+
+            // Rotate background every 6 seconds — smooth autoplay slideshow
+            let intervalId = null;
+            function startSlideshow(intervalMs = 6000) {
+                if (intervalId) clearInterval(intervalId);
+                intervalId = setInterval(() => {
+                    // cycle to next image index
+                    currentIndex = (currentIndex + 1) % imageList.length;
+                    const nextImageUrl = imageList[currentIndex];
+                    applyBackgroundImage(nextImageUrl);
+                }, intervalMs);
+            }
+
+            // start autoplay after page fully loaded (ensure all assets ready)
+            window.addEventListener('load', function() {
+                startSlideshow(6000); // 6 seconds per image, smooth autoplay
+            });
+
+            // Optional: if user navigates away or page becomes hidden we keep running (standard)
+            // but we ensure the slideshow doesn't cause performance issues — it's light.
+            // Re-apply if needed when document becomes visible again? not required, but good.
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    if (intervalId) clearInterval(intervalId);
+                    intervalId = null;
+                } else {
+                    if (!intervalId) startSlideshow(6000);
+                }
+            });
+        })();
+    </script>
+
+    <!-- fallback note: all bg images (bg.png, bg1.png, bg2.png) must exist inside static/img/ -->
+    <!-- This version includes dynamic slideshow, square card design, both logos, exact form fields, btn Sign Up, and automatic background rotation -->
+    <!-- The background images will rotate seamlessly with persistent readability overlay -->
+</body>
+</html>

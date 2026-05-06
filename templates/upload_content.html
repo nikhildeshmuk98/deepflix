@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Content — DeepFlixAI (Complete Cast)</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --red: #e50914;
+            --red-bright: #ff1a26;
+            --red-dim: #a0060f;
+            --black: #000000;
+            --dark: #0a0a0a;
+            --dark2: #111111;
+            --dark3: #181818;
+            --dark4: #222222;
+            --border: rgba(255,255,255,0.07);
+            --border-red: rgba(229,9,20,0.35);
+            --text: #f0f0f0;
+            --text-muted: #7a7a7a;
+            --text-dim: #aaaaaa;
+            --glass: rgba(10,10,10,0.85);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--black);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── ANIMATED BACKGROUND ── */
+        .bg-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background-image: url('{{ url_for("static", filename="img/bg2.png") }}');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            filter: brightness(0.18) saturate(0.6);
+            transform: scale(1.04);
+        }
+        .bg-noise {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            opacity: 0.035;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            background-size: 150px;
+            pointer-events: none;
+        }
+        .bg-vignette {
+            position: fixed;
+            inset: 0;
+            z-index: 2;
+            background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.85) 100%);
+            pointer-events: none;
+        }
+        .bg-lines {
+            position: fixed;
+            inset: 0;
+            z-index: 2;
+            background-image: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.012) 2px, rgba(255,255,255,0.012) 4px);
+            pointer-events: none;
+        }
+        /* Red glow orb top left */
+        .glow-orb {
+            position: fixed;
+            top: -120px;
+            left: -80px;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(229,9,20,0.14) 0%, transparent 70%);
+            z-index: 2;
+            pointer-events: none;
+            animation: orbPulse 6s ease-in-out infinite;
+        }
+        @keyframes orbPulse {
+            0%, 100% { opacity: 0.7; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.1); }
+        }
+
+        /* ── LAYOUT ── */
+        .page-wrapper {
+            position: relative;
+            z-index: 10;
+            min-height: 100vh;
+            padding: 0 16px 60px;
+        }
+
+        /* ── TOP BAR ── */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 32px;
+            background: rgba(0,0,0,0.82);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 1px 40px rgba(0,0,0,0.7);
+        }
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .topbar img.logo {
+            height: 48px;
+            object-fit: contain;
+        }
+        .topbar-divider {
+            width: 1px;
+            height: 28px;
+            background: var(--border);
+        }
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.82rem;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            transition: color 0.2s;
+        }
+        .back-btn svg { transition: transform 0.2s; }
+        .back-btn:hover { color: var(--red-bright); }
+        .back-btn:hover svg { transform: translateX(-3px); }
+        .topbar-badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 2px;
+            background: var(--red);
+            color: #fff;
+        }
+
+        /* ── HERO HEADER ── */
+        .page-header {
+            text-align: center;
+            padding: 56px 20px 40px;
+        }
+        .page-header .eyebrow {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--red);
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .page-header .eyebrow::before,
+        .page-header .eyebrow::after {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 1px;
+            background: var(--red);
+            opacity: 0.5;
+        }
+        .page-header h1 {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: clamp(2.6rem, 6vw, 4.4rem);
+            letter-spacing: 0.06em;
+            line-height: 1;
+            color: #fff;
+            text-shadow: 0 0 60px rgba(229,9,20,0.3);
+        }
+        .page-header h1 span {
+            color: var(--red);
+        }
+        .page-header p {
+            margin-top: 12px;
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            letter-spacing: 0.03em;
+        }
+
+        /* ── FORM CONTAINER ── */
+        .form-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        /* ── FLASH MESSAGES ── */
+        .flash-success { background: rgba(22,163,74,0.18); border: 1px solid rgba(22,163,74,0.4); color: #86efac; }
+        .flash-danger  { background: rgba(229,9,20,0.18);  border: 1px solid rgba(229,9,20,0.4);  color: #fca5a5; }
+        .flash-info    { background: rgba(37,99,235,0.18); border: 1px solid rgba(37,99,235,0.4);  color: #93c5fd; }
+        .flash-msg {
+            padding: 12px 18px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        /* ── CARD (section wrapper) ── */
+        .card {
+            background: linear-gradient(160deg, rgba(22,22,22,0.95) 0%, rgba(12,12,12,0.98) 100%);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px 32px;
+            margin-bottom: 18px;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.3s;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--red), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .card:hover { border-color: var(--border-red); }
+        .card:hover::before { opacity: 1; }
+
+        /* ── SECTION TITLE ── */
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .section-title .icon-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 6px;
+            background: rgba(229,9,20,0.15);
+            border: 1px solid var(--border-red);
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .section-title .title-text {
+            color: var(--text);
+            font-size: 0.78rem;
+        }
+        .section-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, var(--border), transparent);
+        }
+
+        /* ── GRID LAYOUTS ── */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 16px;
+        }
+        .col-span-2 { grid-column: span 2; }
+        @media (max-width: 700px) {
+            .grid-2 { grid-template-columns: 1fr; }
+            .grid-3 { grid-template-columns: 1fr; }
+            .col-span-2 { grid-column: span 1; }
+        }
+
+        /* ── FORM FIELD ── */
+        .field { display: flex; flex-direction: column; gap: 7px; }
+        .field label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .field label .req { color: var(--red); margin-left: 3px; }
+        .field input[type="text"],
+        .field input[type="number"],
+        .field input[type="url"],
+        .field select,
+        .field textarea {
+            width: 100%;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 7px;
+            padding: 12px 16px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9rem;
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+            -webkit-appearance: none;
+        }
+        .field input::placeholder,
+        .field textarea::placeholder { color: rgba(255,255,255,0.2); }
+        .field input:focus,
+        .field select:focus,
+        .field textarea:focus {
+            border-color: rgba(229,9,20,0.6);
+            background: rgba(229,9,20,0.04);
+            box-shadow: 0 0 0 3px rgba(229,9,20,0.1), 0 0 16px rgba(229,9,20,0.08);
+        }
+        .field select option { background: #1a1a1a; }
+        .field textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
+        .field .hint {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            letter-spacing: 0.02em;
+        }
+
+        /* ── CAST MEMBER BLOCK ── */
+        .cast-block {
+            background: rgba(255,255,255,0.025);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 16px;
+            position: relative;
+            transition: border-color 0.25s;
+        }
+        .cast-block:hover { border-color: rgba(255,255,255,0.12); }
+        .cast-block-num {
+            position: absolute;
+            top: -1px; right: 16px;
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 0.65rem;
+            letter-spacing: 0.18em;
+            color: var(--red);
+            background: var(--dark2);
+            padding: 2px 8px;
+            border-radius: 0 0 5px 5px;
+            border: 1px solid var(--border-red);
+            border-top: none;
+        }
+
+        /* ── FILE UPLOAD ── */
+        .file-upload-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-top: 14px;
+        }
+        .file-upload-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            border: 1px solid var(--border-red);
+            color: var(--red);
+            padding: 9px 18px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .file-upload-label:hover {
+            background: var(--red);
+            color: #fff;
+            box-shadow: 0 0 20px rgba(229,9,20,0.3);
+        }
+        .file-name-display {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 260px;
+            transition: color 0.2s;
+        }
+        .file-name-display.has-file { color: #6ee7b7; }
+        .file-upload-label svg { flex-shrink: 0; }
+
+        /* ── CHECKBOXES ── */
+        .flags-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        @media (max-width: 500px) { .flags-grid { grid-template-columns: 1fr; } }
+        .flag-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .flag-item:hover { border-color: var(--border-red); background: rgba(229,9,20,0.04); }
+        .flag-item input[type="checkbox"] { display: none; }
+        .custom-cb {
+            width: 18px; height: 18px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .flag-item input:checked ~ .custom-cb {
+            border-color: var(--red);
+            background: var(--red);
+        }
+        .custom-cb-check {
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .flag-item input:checked ~ .custom-cb .custom-cb-check { opacity: 1; }
+        .flag-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-dim);
+        }
+        .flag-emoji { font-size: 1.1rem; }
+
+        /* ── SUBMIT BUTTON ── */
+        .submit-area {
+            padding: 8px 0 0;
+        }
+        .submit-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: var(--red);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 18px 24px;
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 1.5rem;
+            letter-spacing: 0.16em;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: background 0.25s, transform 0.2s, box-shadow 0.3s;
+            box-shadow: 0 4px 30px rgba(229,9,20,0.35);
+        }
+        .submit-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.12) 50%, transparent 100%);
+            transform: translateX(-100%);
+            transition: transform 0.55s ease;
+        }
+        .submit-btn:hover { background: var(--red-bright); transform: translateY(-2px); box-shadow: 0 8px 40px rgba(229,9,20,0.55); }
+        .submit-btn:hover::before { transform: translateX(100%); }
+        .submit-btn:active { transform: translateY(0); }
+        .submit-btn .btn-icon { font-size: 1.4rem; }
+
+        /* ── SCROLLBAR ── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: rgba(229,9,20,0.5); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--red); }
+
+        /* ── FADE IN ── */
+        .card { animation: fadeUp 0.45s ease both; }
+        .card:nth-child(1) { animation-delay: 0.05s; }
+        .card:nth-child(2) { animation-delay: 0.1s; }
+        .card:nth-child(3) { animation-delay: 0.15s; }
+        .card:nth-child(4) { animation-delay: 0.2s; }
+        .card:nth-child(5) { animation-delay: 0.25s; }
+        .card:nth-child(6) { animation-delay: 0.3s; }
+        .card:nth-child(7) { animation-delay: 0.35s; }
+        .card:nth-child(8) { animation-delay: 0.4s; }
+        .card:nth-child(9) { animation-delay: 0.45s; }
+        .card:nth-child(10) { animation-delay: 0.5s; }
+        .card:nth-child(11) { animation-delay: 0.55s; }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(22px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── INLINE CAST LABEL ── */
+        .cast-subtitle {
+            font-size: 0.68rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .cast-subtitle::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 600px) {
+            .card { padding: 20px 18px; }
+            .topbar { padding: 12px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Layers -->
+    <div class="bg-layer"></div>
+    <div class="bg-noise"></div>
+    <div class="bg-lines"></div>
+    <div class="bg-vignette"></div>
+    <div class="glow-orb"></div>
+
+    <!-- Top Bar -->
+    <div class="topbar">
+        <div class="topbar-left">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="DeepFlixAI" class="logo">
+            <div class="topbar-divider"></div>
+            <a href="{{ url_for('admin_dashboard') }}" class="back-btn">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M9 2L4 7L9 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Dashboard
+            </a>
+        </div>
+        <span class="topbar-badge">Admin Panel</span>
+    </div>
+
+    <!-- Page -->
+    <div class="page-wrapper">
+        <!-- Header -->
+        <div class="page-header">
+            <div class="eyebrow">Content Management</div>
+            <h1>Upload <span>Content</span></h1>
+            <p>Full cast, crew & media — all in one place</p>
+        </div>
+
+        <!-- Form -->
+        <div class="form-container">
+            <form method="POST" action="{{ url_for('upload_content') }}" enctype="multipart/form-data">
+
+                <!-- Flash Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div style="margin-bottom:20px;">
+                            {% for category, message in messages %}
+                                <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <!-- ── BASIC INFO ── -->
+                <div class="card">
+                    <div class="section-title">
+                        <span class="icon-badge">📋</span>
+                        <span class="title-text">Basic Information</span>
+                    </div>
+                    <div class="grid-2" style="gap:16px;">
+                        <div class="field">
+                            <label>Title <span class="req">*</span></label>
+                            <input type="text" name="title" required placeholder="Movie or series title">
+                        </div>
+                        <div class="field">
+                            <label>Language</label>
+                            <input type="text" name="language" placeholder="Telugu, English, Hindi…">
+                        </div>
+                        <div class="field">
+                            <label>Release Year</label>
+                            <input type="number" name="release_year" placeholder="2024">
+                        </div>
+                        <div class="field">
+                            <label>Content Type <span class="req">*</span></label>
+                            <select name="content_type" required>
+                                <option value="movie">🎬 Movie</option>
+                                <option value="series">📺 Series</option>
+                                <option value="show">🎤 Show</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Genre</label>
+                            <input type="text" name="genre" placeholder="Action, Drama, Comedy…">
+                        </div>
+                        <div class="field">
+                            <label>Trending Rank (1–10)</label>
+                            <select name="trending_rank">
+                                <option value="0">Not Trending</option>
+                                {% for i in range(1,11) %}
+                                <option value="{{ i }}">{{ i }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>DeepFlix Rank (1–15)</label>
+                            <input type="number" name="deepflix_rank" min="1" max="15" placeholder="e.g. 5">
+                        </div>
+                        <div class="field">
+                            <label>YouTube Trailer URL <span class="req">*</span></label>
+                            <input type="url" name="youtube_url" required placeholder="https://www.youtube.com/watch?v=…">
+                        </div>
+                        <div class="field col-span-2">
+                            <label>Story / Script <span class="req">*</span></label>
+                            <textarea name="story" required placeholder="Write the overall plot, story or script summary here…" style="min-height:110px;"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── FLAGS ── -->
+                <div class="card">
+                    <div class="section-title">
+                        <span class="icon-badge">🏷️</span>
+                        <span class="title-text">Collections & Tags</span>
+                    </div>
+                    <div class="flags-grid">
+                        <label class="flag-item">
+                            <input type="checkbox" name="is_90s" value="1">
+                            <div class="custom-cb">
+                                <svg class="custom-cb-check" width="10" height="8" viewBox="0 0 10 8" fill="none">
+                                    <path d="M1 4L3.5 6.5L9 1" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <span class="flag-emoji">✨</span>
+                            <span class="flag-label">90's Movies Collection</span>
+                        </label>
+                        <label class="flag-item">
+                            <input type="checkbox" name="is_kids" value="1">
+                            <div class="custom-cb">
+                                <svg class="custom-cb-check" width="10" height="8" viewBox="0 0 10 8" fill="none">
+                                    <path d="M1 4L3.5 6.5L9 1" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <span class="flag-emoji">🧸</span>
+                            <span class="flag-label">Kids Content</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- ── HEROES ── -->
+                <div class="card">
+                    <div class="section-title">
+                        <span class="icon-badge">⭐</span>
+                        <span class="title-text">Heroes</span>
+                    </div>
+
+                    <!-- Hero 1 -->
+                    <div class="cast-block">
+                        <span class="cast-block-num">HERO 01</span>
+                        <div class="grid-2" style="gap:14px; margin-bottom:0;">
+                            <div class="field">
+                                <label>Name</label>
+                                <input type="text" name="hero" placeholder="e.g. Prabhas">
+                            </div>
+                            <div class="field">
+                                <label>Caste</label>
+                                <input type="text" name="hero_caste" placeholder="e.g. Reddy, Kamma">
+                            </div>
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="hero_image" id="hero_image" accept="image/*" class="hidden-input" style="display:none;">
+                            <label for="hero_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="hero_image_name">No file chosen</span>
+                        </div>
+                    </div>
+
+                    <!-- Hero 2 -->
+                    <div class="cast-block">
+                        <span class="cast-block-num">HERO 02</span>
+                        <div class="grid-2" style="gap:14px;">
+                            <div class="field">
+                                <label>Name</label>
+                                <input type="text" name="hero2" placeholder="Hero 2 name">
+                            </div>
+                            <div class="field">
+                                <label>Caste</label>
+                                <input type="text" name="hero2_caste" placeholder="Caste">
+                            </div>
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="hero2_image" id="hero2_image" accept="image/*" style="display:none;">
+                            <label for="hero2_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="hero2_image_name">No file chosen</span>
+                        </div>
+                    </div>
+
+                    <!-- Hero 3 -->
+                    <div class="cast-block">
+                        <span class="cast-block-num">HERO 03</span>
+                        <div class="grid-2" style="gap:14px;">
+                            <div class="field">
+                                <label>Name</label>
+                                <input type="text" name="hero3" placeholder="Hero 3 name">
+                            </div>
+                            <div class="field">
+                                <label>Caste</label>
+                                <input type="text" name="hero3_caste" placeholder="Caste">
+                            </div>
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="hero3_image" id="hero3_image" accept="image/*" style="display:none;">
+                            <label for="hero3_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="hero3_image_name">No file chosen</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── HEROINES ── -->
+                <div class="card">
+                    <div class="section-title">
+                        <span class="icon-badge">🌸</span>
+                        <span class="title-text">Heroines</span>
+                    </div>
+
+                    <!-- Heroine 1 -->
+                    <div class="cast-block">
+                        <span class="cast-block-num">HEROINE 01</span>
+                        <div class="grid-2" style="gap:14px;">
+                            <div class="field">
+                                <label>Name</label>
+                                <input type="text" name="heroine" placeholder="e.g. Anushka">
+                            </div>
+                            <div class="field">
+                                <label>Caste</label>
+                                <input type="text" name="heroine_caste" placeholder="e.g. Brahmin">
+                            </div>
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="heroine_image" id="heroine_image" accept="image/*" style="display:none;">
+                            <label for="heroine_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="heroine_image_name">No file chosen</span>
+                        </div>
+                    </div>
+
+                    <!-- Heroine 2 -->
+                    <div class="cast-block">
+                        <span class="cast-block-num">HEROINE 02</span>
+                        <div class="grid-2" style="gap:14px;">
+                            <div class="field">
+                                <label>Name</label>
+                                <input type="text" name="heroine2" placeholder="Heroine 2 name">
+                            </div>
+                            <div class="field">
+                                <label>Caste</label>
+                                <input type="text" name="heroine2_caste" placeholder="Caste">
+                            </div>
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="heroine2_image" id="heroine2_image" accept="image/*" style="display:none;">
+                            <label for="heroine2_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="heroine2_image_name">No file chosen</span>
+                        </div>
+                    </div>
+
+                    <!-- Heroine 3 -->
+                    <div class="cast-block">
+                        <span class="cast-block-num">HEROINE 03</span>
+                        <div class="grid-2" style="gap:14px;">
+                            <div class="field">
+                                <label>Name</label>
+                                <input type="text" name="heroine3" placeholder="Heroine 3 name">
+                            </div>
+                            <div class="field">
+                                <label>Caste</label>
+                                <input type="text" name="heroine3_caste" placeholder="Caste">
+                            </div>
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="heroine3_image" id="heroine3_image" accept="image/*" style="display:none;">
+                            <label for="heroine3_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="heroine3_image_name">No file chosen</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── DIRECTOR ── -->
+                <div class="card">
+                    <div class="section-title">
+                        <span class="icon-badge">🎬</span>
+                        <span class="title-text">Director</span>
+                    </div>
+                    <div class="cast-block">
+                        <div class="field" style="margin-bottom:14px;">
+                            <label>Director Name</label>
+                            <input type="text" name="director" placeholder="e.g. S. S. Rajamouli">
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="director_image" id="director_image" accept="image/*" style="display:none;">
+                            <label for="director_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="director_image_name">No file chosen</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── COMEDIAN ── -->
+                <div class="card">
+                    <div class="section-title">
+                        <span class="icon-badge">😂</span>
+                        <span class="title-text">Comedian</span>
+                    </div>
+                    <div class="cast-block">
+                        <div class="grid-2" style="gap:14px; margin-bottom:14px;">
+                            <div class="field">
+                                <label>Comedian Name</label>
+                                <input type="text" name="comedian" placeholder="e.g. Brahmanandam">
+                            </div>
+                            <div class="field">
+                                <label>Caste</label>
+                                <input type="text" name="comedian_caste" placeholder="e.g. Kapu, Brahmin">
+                            </div>
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="comedian_image" id="comedian_image" accept="image/*" style="display:none;">
+                            <label for="comedian_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="comedian_image_name">No file chosen</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── PRODUCER ── -->
+                <div class="card">
+                    <div class="section-title">
+                        <span class="icon-badge">💰</span>
+                        <span class="title-text">Producer</span>
+                    </div>
+                    <div class="cast-block">
+                        <div class="grid-2" style="gap:14px; margin-bottom:14px;">
+                            <div class="field">
+                                <label>Producer Name</label>
+                                <input type="text" name="producer" placeholder="e.g. D. V. V. Danayya">
+                            </div>
+                            <div class="field">
+                                <label>Caste</label>
+                                <input type="text" name="producer_caste" placeholder="e.g. Reddy, Chettiar">
+                            </div>
+                        </div>
+                        <div class="file-upload-row">
+                            <input type="file" name="producer_image" id="producer_image" accept="image/*" style="display:none;">
+                            <label for="producer_image" class="file-upload-label">
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Choose Image
+                            </label>
+                            <span class="file-name-display" id="producer_image_name">No file chosen</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── POSTER & BACKDROP ── -->
+                <div class="card">
+                    <div class="section-title">
+                        <span class="icon-badge">🎞️</span>
+                        <span class="title-text">Poster & Backdrop</span>
+                    </div>
+
+                    <div class="cast-subtitle">Movie Poster (Thumbnail) <span class="req" style="color:var(--red);">*</span></div>
+                    <div class="file-upload-row" style="margin-bottom:24px;">
+                        <input type="file" name="thumbnail" id="thumbnail" accept="image/*" required style="display:none;">
+                        <label for="thumbnail" class="file-upload-label" style="background:rgba(229,9,20,0.12); border-color:var(--red); color:var(--red);">
+                            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3 4.5L6.5 1 10 4.5M1 10.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            Choose Poster Image
+                        </label>
+                        <span class="file-name-display" id="thumbnail_name">No file chosen</span>
+                    </div>
+                    <div class="hint" style="font-size:0.7rem; color:var(--text-muted); margin-top:-18px; margin-bottom:20px;">High-resolution JPG, PNG or WebP recommended</div>
+
+                    <div class="cast-subtitle">Backdrop Image (optional)</div>
+                    <div class="field">
+                        <label>Backdrop URL</label>
+                        <input type="text" name="backdrop_url" placeholder="https://example.com/backdrop.jpg">
+                        <span class="hint">Direct image URL for the hero / background backdrop</span>
+                    </div>
+                </div>
+
+                <!-- ── SUBMIT ── -->
+                <div class="submit-area">
+                    <button type="submit" class="submit-btn">
+                        <span class="btn-icon">🚀</span>
+                        Upload Content with Full Cast
+                    </button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // File name display for all inputs
+        const fileMap = [
+            ['hero_image','hero_image_name'],
+            ['hero2_image','hero2_image_name'],
+            ['hero3_image','hero3_image_name'],
+            ['heroine_image','heroine_image_name'],
+            ['heroine2_image','heroine2_image_name'],
+            ['heroine3_image','heroine3_image_name'],
+            ['director_image','director_image_name'],
+            ['comedian_image','comedian_image_name'],
+            ['producer_image','producer_image_name'],
+            ['thumbnail','thumbnail_name']
+        ];
+        fileMap.forEach(([inputId, spanId]) => {
+            const input = document.getElementById(inputId);
+            const span  = document.getElementById(spanId);
+            if (!input || !span) return;
+            input.addEventListener('change', function() {
+                if (this.files && this.files.length > 0) {
+                    const name = this.files[0].name;
+                    span.textContent = name.length > 36 ? name.slice(0,33) + '…' : name;
+                    span.classList.add('has-file');
+                } else {
+                    span.textContent = 'No file chosen';
+                    span.classList.remove('has-file');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

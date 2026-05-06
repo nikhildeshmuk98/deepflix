@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ content['title'] }} · DeepFlix Kids</title>
+    <!-- Tailwind + Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* ----- custom kid‑friendly dark theme with red accents ----- */
+        body {
+            background: #0a0a0a;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            scroll-behavior: smooth;
+        }
+
+        /* star rating */
+        .star-btn {
+            transition: color 0.2s ease, transform 0.1s;
+        }
+        .star-btn:hover,
+        .star-btn.active {
+            color: #fbbf24 !important;
+            transform: scale(1.1);
+        }
+
+        /* review scrollbar */
+        .reviews-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .reviews-scroll::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        .reviews-scroll::-webkit-scrollbar-thumb {
+            background: #ef4444;
+            border-radius: 10px;
+        }
+
+        /* player fallback */
+        #player {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ----- recommendations carousel (luxe) ----- */
+        .recommendations-container {
+            position: relative;
+            width: 100%;
+            padding: 0 40px;
+        }
+
+        .recommendations-carousel {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            padding: 15px 5px 20px;
+        }
+        .recommendations-carousel::-webkit-scrollbar {
+            display: none;
+        }
+
+        .recommendation-card {
+            flex: 0 0 auto;
+            width: 200px;
+            border-radius: 1.2rem;
+            overflow: hidden;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            box-shadow: 0 10px 20px -8px rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            background: #111;
+        }
+
+        .recommendation-card:hover {
+            transform: translateY(-10px) scale(1.03);
+            box-shadow: 0 25px 30px -10px rgba(239, 68, 68, 0.5);
+            border-color: rgba(239, 68, 68, 0.6);
+        }
+
+        .poster-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 2/3;
+            background: linear-gradient(145deg, #1e1e2f, #111);
+            overflow: hidden;
+        }
+
+        .poster-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.6s ease;
+        }
+        .recommendation-card:hover .poster-container img {
+            transform: scale(1.12);
+        }
+
+        .poster-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 30% 40%, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.85) 90%);
+            opacity: 0;
+            transition: opacity 0.35s;
+            z-index: 10;
+        }
+        .recommendation-card:hover .poster-overlay {
+            opacity: 1;
+        }
+
+        .play-button-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.7);
+            width: 64px;
+            height: 64px;
+            background: #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 0 35px #ef4444aa;
+            z-index: 20;
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+        .recommendation-card:hover .play-button-center {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        .play-button-center i {
+            color: white;
+            font-size: 26px;
+            margin-left: 5px;
+        }
+
+        .movie-info-hover {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 22px 15px 15px;
+            background: linear-gradient(to top, #000 15%, rgba(0,0,0,0.8) 60%, transparent);
+            transform: translateY(100%);
+            transition: transform 0.35s ease;
+            z-index: 15;
+        }
+        .recommendation-card:hover .movie-info-hover {
+            transform: translateY(0);
+        }
+
+        .movie-title-hover {
+            color: white;
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-shadow: 0 2px 4px black;
+        }
+
+        .movie-year-hover {
+            color: #ccc;
+            font-size: 0.75rem;
+            display: inline-block;
+            background: rgba(239, 68, 68, 0.3);
+            padding: 3px 10px;
+            border-radius: 30px;
+            border: 1px solid #ef4444;
+            backdrop-filter: blur(4px);
+        }
+
+        .genre-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 30px;
+            z-index: 25;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.25);
+            text-transform: capitalize;
+            letter-spacing: 0.3px;
+            box-shadow: 0 4px 12px rgba(239,68,68,0.4);
+        }
+
+        .carousel-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 48px;
+            height: 48px;
+            background: rgba(20, 20, 30, 0.8);
+            backdrop-filter: blur(8px);
+            border: 2px solid #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.25s;
+            z-index: 35;
+            box-shadow: 0 6px 18px #ef444480;
+        }
+        .carousel-arrow:hover {
+            background: #ef4444;
+            transform: translateY(-50%) scale(1.15);
+            border-color: white;
+            box-shadow: 0 0 30px #ef4444;
+        }
+        .carousel-arrow.left {
+            left: -18px;
+        }
+        .carousel-arrow.right {
+            right: -18px;
+        }
+        .carousel-arrow.disabled {
+            opacity: 0.25;
+            pointer-events: none;
+            border-color: #6b7280;
+            background: #374151;
+            box-shadow: none;
+        }
+
+        .section-header h3 {
+            font-size: 2.1rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #ef4444, #f97316, #facc15);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: inline-flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .section-header h3 span {
+            font-size: 0.9rem;
+            background: #1f1f2e;
+            padding: 5px 16px;
+            border-radius: 40px;
+            color: #ef4444;
+            -webkit-text-fill-color: #ef4444;
+            border: 1px solid #ef4444;
+            font-weight: 600;
+        }
+
+        .poster-wrapper {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        .fallback-icon {
+            display: none;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(145deg, #1a1a2a, #0f0f1a);
+            flex-direction: column;
+            gap: 10px;
+        }
+        .fallback-icon i {
+            font-size: 48px;
+            color: #ef4444;
+            opacity: 0.7;
+        }
+        .fallback-icon span {
+            font-size: 0.85rem;
+            color: #aaa;
+            font-weight: 500;
+            max-width: 90%;
+            text-align: center;
+        }
+
+        /* toast animation */
+        .toast-message {
+            animation: slideUp 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; transform: translateY(10px); visibility: hidden; }
+        }
+
+        /* cast section */
+        .cast-section {
+            margin: 2.5rem 0 2rem;
+        }
+        .cast-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2.5rem;
+            justify-content: flex-start;
+        }
+        .cast-item {
+            text-align: center;
+            width: 130px;
+            transition: transform 0.25s ease;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        .cast-item:hover {
+            transform: translateY(-6px);
+        }
+        .cast-item .avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 0.8rem;
+            border: 2px solid #ef4444;
+            box-shadow: 0 10px 20px -8px rgba(239, 68, 68, 0.3);
+            transition: box-shadow 0.2s;
+        }
+        .cast-item:hover .avatar {
+            box-shadow: 0 15px 25px -6px #ef4444;
+        }
+        .cast-item .avatar-placeholder {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: #1e1e2e;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 0.8rem;
+            border: 2px solid #ef4444;
+        }
+        .cast-item .avatar-placeholder i {
+            font-size: 3rem;
+            color: #ef4444;
+            opacity: 0.7;
+        }
+        .cast-item h4 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 0.2rem;
+        }
+        .cast-item .role {
+            font-size: 0.85rem;
+            color: #ef4444;
+            font-weight: 500;
+            opacity: 0.9;
+            letter-spacing: 0.3px;
+        }
+        .cast-item .caste {
+            font-size: 0.75rem;
+            color: #aaa;
+            margin-top: 0.2rem;
+        }
+
+        .navbar {
+            transition: opacity 0.3s ease;
+        }
+        .navbar-hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .back-button-red {
+            background: #dc2626;
+            box-shadow: 0 6px 14px rgba(220, 38, 38, 0.3);
+            border-radius: 9999px;
+            padding: 0.5rem 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            color: white;
+        }
+        .back-button-red:hover {
+            background: #b91c1c;
+            transform: scale(1.02);
+            box-shadow: 0 8px 18px rgba(220, 38, 38, 0.5);
+        }
+
+        /* SHARE MODAL STYLES */
+        .share-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(6px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0.2s, opacity 0.2s;
+        }
+        .share-modal.active {
+            visibility: visible;
+            opacity: 1;
+        }
+        .share-card {
+            background: #111;
+            border-radius: 2rem;
+            padding: 2rem 2rem 2rem 2rem;
+            width: 90%;
+            max-width: 380px;
+            border: 1px solid #ef4444;
+            box-shadow: 0 25px 40px -12px #ef4444aa;
+            transform: scale(0.95);
+            transition: transform 0.2s ease;
+        }
+        .share-modal.active .share-card {
+            transform: scale(1);
+        }
+        .share-btn {
+            background: #1f1f2e;
+            border-radius: 3rem;
+            padding: 0.9rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: 1px solid #2a2a3a;
+        }
+        .share-btn:hover {
+            background: #ef4444;
+            transform: translateX(6px);
+            border-color: white;
+        }
+        .share-btn i {
+            font-size: 1.8rem;
+            width: 32px;
+            text-align: center;
+        }
+        .close-modal {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: #2c2c3a;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        /* Review textarea contrast & visibility */
+        textarea[name="review_text"] {
+            color: white !important;
+            background: #0f0f18 !important;
+            border: 1px solid #3f3f4e;
+            font-weight: 500;
+        }
+        textarea[name="review_text"]:focus {
+            border-color: #ef4444;
+            background: #1a1a24 !important;
+        }
+        textarea[name="review_text"]::placeholder {
+            color: #9ca3af;
+        }
+        /* Review cards fresh style */
+        .review-card {
+            transition: all 0.2s;
+        }
+    </style>
+</head>
+<body class="text-white antialiased">
+
+    <!-- AUTO-HIDE NAVBAR -->
+    <nav class="navbar fixed top-0 left-0 w-full z-50 p-5 flex justify-between items-center bg-gradient-to-b from-black via-black/80 to-transparent transition-opacity duration-300">
+        <div class="flex items-center gap-4">
+            <a href="/kids_dashboard" class="back-button-red">
+                <i class="fas fa-arrow-left"></i>
+                <span>Back</span>
+            </a>
+            <span class="text-xl font-bold bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent hidden sm:inline-block">
+                ✦ DeepFlix Kids
+            </span>
+        </div>
+        {% if content.genre %}
+        <div class="bg-black/40 backdrop-blur-md px-5 py-2 rounded-full border border-red-500/40 shadow-lg shadow-red-500/10">
+            <i class="fas fa-play-circle mr-2 text-red-500"></i>
+            <span class="text-red-400 font-medium">Now Playing:</span>
+            <span class="text-white font-semibold ml-1">{{ content.genre|title }}</span>
+        </div>
+        {% endif %}
+    </nav>
+
+    <!-- Hero / YouTube Player -->
+    <div class="relative w-full" style="height: 70vh; min-height: 520px;">
+        <div id="player" class="w-full h-full"></div>
+        <div id="player-fallback" class="w-full h-full hidden items-center justify-center bg-gradient-to-b from-gray-900 to-black">
+            <div class="text-center p-8 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10">
+                <i class="fas fa-film text-7xl text-gray-700 mb-5"></i>
+                <p class="text-gray-300 text-xl">✨ No video available for this content ✨</p>
+                <p class="text-gray-500 mt-2">but you can still read reviews & explore</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- main details -->
+    <div class="container mx-auto px-4 md:px-6 py-10">
+        <div class="flex flex-col lg:flex-row gap-10">
+
+            <!-- left column -->
+            <div class="lg:w-2/3">
+                <h1 class="text-5xl md:text-6xl font-black mb-4 bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent leading-tight">
+                    {{ content['title'] }}
+                </h1>
+                <div class="flex flex-wrap items-center gap-3 text-sm text-gray-300 mb-6">
+                    <span class="bg-gray-800/90 px-4 py-1.5 rounded-full text-white/90"><i class="far fa-calendar-alt mr-2"></i>{{ content['release_year'] }}</span>
+                    <span class="border border-gray-700/80 px-4 py-1.5 rounded-full"><i class="far fa-file-video mr-2"></i>{{ content['content_type'] }}</span>
+                    <span class="border border-gray-700/80 px-4 py-1.5 rounded-full"><i class="fas fa-globe mr-2"></i>{{ content['language'] }}</span>
+                    {% if content.genre %}
+                    <span class="border border-red-500/60 bg-red-500/10 text-red-400 px-4 py-1.5 rounded-full">
+                        <i class="fas fa-tag mr-2"></i>{{ content.genre|title }}
+                    </span>
+                    {% endif %}
+                </div>
+
+                <p class="text-lg text-gray-300 leading-relaxed mb-10 max-w-3xl">{{ content['story'] }}</p>
+
+                <!-- CAST SECTION -->
+                {% if content.hero or content.heroine or content.director or content.hero2 or content.hero3 or content.heroine2 or content.heroine3 %}
+                <div class="cast-section">
+                    <h2 class="text-3xl font-bold mb-6 flex items-center gap-3">
+                        <i class="fas fa-star text-red-500"></i>
+                        <span>Cast & Crew</span>
+                    </h2>
+                    <div class="cast-grid">
+                        {% if content.hero %}
+                        <a href="/person/{{ content.hero }}" class="cast-item">
+                            {% if content.hero_image %}
+                                {% set hero_img = content.hero_image.split('/')[-1] %}
+                                <img src="{{ url_for('static', filename='uploads/' + hero_img) }}" alt="{{ content.hero }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';">
+                                <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>
+                            {% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            <h4>{{ content.hero }}</h4><div class="role">Hero (Lead)</div>{% if content.hero_caste %}<div class="caste">{{ content.hero_caste }}</div>{% endif %}
+                        </a>{% endif %}
+                        {% if content.hero2 and content.hero2 != "None" %}
+                        <a href="/person/{{ content.hero2 }}" class="cast-item">
+                            {% if content.hero2_image %}{% set hero2_img = content.hero2_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + hero2_img) }}" alt="{{ content.hero2 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            <h4>{{ content.hero2 }}</h4><div class="role">Hero (Supporting)</div>{% if content.hero2_caste %}<div class="caste">{{ content.hero2_caste }}</div>{% endif %}
+                        </a>{% endif %}
+                        {% if content.hero3 and content.hero3 != "None" %}
+                        <a href="/person/{{ content.hero3 }}" class="cast-item">
+                            {% if content.hero3_image %}{% set hero3_img = content.hero3_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + hero3_img) }}" alt="{{ content.hero3 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            <h4>{{ content.hero3 }}</h4><div class="role">Hero (Character)</div>{% if content.hero3_caste %}<div class="caste">{{ content.hero3_caste }}</div>{% endif %}
+                        </a>{% endif %}
+                        {% if content.heroine %}
+                        <a href="/person/{{ content.heroine }}" class="cast-item">
+                            {% if content.heroine_image %}{% set heroine_img = content.heroine_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + heroine_img) }}" alt="{{ content.heroine }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            <h4>{{ content.heroine }}</h4><div class="role">Heroine (Lead)</div>{% if content.heroine_caste %}<div class="caste">{{ content.heroine_caste }}</div>{% endif %}
+                        </a>{% endif %}
+                        {% if content.heroine2 and content.heroine2 != "None" %}
+                        <a href="/person/{{ content.heroine2 }}" class="cast-item">
+                            {% if content.heroine2_image %}{% set heroine2_img = content.heroine2_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + heroine2_img) }}" alt="{{ content.heroine2 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            <h4>{{ content.heroine2 }}</h4><div class="role">Heroine (Supporting)</div>{% if content.heroine2_caste %}<div class="caste">{{ content.heroine2_caste }}</div>{% endif %}
+                        </a>{% endif %}
+                        {% if content.heroine3 and content.heroine3 != "None" %}
+                        <a href="/person/{{ content.heroine3 }}" class="cast-item">
+                            {% if content.heroine3_image %}{% set heroine3_img = content.heroine3_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + heroine3_img) }}" alt="{{ content.heroine3 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            <h4>{{ content.heroine3 }}</h4><div class="role">Heroine (Character)</div>{% if content.heroine3_caste %}<div class="caste">{{ content.heroine3_caste }}</div>{% endif %}
+                        </a>{% endif %}
+                        {% if content.director %}
+                        <a href="/person/{{ content.director }}" class="cast-item">
+                            {% if content.director_image %}{% set director_img = content.director_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + director_img) }}" alt="{{ content.director }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            <h4>{{ content.director }}</h4><div class="role">Director</div>
+                        </a>{% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- interaction row: rating & SHARE (updated) -->
+                <div class="flex flex-wrap items-center gap-8 border-t border-gray-800/70 pt-7">
+                    <div class="flex items-center">
+                        <span class="mr-4 font-medium text-gray-200">Rate this:</span>
+                        <div class="flex space-x-1.5" id="star-container">
+                            {% for i in range(1, 6) %}
+                            <button onclick="rateContent({{ content['id'] }}, {{ i }})" class="star-btn text-4xl text-gray-600 hover:text-yellow-400 focus:outline-none transition-transform active:scale-125" data-rating="{{ i }}">★</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <button id="shareMainBtn" class="text-gray-400 hover:text-white transition-all flex items-center gap-3 group">
+                        <i class="fas fa-share-alt group-hover:rotate-12 transition"></i> 
+                        <span class="border-b border-transparent group-hover:border-red-400">Share</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- right: community reviews with glass effect (AJAX) -->
+            <div class="lg:w-1/3 bg-gray-900/70 backdrop-blur-md p-6 rounded-3xl border border-gray-800/80 shadow-2xl">
+                <h3 class="text-2xl font-bold mb-5 flex items-center gap-3">
+                    <i class="fas fa-comments text-red-500"></i> 
+                    <span>Community Reviews</span>
+                    <span id="reviewCountBadge" class="text-sm bg-gray-800 px-3 py-1 rounded-full text-gray-300">{{ reviews|length if reviews else 0 }}</span>
+                </h3>
+
+                <!-- AJAX review form (stays open after submit) -->
+                <form id="reviewForm" class="mb-7">
+                    <input type="hidden" name="content_id" value="{{ content['id'] }}">
+                    <textarea name="review_text" id="reviewTextarea" rows="3" placeholder="Write your thoughts... (be kind!)" 
+                              class="w-full bg-gray-800/70 p-4 rounded-2xl text-white border border-gray-700 focus:border-red-500 focus:ring-2 focus:ring-red-500/30 transition-all resize-none" required></textarea>
+                    <button type="submit" id="submitReviewBtn"
+                            class="mt-4 w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold py-3 rounded-xl transition-all shadow-xl shadow-red-600/30 flex items-center justify-center gap-2">
+                        <i class="fas fa-paper-plane"></i> Post Review
+                    </button>
+                </form>
+
+                <!-- reviews list container -->
+                <div id="reviewsList" class="space-y-5 max-h-96 overflow-y-auto pr-2 reviews-scroll">
+                    {% if reviews and reviews|length > 0 %}
+                        {% for review in reviews %}
+                        <div class="border-b border-gray-800/70 pb-4 last:border-0 review-card p-3 -mx-2 rounded-xl" data-review-id="{{ loop.index }}">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="font-semibold text-sm flex items-center gap-2">
+                                    <i class="fas fa-user-circle text-red-500 text-lg"></i> {{ review['username'] }}
+                                </span>
+                                {% if review['sentiment_score'] is defined %}
+                                    {% if review['sentiment_score'] > 0.1 %}
+                                        <span class="text-green-400 text-xs bg-green-500/15 px-3 py-1 rounded-full border border-green-500/30"><i class="far fa-smile mr-1"></i>positive</span>
+                                    {% elif review['sentiment_score'] < -0.1 %}
+                                        <span class="text-red-400 text-xs bg-red-500/15 px-3 py-1 rounded-full border border-red-500/30"><i class="far fa-frown mr-1"></i>negative</span>
+                                    {% else %}
+                                        <span class="text-gray-400 text-xs bg-gray-500/15 px-3 py-1 rounded-full border border-gray-500/30"><i class="far fa-meh mr-1"></i>neutral</span>
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                            <p class="text-gray-200 text-sm leading-relaxed">{{ review['review_text'] }}</p>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div id="noReviewsMsg" class="text-gray-500 text-center py-12">
+                            <i class="fas fa-pen-fancy text-4xl mb-3 opacity-30"></i>
+                            <p>No reviews yet. <br> Be the first to share!</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- recommendations carousel (unchanged) -->
+        {% if recommendations and recommendations|length > 0 %}
+        <div class="mt-16 pt-6 border-t border-gray-800/70">
+            <div class="section-header flex items-center justify-between mb-5">
+                <h3><i class="fas fa-thumbs-up text-red-500 mr-3"></i> More {{ content.genre|title if content.genre else 'Recommendations' }}{% if content.genre %}<span>{{ recommendations|length }} titles</span>{% endif %}</h3>
+                <span class="text-sm text-gray-500 hidden md:block"><i class="fas fa-arrow-left mr-1"></i> scroll <i class="fas fa-arrow-right ml-1"></i></span>
+            </div>
+            <div class="recommendations-container">
+                <div class="carousel-arrow left" id="carousel-left" onclick="scrollCarousel('left')"><i class="fas fa-chevron-left"></i></div>
+                <div class="recommendations-carousel" id="recommendations-carousel">
+                    {% for item in recommendations %}
+                    <div class="recommendation-card" onclick="window.location.href='{{ url_for('watch_content', content_id=item.id) }}'">
+                        <div class="poster-container">{% if item.genre %}<div class="genre-badge"><i class="fas fa-film mr-1"></i>{{ item.genre|title }}</div>{% endif %}
+                            <div class="poster-wrapper">{% if item.poster_path %}{% if item.poster_path.startswith(('http://', 'https://')) %}<img src="{{ item.poster_path }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% else %}{% set filename = item.poster_path.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% endif %}{% else %}{% set title_filename = item.title|replace(' ', '_')|replace(':', '')|replace('-', '')|lower + '.jpg' %}<img src="{{ url_for('static', filename='uploads/' + title_filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% endif %}
+                            <div class="fallback-icon"><i class="fas fa-film"></i><span>{{ item.title|truncate(18) }}</span></div></div>
+                            <div class="poster-overlay"></div><div class="play-button-center"><i class="fas fa-play"></i></div>
+                            <div class="movie-info-hover"><div class="movie-title-hover">{{ item.title }}</div><div class="flex items-center gap-3 mt-1">{% if item.release_year %}<div class="movie-year-hover">{{ item.release_year }}</div>{% endif %}{% if item.rating %}<div class="text-yellow-400 text-xs flex items-center gap-1"><i class="fas fa-star text-xs"></i> {{ item.rating }}/5</div>{% endif %}</div></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="carousel-arrow right" id="carousel-right" onclick="scrollCarousel('right')"><i class="fas fa-chevron-right"></i></div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- SHARE MODAL -->
+    <div id="shareModal" class="share-modal">
+        <div class="share-card relative">
+            <div class="close-modal" id="closeShareModal"><i class="fas fa-times text-gray-300"></i></div>
+            <h3 class="text-2xl font-bold mb-5 flex items-center gap-2"><i class="fas fa-share-alt text-red-500"></i> Share this movie</h3>
+            <div class="space-y-4">
+                <div class="share-btn" id="copyLinkBtn"><i class="fas fa-link text-blue-400"></i><span>Copy link</span></div>
+                <div class="share-btn" id="whatsappShareBtn"><i class="fab fa-whatsapp text-green-400"></i><span>Share via WhatsApp</span></div>
+                <div class="share-btn" id="instagramShareBtn"><i class="fab fa-instagram text-pink-500"></i><span>Share via Instagram</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        // GLOBALS
+        const contentId = {{ content['id'] }};
+        const youtubeVideoId = "{{ content['youtube_video_id'] }}";
+        let player;
+        let progressUpdateInterval;
+        let lastReportedTime = 0;
+        const UPDATE_INTERVAL_MS = 15000;
+        const PROGRESS_THRESHOLD = 2;
+
+        // SHARE LOGIC
+        const shareModal = document.getElementById('shareModal');
+        const shareMainBtn = document.getElementById('shareMainBtn');
+        const closeModalBtn = document.getElementById('closeShareModal');
+        const copyLinkBtn = document.getElementById('copyLinkBtn');
+        const whatsappBtn = document.getElementById('whatsappShareBtn');
+        const instaBtn = document.getElementById('instagramShareBtn');
+
+        function getCurrentPageUrl() {
+            return window.location.href;
+        }
+        function showToast(msg, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `fixed bottom-6 right-6 ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} text-white px-6 py-4 rounded-2xl shadow-2xl z-50 flex items-center gap-3 backdrop-blur-sm bg-opacity-90 border ${type === 'success' ? 'border-green-400' : 'border-red-400'} toast-message`;
+            toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle'}"></i><span>${msg}</span>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        shareMainBtn?.addEventListener('click', () => { shareModal.classList.add('active'); });
+        closeModalBtn?.addEventListener('click', () => { shareModal.classList.remove('active'); });
+        shareModal?.addEventListener('click', (e) => { if(e.target === shareModal) shareModal.classList.remove('active'); });
+        copyLinkBtn?.addEventListener('click', () => {
+            navigator.clipboard.writeText(getCurrentPageUrl()).then(() => { showToast('📋 Link copied to clipboard!'); shareModal.classList.remove('active'); });
+        });
+        whatsappBtn?.addEventListener('click', () => {
+            const text = encodeURIComponent(`🎬 Check out this movie: {{ content['title'] }} – ${getCurrentPageUrl()}`);
+            window.open(`https://wa.me/?text=${text}`, '_blank');
+            shareModal.classList.remove('active');
+        });
+        instaBtn?.addEventListener('click', () => {
+            navigator.clipboard.writeText(getCurrentPageUrl()).then(() => {
+                showToast('✨ Link copied! Open Instagram and share it in your story or DM.', 'success');
+                shareModal.classList.remove('active');
+            });
+        });
+
+        // REVIEW AJAX (no page reload, instantly visible)
+        const reviewForm = document.getElementById('reviewForm');
+        const reviewTextarea = document.getElementById('reviewTextarea');
+        const reviewsContainer = document.getElementById('reviewsList');
+        const reviewCountSpan = document.getElementById('reviewCountBadge');
+        const noReviewsMsgElem = document.getElementById('noReviewsMsg');
+
+        async function addReviewToDOM(username, reviewText, sentimentScore = null) {
+            const reviewDiv = document.createElement('div');
+            reviewDiv.className = 'border-b border-gray-800/70 pb-4 last:border-0 review-card p-3 -mx-2 rounded-xl';
+            let sentimentHtml = '';
+            if (sentimentScore !== null) {
+                if (sentimentScore > 0.1) sentimentHtml = '<span class="text-green-400 text-xs bg-green-500/15 px-3 py-1 rounded-full border border-green-500/30"><i class="far fa-smile mr-1"></i>positive</span>';
+                else if (sentimentScore < -0.1) sentimentHtml = '<span class="text-red-400 text-xs bg-red-500/15 px-3 py-1 rounded-full border border-red-500/30"><i class="far fa-frown mr-1"></i>negative</span>';
+                else sentimentHtml = '<span class="text-gray-400 text-xs bg-gray-500/15 px-3 py-1 rounded-full border border-gray-500/30"><i class="far fa-meh mr-1"></i>neutral</span>';
+            }
+            reviewDiv.innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-semibold text-sm flex items-center gap-2"><i class="fas fa-user-circle text-red-500 text-lg"></i> ${escapeHtml(username)}</span>
+                    ${sentimentHtml}
+                </div>
+                <p class="text-gray-200 text-sm leading-relaxed">${escapeHtml(reviewText)}</p>
+            `;
+            if (noReviewsMsgElem) noReviewsMsgElem.style.display = 'none';
+            reviewsContainer.insertBefore(reviewDiv, reviewsContainer.firstChild);
+            let currentCount = parseInt(reviewCountSpan.innerText);
+            reviewCountSpan.innerText = currentCount + 1;
+        }
+        function escapeHtml(str) { return str.replace(/[&<>]/g, function(m){if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
+
+        reviewForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(reviewForm);
+            const reviewText = formData.get('review_text');
+            if (!reviewText.trim()) { showToast('✏️ Please write something first', 'error'); return; }
+            const submitBtn = document.getElementById('submitReviewBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Posting...';
+            try {
+                const response = await fetch('{{ url_for("api_review") }}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success) {
+                    const username = data.username || 'You';
+                    const sentiment = data.sentiment_score !== undefined ? data.sentiment_score : null;
+                    await addReviewToDOM(username, reviewText, sentiment);
+                    reviewTextarea.value = '';
+                    showToast('⭐ Review posted!', 'success');
+                } else {
+                    showToast('⚠️ Could not post review', 'error');
+                }
+            } catch(err) {
+                showToast('Network error, try again', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Post Review';
+            }
+        });
+
+        // YouTube, rating, progress etc (same as original)
+        function onYouTubeIframeAPIReady() {
+            if (!youtubeVideoId || youtubeVideoId === 'None' || youtubeVideoId === '') { showFallback(); return; }
+            player = new YT.Player('player', { height: '100%', width: '100%', videoId: youtubeVideoId, playerVars: { autoplay: 1, modestbranding: 1, rel: 0, showinfo: 0, enablejsapi: 1 }, events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange, 'onError': onPlayerError } });
+        }
+        function onPlayerReady(event) { fetch(`/api/progress/get?content_id=${contentId}`).then(res=>res.json()).then(data=>{ if(data.success && data.progress>0){ const duration=player.getDuration(); player.seekTo((data.progress/100)*duration,true); } }).catch(()=>{}); progressUpdateInterval = setInterval(reportProgress, UPDATE_INTERVAL_MS); }
+        function onPlayerStateChange(event) { if(event.data === YT.PlayerState.ENDED) { reportProgress(100); clearInterval(progressUpdateInterval); } }
+        function onPlayerError() { showFallback(); }
+        function showFallback() { document.getElementById('player').classList.add('hidden'); document.getElementById('player-fallback').classList.remove('hidden'); }
+        function reportProgress(forcePercent = null) { if(!player||!player.getCurrentTime) return; let percent; if(forcePercent!==null) percent=forcePercent; else { const currentTime=player.getCurrentTime(); const duration=player.getDuration(); if(!duration||duration===0) return; percent=(currentTime/duration)*100; if(Math.abs(percent-lastReportedTime)<PROGRESS_THRESHOLD) return; } percent=Math.min(100,Math.max(0,percent)); lastReportedTime=percent; fetch('/api/progress/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:contentId,progress:percent})}).catch(()=>{}); }
+        function rateContent(contentId, rating) { fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:contentId,rating:rating})}).then(res=>res.json()).then(data=>{ if(data.success){ const stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<rating){ star.classList.add('active'); star.style.color='#fbbf24'; } else { star.classList.remove('active'); star.style.color=''; } }); showToast('⭐ Rating saved!'); } }).catch(()=>showToast('⚠️ Could not save rating','error')); }
+        function loadUserRating() { fetch(`/api/rating/get?content_id=${contentId}`).then(res=>res.json()).then(data=>{ if(data.success&&data.rating>0){ const stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<data.rating){ star.classList.add('active'); star.style.color='#fbbf24'; } }); } }).catch(()=>{}); }
+        function scrollCarousel(direction) { const carousel=document.getElementById('recommendations-carousel'); if(!carousel) return; const cardWidth=220; const scrollAmount=direction==='left'?-cardWidth*2:cardWidth*2; carousel.scrollBy({left:scrollAmount,behavior:'smooth'}); setTimeout(updateArrowStates,350); }
+        function updateArrowStates() { const carousel=document.getElementById('recommendations-carousel'); if(!carousel) return; const leftArrow=document.getElementById('carousel-left'); const rightArrow=document.getElementById('carousel-right'); if(!leftArrow||!rightArrow) return; if(carousel.scrollLeft<=15) leftArrow.classList.add('disabled'); else leftArrow.classList.remove('disabled'); const maxScroll=carousel.scrollWidth-carousel.clientWidth; if(carousel.scrollLeft>=maxScroll-15) rightArrow.classList.add('disabled'); else rightArrow.classList.remove('disabled'); }
+        function handleKeyNav(e){ if(e.key==='ArrowLeft'){ e.preventDefault(); scrollCarousel('left'); }else if(e.key==='ArrowRight'){ e.preventDefault(); scrollCarousel('right'); } }
+        (function(){ const nav=document.querySelector('.navbar'); let hideTimeout; function showNav(){ if(nav) nav.classList.remove('navbar-hidden'); clearTimeout(hideTimeout); hideTimeout=setTimeout(()=>{ if(nav) nav.classList.add('navbar-hidden'); },2000); } if(nav){ document.addEventListener('mousemove',showNav); document.addEventListener('keydown',showNav); showNav(); } })();
+        document.addEventListener('DOMContentLoaded',function(){ loadUserRating(); if(!youtubeVideoId||youtubeVideoId==='None'||youtubeVideoId==='') showFallback(); const carousel=document.getElementById('recommendations-carousel'); if(carousel){ carousel.addEventListener('scroll',updateArrowStates); window.addEventListener('resize',updateArrowStates); setTimeout(updateArrowStates,200); window.addEventListener('keydown',handleKeyNav); } });
+        window.addEventListener('beforeunload',function(){ reportProgress(); });
+        window.addEventListener('unload',function(){ if(progressUpdateInterval) clearInterval(progressUpdateInterval); });
+    </script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ person.name if person else name }} Movies · DeepFlix</title>
+    <!-- Tailwind CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Custom smooth transitions */
+        .movie-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .movie-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 25px 30px -10px rgba(239, 68, 68, 0.4);
+        }
+        /* Hide overlay content by default */
+        .card-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 50%, transparent 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+        }
+        .movie-card:hover .card-overlay {
+            opacity: 1;
+        }
+        /* Play button animation */
+        .play-icon {
+            transform: scale(0.8);
+            transition: transform 0.2s ease;
+        }
+        .movie-card:hover .play-icon {
+            transform: scale(1);
+        }
+        /* Hide movie title normally, show on hover via overlay */
+        .movie-title {
+            display: none;
+        }
+        /* Ensure images cover properly */
+        .card-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+        .movie-card:hover .card-image {
+            transform: scale(1.08);
+        }
+        /* Image container */
+        .image-container {
+            aspect-ratio: 2 / 3;
+            overflow: hidden;
+            border-radius: 0.75rem;
+        }
+        /* Fallback for missing images */
+        .fallback-icon {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #1f2937;
+            color: #4b5563;
+            font-size: 3rem;
+        }
+        /* Header styling */
+        .header {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        /* Header profile image – small circular */
+        .header-profile-img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #ef4444;
+            transition: transform 0.2s ease;
+        }
+        .header-profile-img:hover {
+            transform: scale(1.05);
+        }
+        .header-profile-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #1f2937;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #ef4444;
+            color: #ef4444;
+            font-size: 1.25rem;
+        }
+        .profile-link {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: color 0.2s ease;
+        }
+        .profile-link:hover {
+            color: #ef4444;
+        }
+        .profile-text {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        /* Logout button (reused, but fine) */
+        .logout-btn {
+            transition: all 0.2s ease;
+        }
+        .logout-btn:hover {
+            background: #b91c1c;
+            transform: scale(1.02);
+            box-shadow: 0 10px 15px -5px rgba(239, 68, 68, 0.5);
+        }
+        /* Main profile image (big) – unchanged from your original */
+        .profile-image {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 50%;
+            border: 3px solid #ef4444;
+            box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.5);
+            transition: transform 0.3s ease;
+        }
+        .profile-image:hover {
+            transform: scale(1.05);
+        }
+        .profile-placeholder {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: #1f2937;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 3px solid #ef4444;
+            color: #ef4444;
+            font-size: 3rem;
+        }
+    </style>
+</head>
+<body class="bg-black text-white antialiased">
+
+    <!-- Header with navigation, profile, and logout -->
+    <header class="header fixed top-0 left-0 w-full z-50 p-4 flex items-center justify-between">
+        <!-- Left: Logo + Home + Movies -->
+        <div class="flex items-center gap-4 md:gap-6">
+            <!-- DeepFlix Logo -->
+            <a href="{{ url_for('user_dashboard') }}" class="block">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" 
+                     alt="DeepFlix" 
+                     class="h-10 w-auto"
+                     onerror="this.src='https://placehold.co/120x40/1f1f1f/red?text=DeepFlix'">
+            </a>
+
+            <!-- Home link -->
+            <a href="{{ url_for('user_dashboard') }}" 
+               class="hover:text-red-500 transition flex items-center gap-1 text-sm sm:text-base">
+                <i class="fas fa-home"></i>
+                <span class="hidden sm:inline">Home</span>
+            </a>
+
+            <!-- Movies link -->
+            <a href="{{ url_for('all_movies') }}" 
+               class="hover:text-red-500 transition flex items-center gap-1 text-sm sm:text-base">
+                <i class="fas fa-film"></i>
+                <span class="hidden sm:inline">Movies</span>
+            </a>
+        </div>
+
+        <!-- Right: Profile + Logout -->
+        <div class="flex items-center gap-4">
+            <!-- Profile link (image + name) -->
+            <a href="{{ url_for('profile') }}" class="profile-link">
+                {% if user and user.profile_image %}
+                    <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}"
+                         alt="Profile"
+                         class="header-profile-img"
+                         onerror="this.style.display='none'; this.parentElement.querySelector('.header-profile-icon').style.display='flex';">
+                    <div class="header-profile-icon" style="display: none;">
+                        <i class="fas fa-user"></i>
+                    </div>
+                {% else %}
+                    <div class="header-profile-icon">
+                        <i class="fas fa-user"></i>
+                    </div>
+                {% endif %}
+                <span class="profile-text hidden md:inline">
+                    {{ session.get('username', 'Profile') }} 
+                    <i class="fas fa-chevron-right"></i>
+                </span>
+            </a>
+
+            <!-- Logout Button -->
+            <a href="{{ url_for('logout') }}" 
+               class="logout-btn bg-red-600 px-5 py-2 rounded-full text-sm font-semibold flex items-center gap-2 hover:bg-red-700 transition shadow-lg">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
+        </div>
+    </header>
+
+    <!-- Main content (adds top padding to avoid header overlap) -->
+    <main class="container mx-auto px-4 md:px-8 pt-24 pb-16">
+        
+        <!-- Profile Section: Image + Name + Movie Count -->
+        <div class="flex flex-col md:flex-row items-center md:items-end gap-8 mb-12">
+            <!-- Person's photo -->
+            <div class="flex-shrink-0">
+                {% if person and person.profile_image %}
+                    <img src="{{ url_for('static', filename='uploads/' + person.profile_image) }}" 
+                         alt="{{ person.name }}" 
+                         class="profile-image"
+                         onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.profile-placeholder').style.display='flex';">
+                    <div class="profile-placeholder" style="display: none;">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                {% else %}
+                    <div class="profile-placeholder">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                {% endif %}
+            </div>
+            <!-- Name and stats -->
+            <div class="text-center md:text-left">
+                <h1 class="text-4xl md:text-5xl font-black mb-2 bg-gradient-to-r from-red-500 to-orange-400 bg-clip-text text-transparent">
+                    {{ person.name if person else name }}
+                </h1>
+                <div class="flex items-center justify-center md:justify-start gap-4 text-gray-300">
+                    <span class="flex items-center gap-1"><i class="fas fa-film text-red-500"></i> {{ movies|length }} Movies</span>
+                    {% if person and person.role %}
+                    <span class="flex items-center gap-1"><i class="fas fa-star text-red-500"></i> {{ person.role }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Movie grid: 2 columns on mobile, 3 on sm, 4 on md, 5 on lg -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5 md:gap-6">
+            {% for movie in movies %}
+            <a href="/watch/{{ movie.id }}" class="movie-card group block relative rounded-xl overflow-hidden bg-gray-900 shadow-lg">
+                <!-- Image container with fixed aspect ratio -->
+                <div class="image-container">
+                    {% if movie.thumbnail %}
+                    <img src="{{ url_for('static', filename='uploads/' + movie.thumbnail) }}" 
+                         alt="{{ movie.title }}" 
+                         class="card-image"
+                         onerror="this.style.display='none'; this.parentNode.querySelector('.fallback-icon').style.display='flex';">
+                    <div class="fallback-icon" style="display: none;"><i class="fas fa-film"></i></div>
+                    {% else %}
+                    <div class="fallback-icon"><i class="fas fa-film"></i></div>
+                    {% endif %}
+                </div>
+
+                <!-- Hover overlay with title, genre, year and play button -->
+                <div class="card-overlay">
+                    <i class="fas fa-play-circle play-icon text-5xl text-red-500 drop-shadow-2xl mb-3"></i>
+                    <span class="block text-white font-bold text-sm md:text-base px-2">{{ movie.title }}</span>
+                    <div class="flex flex-wrap items-center justify-center gap-2 mt-2 text-xs text-gray-300">
+                        {% if movie.genre %}
+                        <span class="bg-red-600/30 px-2 py-0.5 rounded-full border border-red-500/30">{{ movie.genre }}</span>
+                        {% endif %}
+                        {% if movie.release_year %}
+                        <span class="bg-gray-800/80 px-2 py-0.5 rounded-full">{{ movie.release_year }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Optional: small badge for content type (if needed) -->
+                {% if movie.content_type %}
+                <div class="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-xs text-white px-2 py-1 rounded-full border border-white/20 z-10">
+                    {{ movie.content_type }}
+                </div>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+
+        <!-- If no movies, show a friendly message -->
+        {% if not movies %}
+        <div class="text-center py-20">
+            <i class="fas fa-folder-open text-6xl text-gray-700 mb-4"></i>
+            <p class="text-gray-500 text-xl">No movies found for {{ person.name if person else name }}.</p>
+        </div>
+        {% endif %}
+    </main>
+
+    <!-- Optional footer (light) -->
+    <footer class="text-center text-gray-600 text-sm py-6 border-t border-gray-800">
+        <p>© 2025 DeepFlix — your cinema, elevated.</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Analysis</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #141414; /* Dark theme background */
+            color: #e5e5e5;
+        }
+        .header-bg {
+            background-color: rgba(13, 13, 13, 0.9); /* Semi-transparent dark header */
+        }
+        .text-red-netflix {
+            color: #e50914;
+        }
+        .card-bg {
+            background-color: rgba(26, 26, 26, 0.8); /* Semi-transparent dark cards */
+        }
+        .btn-red-netflix {
+            background-color: #e50914;
+        }
+        .btn-red-netflix:hover {
+            background-color: #f40612;
+        }
+        .bg-full-screen {
+            background-size: cover;
+            background-position: center;
+        }
+        .content-bg-overlay {
+            background-color: rgba(20, 20, 20, 0.7); /* A transparent overlay to improve readability */
+        }
+    </style>
+</head>
+<body class="font-sans">
+    <div class="min-h-screen flex flex-col bg-dark-theme">
+        <!-- Header -->
+        <header class="header-bg shadow-md p-4 flex justify-between items-center fixed top-0 left-0 w-full z-10">
+            <div class="flex items-center space-x-4">
+                <a href="{{ url_for('admin_dashboard') }}">
+                    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="DEEPFLIXAI Logo" class="h-16">
+                </a>
+                <a href="{{ url_for('admin_dashboard') }}" class="text-gray-100 hover:text-red-netflix transition-colors duration-300 font-semibold">
+                    Back to Dashboard
+                </a>
+            </div>
+            <div class="flex items-center space-x-4">
+                <h1 class="text-2xl font-bold text-gray-100 hidden md:block">Model Analysis</h1>
+                <a href="{{ url_for('logout') }}" class="btn-red-netflix text-white px-4 py-2 rounded-md font-semibold hover:bg-red-700 transition-colors duration-300">Logout</a>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="flex-grow container mx-auto p-6 mt-20">
+            <div class="card-bg p-6 rounded-lg shadow-md mb-8">
+                <h2 class="text-xl font-semibold mb-4 text-gray-100">Model Training Loss & Accuracy</h2>
+                {% if accuracy_loss_img %}
+                <img src="{{ accuracy_loss_img }}" alt="Accuracy and Loss Graph" class="w-full h-auto rounded-lg shadow-sm">
+                {% else %}
+                <p class="text-gray-400">Training loss graph not found. Please train the model first.</p>
+                {% endif %}
+            </div>
+
+            <div class="card-bg p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4 text-gray-100">Confusion Matrix</h2>
+                {% if confusion_matrix_img %}
+                <img src="{{ confusion_matrix_img }}" alt="Confusion Matrix" class="w-full h-auto rounded-lg shadow-sm">
+                {% else %}
+                <p class="text-gray-400">Confusion matrix not found. Please train the model first.</p>
+                {% endif %}
+            </div>
+        </main>
+    </div>
+</body>
+</html>

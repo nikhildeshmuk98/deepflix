@@ -1,0 +1,208 @@
+		<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ movie.title }} - DeepFlix</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;        /* no scrolling – pure fullscreen video */
+        }
+
+        body {
+            background: #000000;
+            color: #f0f4ff;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            position: relative;
+        }
+
+        /* subtle noise overlay (optional, for depth) */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48ZmlsdGVyIGlkPSJmIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iLjc1IiBudW1PY3RhdmVzPSIzIiAvPjwvZmlsdGVyPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbHRlcj0idXJsKCNmKSIgb3BhY2l0eT0iMC4wMjUiIC8+PC9zdmc+');
+            opacity: 0.1;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* ----- HEADER (overlay) ----- */
+        .header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2.5rem;
+            z-index: 100;
+            transition: opacity 0.3s ease;
+            background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 70%, transparent 100%);
+            pointer-events: all;       /* make sure buttons are clickable */
+        }
+
+        /* hidden state */
+        .header.hidden {
+            opacity: 0;
+            pointer-events: none;      /* prevent interaction when hidden */
+        }
+
+        .logo {
+            height: 48px;
+            width: auto;
+            filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.8));
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .logo:hover {
+            transform: scale(1.02);
+        }
+
+        /* logout button */
+        .logout-btn {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            font-size: 1rem;
+            font-weight: 500;
+            padding: 0.5rem 1.8rem;
+            border-radius: 40px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            letter-spacing: 0.3px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .logout-btn:hover {
+            background-color: #c62828;   /* rich red */
+            border-color: #ff8a8a;
+            color: white;
+            transform: scale(1.02);
+            box-shadow: 0 0 20px rgba(220, 60, 60, 0.5);
+        }
+
+        /* ----- FULLSCREEN VIDEO PLAYER ----- */
+        .player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            z-index: 0;                /* behind header */
+        }
+
+        iframe {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #000;
+        }
+
+        /* small responsive: keep padding comfortable */
+        @media (max-width: 600px) {
+            .header {
+                padding: 1rem 1.2rem;
+            }
+            .logo {
+                height: 38px;
+            }
+            .logout-btn {
+                padding: 0.4rem 1.2rem;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- top overlay: logo left + logout right -->
+    <div class="header" id="header">
+        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="DeepFlix" class="logo">
+        <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+    </div>
+
+    <!-- fullscreen video player with autoplay & volume ON -->
+    <div class="player">
+        <iframe 
+            width="960" 
+            height="540"
+            src="https://www.youtube.com/embed/{{ movie.youtube_video_id }}?autoplay=1"
+            frameborder="0"
+            allow="autoplay; encrypted-media"
+            allowfullscreen>
+        </iframe>
+    </div>
+
+    <script>
+        (function() {
+            const header = document.getElementById('header');
+            let hideTimeout;
+
+            // Function to show header
+            function showHeader() {
+                header.classList.remove('hidden');
+                // Reset the hide timer
+                resetHideTimer();
+            }
+
+            // Function to start timer that hides header after 2 seconds
+            function resetHideTimer() {
+                if (hideTimeout) clearTimeout(hideTimeout);
+                hideTimeout = setTimeout(() => {
+                    header.classList.add('hidden');
+                }, 2000); // 2 seconds of no movement -> hide
+            }
+
+            // Event listeners for mouse movement and touch
+            document.addEventListener('mousemove', showHeader);
+            document.addEventListener('touchstart', showHeader);   // for mobile
+
+            // Also if mouse leaves the window, we may want to keep header visible? 
+            // But to be safe, we just rely on mousemove.
+            // Additionally, we want to keep header visible if user is interacting with logout button.
+            // The pointer-events: none when hidden prevents interaction, but while visible it's fine.
+
+            // Initialize: start with header visible, then start timer
+            // (to hide after first 2 seconds)
+            resetHideTimer();
+
+            // Optional: if the user hovers over header, don't hide (prevents flicker)
+            header.addEventListener('mouseenter', () => {
+                if (hideTimeout) clearTimeout(hideTimeout);
+            });
+            header.addEventListener('mouseleave', () => {
+                // When mouse leaves header, restart timer
+                resetHideTimer();
+            });
+
+            // Also ensure that if the iframe captures mouse, we still detect movement on body.
+            // The document mousemove should fire even over iframe, but sometimes iframe eats events.
+            // We can add a transparent overlay? Not necessary usually, but we can put a div over the video?
+            // To be safe, we'll also listen on the player container (click events won't interfere)
+            const player = document.querySelector('.player');
+            player.addEventListener('mousemove', showHeader);
+            player.addEventListener('touchstart', showHeader);
+        })();
+    </script>
+</body>
+</html>

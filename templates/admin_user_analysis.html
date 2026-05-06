@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>DeepFlix · User Analytics Dashboard</title>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- TailwindCSS + Font Awesome -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <!-- Custom smooth overrides -->
+    <style>
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #ef4444 #1f2937;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #ef4444;
+            border-radius: 10px;
+        }
+        body {
+            background: radial-gradient(circle at 10% 20%, #0a0a0a, #000000);
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, sans-serif;
+        }
+        /* Smooth modal transitions */
+        .modal-movies {
+            transition: opacity 0.25s ease, visibility 0.25s ease, backdrop-filter 0.2s;
+        }
+        .modal-movies.active {
+            opacity: 1;
+            visibility: visible;
+            backdrop-filter: blur(6px);
+        }
+        .movie-row {
+            transition: all 0.2s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+            border-left: 3px solid transparent;
+        }
+        .movie-row:hover {
+            background-color: rgba(239, 68, 68, 0.08);
+            border-left-color: #ef4444;
+            transform: translateX(6px);
+        }
+        .stat-glow {
+            text-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+        }
+        .chart-container canvas {
+            transition: filter 0.2s;
+            cursor: pointer;
+        }
+        .chart-container canvas:hover {
+            filter: drop-shadow(0 0 6px rgba(239,68,68,0.3));
+        }
+        .modal-movies .movie-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .modal-movies .movie-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 20px -12px rgba(239,68,68,0.4);
+        }
+        .rank-badge {
+            background: linear-gradient(135deg, #1e1e2f, #0f0f1a);
+        }
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeSlideUp 0.4s ease-out forwards;
+        }
+        .progress-bar-fill {
+            background: linear-gradient(90deg, #ef4444, #f97316);
+            border-radius: 20px;
+            transition: width 0.4s ease;
+        }
+    </style>
+</head>
+<body class="text-white antialiased">
+
+    <div class="max-w-7xl mx-auto px-5 md:px-8 py-6 md:py-8">
+        <!-- ========== HEADER with Logo + Logout (Netflix red vibe) ========== -->
+        <div class="flex flex-wrap justify-between items-center gap-4 mb-10">
+            <div class="flex items-center gap-3">
+                <!-- DeepFlix Logo with fallback gradient -->
+                <img src="{{ url_for('static', filename='img/logo.png') }}" 
+                     alt="DeepFlix" 
+                     class="h-10 w-auto object-contain drop-shadow-md"
+                     onerror="this.src='https://via.placeholder.com/140x40/000000/ef4444?text=DEEPFLEX'; this.onerror=null;">
+                <span class="text-gray-400 text-sm hidden sm:inline-block border-l border-gray-700 pl-3">Analytics hub</span>
+            </div>
+            <a href="{{ url_for('logout') if url_for else '#' }}" 
+               class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-7 rounded-full transition-all duration-200 shadow-md hover:shadow-red-600/40 flex items-center gap-2 text-sm md:text-base">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
+        </div>
+
+        <!-- ========== USER PROFILE (premium look) ========== -->
+        <div class="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-12 bg-white/5 rounded-2xl p-5 backdrop-blur-sm border border-gray-800">
+            <div id="profileImageWrapper" class="relative">
+                {% if user and user.profile_image %}
+                <img id="previewImage"
+                     src="{{ url_for('static', filename='uploads/' + user.profile_image) }}"
+                     class="w-24 h-24 rounded-full object-cover border-3 border-red-500 shadow-xl ring-2 ring-red-500/40"
+                     onerror="this.style.display='none';document.getElementById('fallbackIcon').style.display='flex';">
+                {% endif %}
+                <div id="fallbackIcon"
+                     class="w-24 h-24 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center text-3xl border-2 border-gray-600 shadow-lg"
+                     {% if user and user.profile_image %}style="display:none"{% endif %}>
+                    <i class="fas fa-user-astronaut text-red-400"></i>
+                </div>
+            </div>
+            <div class="text-center sm:text-left">
+                <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-red-400 to-red-600 bg-clip-text text-transparent">{{ user.username }}</h1>
+                <p class="text-gray-300 flex items-center gap-2 justify-center sm:justify-start mt-1"><i class="fas fa-chart-line text-red-500 text-sm"></i> Premium analytics · realtime insights</p>
+                <div class="flex gap-3 mt-2 flex-wrap justify-center sm:justify-start">
+                    <span class="bg-gray-800/70 text-xs px-3 py-1 rounded-full"><i class="far fa-calendar-alt mr-1"></i> Active member</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== STATS (glossy metrics, focus on views + likes) ========== -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-12">
+            <div class="bg-gradient-to-br from-gray-900 to-black rounded-2xl p-6 border border-gray-800 shadow-xl text-center transition-all hover:scale-[1.01] duration-300">
+                <div class="flex justify-center mb-3"><i class="fas fa-eye text-4xl text-red-500 opacity-80"></i></div>
+                <h2 class="text-gray-400 uppercase tracking-wide text-sm font-medium">Total Views</h2>
+                <p class="text-5xl font-black text-red-500 stat-glow mt-2">{{ user.total_views }}</p>
+                <p class="text-xs text-gray-500 mt-2"><i class="fas fa-film"></i> across all content</p>
+            </div>
+            <div class="bg-gradient-to-br from-gray-900 to-black rounded-2xl p-6 border border-gray-800 shadow-xl text-center transition-all hover:scale-[1.01] duration-300">
+                <div class="flex justify-center mb-3"><i class="fas fa-heart text-4xl text-red-500 opacity-80"></i></div>
+                <h2 class="text-gray-400 uppercase tracking-wide text-sm font-medium">Total Likes</h2>
+                <p class="text-5xl font-black text-red-500 stat-glow mt-2">{{ user.total_likes }}</p>
+                <p class="text-xs text-gray-500 mt-2"><i class="fas fa-thumbs-up"></i> engagement score</p>
+            </div>
+        </div>
+
+        <!-- ========== CHARTS SECTION (clickable for deeper insights) ========== -->
+        <div class="grid lg:grid-cols-2 gap-10 mb-14">
+            <!-- GENRE PIE CHART -->
+            <div class="bg-black/40 rounded-2xl p-5 border border-gray-800 backdrop-blur-sm chart-container">
+                <div class="flex items-center gap-2 mb-5 border-b border-gray-800 pb-2">
+                    <span class="w-1.5 h-6 bg-red-500 rounded-full"></span>
+                    <h2 class="text-xl font-bold tracking-tight">🎭 Favorite Genres</h2>
+                    <span class="text-xs text-gray-400 ml-auto"><i class="fas fa-mouse-pointer"></i> click slice → explore</span>
+                </div>
+                <canvas id="genreChart" width="400" height="400" style="max-height: 320px; margin: 0 auto;"></canvas>
+                <p class="text-center text-gray-500 text-xs mt-3">Total views per genre — click any segment to see movies</p>
+            </div>
+
+            <!-- LANGUAGE BAR CHART -->
+            <div class="bg-black/40 rounded-2xl p-5 border border-gray-800 backdrop-blur-sm chart-container">
+                <div class="flex items-center gap-2 mb-5 border-b border-gray-800 pb-2">
+                    <span class="w-1.5 h-6 bg-red-500 rounded-full"></span>
+                    <h2 class="text-xl font-bold tracking-tight">🌐 Favorite Languages</h2>
+                    <span class="text-xs text-gray-400 ml-auto"><i class="fas fa-chart-simple"></i> click bar → movies</span>
+                </div>
+                <canvas id="languageChart" width="400" height="400" style="max-height: 320px; width: 100%;"></canvas>
+                <p class="text-center text-gray-500 text-xs mt-3">View count by language — interactive insights</p>
+            </div>
+        </div>
+
+        <!-- ========== MOST WATCHED MOVIES (enhanced leaderboard) ========== -->
+        <div class="bg-black/30 rounded-2xl p-5 border border-gray-800 mt-2">
+            <div class="flex flex-wrap justify-between items-center mb-6 gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-7 bg-red-500 rounded-full"></span>
+                    <h2 class="text-xl font-bold tracking-tight">🏆 Most Watched Movies</h2>
+                </div>
+                <span class="text-xs text-gray-400 bg-gray-900 px-3 py-1 rounded-full"><i class="fas fa-chart-line mr-1"></i> sorted by views</span>
+            </div>
+            <div id="moviesLeaderboard" class="space-y-3">
+                <!-- dynamic movie rows will be populated and sorted via JS for perfect views display -->
+                <!-- but also fallback to Jinja content, JS will reorder & enhance -->
+                <div class="text-center text-gray-500 py-6"><i class="fas fa-spinner fa-pulse mr-2"></i> Loading insights...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== MODAL (detailed movie grid) ========== -->
+    <div id="movieModal" class="modal-movies fixed inset-0 bg-black/90 flex items-center justify-center opacity-0 invisible transition-all duration-300 z-50 p-4">
+        <div class="bg-gray-900 rounded-2xl p-6 max-w-3xl w-full max-h-[85vh] overflow-y-auto border border-red-500/60 shadow-2xl shadow-red-500/20">
+            <div class="flex justify-between items-center mb-5 sticky top-0 bg-gray-900 pb-3 border-b border-gray-700">
+                <h3 id="modalTitle" class="text-2xl font-bold text-red-400 flex items-center gap-2"><i class="fas fa-tags"></i><span></span></h3>
+                <button onclick="closeModal()" class="close-btn text-gray-300 hover:text-red-500 text-3xl leading-5 transition">&times;</button>
+            </div>
+            <div id="modalMovieList" class="grid grid-cols-2 sm:grid-cols-3 gap-5">
+                <!-- dynamic cards injected -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ---------- DATA INJECTED FROM FLASK (with fallback safety) ----------
+        const moviesRaw = {{ movies | tojson }};
+        const genreDataRaw = {{ genres | tojson }};
+        const languageDataRaw = {{ languages | tojson }};
+
+        // ensure arrays
+        const movies = Array.isArray(moviesRaw) ? moviesRaw : [];
+        const genreStats = Array.isArray(genreDataRaw) ? genreDataRaw : [];
+        const languageStats = Array.isArray(languageDataRaw) ? languageDataRaw : [];
+
+        // ---------- 1. sort movies by views (descending) to guarantee perfect views order ----------
+        const sortedMovies = [...movies].sort((a,b) => (b.views || 0) - (a.views || 0));
+        
+        // ---------- 2. Build lookup maps (genre -> movies, language -> movies) for modal ----------
+        const moviesByGenre = new Map();
+        const moviesByLanguage = new Map();
+
+        movies.forEach(movie => {
+            const genre = movie.genre || "Uncategorized";
+            if (!moviesByGenre.has(genre)) moviesByGenre.set(genre, []);
+            moviesByGenre.get(genre).push(movie);
+            
+            const lang = movie.language || "Other";
+            if (!moviesByLanguage.has(lang)) moviesByLanguage.set(lang, []);
+            moviesByLanguage.get(lang).push(movie);
+        });
+
+        // prepare labels & counts for charts (views aggregated)
+        const genreLabels = genreStats.map(g => g.genre || "Unknown");
+        const genreCounts = genreStats.map(g => Number(g.count) || 0);
+        const languageLabels = languageStats.map(l => l.language || "Unknown");
+        const languageCounts = languageStats.map(l => Number(l.count) || 0);
+
+        // Helper to render movie cards inside modal (perfect views shown)
+        function renderMovieCards(movieList, container) {
+            if (!movieList || movieList.length === 0) {
+                container.innerHTML = '<div class="col-span-full text-center py-10 text-gray-400"><i class="fas fa-film fa-2x mb-2 opacity-40"></i><p>No movies in this category</p></div>';
+                return;
+            }
+            container.innerHTML = '';
+            movieList.forEach(movie => {
+                const thumbUrl = movie.thumbnail 
+                    ? `{{ url_for('static', filename='uploads/') }}${movie.thumbnail}` 
+                    : 'https://via.placeholder.com/200x120/1f2937/ef4444?text=No+Poster';
+                const card = document.createElement('div');
+                card.className = 'movie-card bg-gray-800/80 rounded-xl overflow-hidden shadow-md transition-all hover:shadow-red-500/20';
+                card.innerHTML = `
+                    <img src="${thumbUrl}" 
+                         class="w-full h-36 object-cover" 
+                         loading="lazy"
+                         onerror="this.src='https://via.placeholder.com/200x120/1f2937/ef4444?text=Poster+Missing'">
+                    <div class="p-3">
+                        <p class="font-semibold text-sm truncate">${escapeHtml(movie.title || 'Untitled')}</p>
+                        <div class="flex justify-between items-center mt-1">
+                            <span class="text-xs text-gray-400"><i class="far fa-eye mr-1"></i> ${formatNumber(movie.views || 0)} views</span>
+                            <span class="text-xs bg-red-900/40 px-2 py-0.5 rounded-full">${movie.genre || '—'}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // simple XSS escape
+        function escapeHtml(str) { 
+            if(!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if(m === '&') return '&amp;';
+                if(m === '<') return '&lt;';
+                if(m === '>') return '&gt;';
+                return m;
+            });
+        }
+        function formatNumber(num) {
+            if(num >= 1000000) return (num/1000000).toFixed(1)+'M';
+            if(num >= 1000) return (num/1000).toFixed(1)+'K';
+            return num.toString();
+        }
+
+        // ---------- 3. Render Most Watched Leaderboard (perfect views + progress bar + rank) ----------
+        function renderLeaderboard() {
+            const container = document.getElementById('moviesLeaderboard');
+            if (!sortedMovies.length) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-8 bg-gray-900/40 rounded-xl"><i class="fas fa-video-slash text-3xl mb-2"></i><p>No watch history yet. Start exploring!</p></div>';
+                return;
+            }
+            const maxViews = sortedMovies[0]?.views || 1;
+            let html = '';
+            sortedMovies.forEach((movie, idx) => {
+                const rank = idx + 1;
+                const views = movie.views || 0;
+                const percentWidth = (views / maxViews) * 100;
+                const medalIcon = rank === 1 ? '🥇' : (rank === 2 ? '🥈' : (rank === 3 ? '🥉' : ''));
+                const posterUrl = movie.thumbnail ? `{{ url_for('static', filename='uploads/') }}${movie.thumbnail}` : 'https://via.placeholder.com/56x80/2d2d2d/ef4444?text=🎬';
+                html += `
+                    <div class="movie-row flex items-center gap-4 p-3 rounded-xl bg-gray-900/40 hover:bg-gray-800/60 transition-all">
+                        <div class="flex items-center justify-center w-8 text-lg font-bold text-red-400">${medalIcon || rank}</div>
+                        <img src="${posterUrl}" class="w-12 h-16 object-cover rounded-md shadow-md" onerror="this.src='https://via.placeholder.com/56x80/1f2937/ef4444?text=🎞️'">
+                        <div class="flex-1 min-w-0">
+                            <p class="font-semibold text-gray-200 truncate">${escapeHtml(movie.title)}</p>
+                            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+                                <span class="text-xs text-gray-400"><i class="fas fa-tag"></i> ${escapeHtml(movie.genre || '—')}</span>
+                                <span class="text-xs text-gray-400"><i class="fas fa-language"></i> ${escapeHtml(movie.language || '—')}</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-1.5 mt-2 max-w-xs">
+                                <div class="progress-bar-fill h-1.5 rounded-full" style="width: ${percentWidth}%;"></div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-red-400 font-black text-lg">${formatNumber(views)}</span>
+                            <span class="text-gray-400 text-xs block">views</span>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        // ---------- 4. CHARTS (pie + bar) with click events to show movies ----------
+        let genreChart, langChart;
+        
+        function initCharts() {
+            const ctxGenre = document.getElementById('genreChart').getContext('2d');
+            const ctxLang = document.getElementById('languageChart').getContext('2d');
+            
+            // fallback if empty data
+            const hasGenreData = genreLabels.length && genreCounts.some(c => c > 0);
+            const pieData = {
+                labels: hasGenreData ? genreLabels : ['No data'],
+                datasets: [{
+                    data: hasGenreData ? genreCounts : [1],
+                    backgroundColor: ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'],
+                    borderWidth: 0,
+                    hoverOffset: 12
+                }]
+            };
+            genreChart = new Chart(ctxGenre, {
+                type: 'pie',
+                data: pieData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { labels: { color: '#e5e7eb', font: { size: 11 } }, position: 'bottom' },
+                        tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.raw} views` } }
+                    },
+                    onClick: (event, activeElements) => {
+                        if (activeElements.length && hasGenreData) {
+                            const idx = activeElements[0].index;
+                            const genreName = genreLabels[idx];
+                            const moviesList = moviesByGenre.get(genreName) || [];
+                            showModal(`🎭 ${genreName} · Movies`, moviesList);
+                        } else if (!hasGenreData) {
+                            showModal("No genre data", []);
+                        }
+                    }
+                }
+            });
+            
+            const hasLangData = languageLabels.length && languageCounts.some(c => c > 0);
+            const barData = {
+                labels: hasLangData ? languageLabels : ['No data'],
+                datasets: [{
+                    label: 'Total Views',
+                    data: hasLangData ? languageCounts : [0],
+                    backgroundColor: '#ef4444',
+                    borderRadius: 8,
+                    hoverBackgroundColor: '#f97316'
+                }]
+            };
+            langChart = new Chart(ctxLang, {
+                type: 'bar',
+                data: barData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { labels: { color: '#e5e7eb' } },
+                        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw} views` } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#9ca3af' }, grid: { color: '#2d2d3a' } },
+                        y: { ticks: { color: '#9ca3af' }, beginAtZero: true, grid: { color: '#2d2d3a' } }
+                    },
+                    onClick: (event, activeElements) => {
+                        if (activeElements.length && hasLangData) {
+                            const idx = activeElements[0].index;
+                            const langName = languageLabels[idx];
+                            const moviesList = moviesByLanguage.get(langName) || [];
+                            showModal(`🌐 ${langName} · Movies`, moviesList);
+                        } else if (!hasLangData) {
+                            showModal("No language data", []);
+                        }
+                    }
+                }
+            });
+        }
+
+        // ---------- MODAL logic (reused) ----------
+        function showModal(title, movieArray) {
+            const modal = document.getElementById('movieModal');
+            const modalTitleSpan = document.querySelector('#modalTitle span');
+            if (modalTitleSpan) modalTitleSpan.innerText = title;
+            else document.getElementById('modalTitle').innerHTML = `<i class="fas fa-tags mr-2"></i>${title}`;
+            const container = document.getElementById('modalMovieList');
+            renderMovieCards(movieArray, container);
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        window.closeModal = function() {
+            const modal = document.getElementById('movieModal');
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+        // close on background click
+        document.getElementById('movieModal')?.addEventListener('click', (e) => {
+            if (e.target === document.getElementById('movieModal')) closeModal();
+        });
+        
+        // extra polish: escape key closes modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+        
+        // fix profile image fallback edge case
+        (function fixProfileImage() {
+            const img = document.getElementById('previewImage');
+            if (img && img.complete && img.naturalWidth === 0) {
+                img.style.display = 'none';
+                const fallback = document.getElementById('fallbackIcon');
+                if (fallback) fallback.style.display = 'flex';
+            }
+        })();
+        
+        // Ensure total views are shown perfectly, if movies sum mismatch? just for extra clarity we show backend value
+        // but also we can add small consistency note: none needed, backend reliable.
+        
+        // small helper to recompute if needed: total views label is perfect from user object.
+        
+        // make sure leaderboard respects sorting after DOM ready
+        window.addEventListener('DOMContentLoaded', () => {
+            renderLeaderboard();
+            initCharts();
+            
+            // small edge: if moviesByGenre or languages empty, we show empty modals gracefully
+            if (sortedMovies.length === 0) {
+                document.getElementById('moviesLeaderboard').innerHTML = '<div class="text-center text-gray-400 py-10 bg-gray-900/50 rounded-2xl"><i class="fas fa-hourglass-half text-3xl mb-2"></i><p>No movies watched yet. Start your binge!</p></div>';
+            }
+            
+            // add tooltip effect to stat numbers (just UX)
+            const statBoxes = document.querySelectorAll('.bg-gradient-to-br.from-gray-900');
+            statBoxes.forEach(box => {
+                box.addEventListener('mouseenter', () => {
+                    box.classList.add('ring-1', 'ring-red-500/30');
+                });
+                box.addEventListener('mouseleave', () => {
+                    box.classList.remove('ring-1', 'ring-red-500/30');
+                });
+            });
+        });
+        
+        // responsive: ensure chart.js redraws on window resize? already handled by chart.js.
+        window.addEventListener('resize', () => {
+            if (genreChart) genreChart.resize();
+            if (langChart) langChart.resize();
+        });
+        
+        // final safe fallback: if any genre or language data missing, chart displays correctly
+        if (genreLabels.length === 0 || genreCounts.every(v => v === 0)) {
+            console.log("No genre analytics available, using placeholder");
+        }
+        if (languageLabels.length === 0 || languageCounts.every(v => v === 0)) {
+            console.log("No language analytics available");
+        }
+        
+        // additional: ensure views on movie rows show big numbers nicely - already handled
+    </script>
+    <!-- ensure that tailwind custom classes are applied, and all views are perfectly readable -->
+</body>
+</html>
