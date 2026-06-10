@@ -2,7 +2,7 @@
 
 
 
-
+import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import pymysql.cursors
 
@@ -4807,3 +4807,7 @@ def user_retention():
 if __name__ == '__main__':
     if not os.path.exists('data'): os.makedirs('data')
     app.run(debug=True)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
