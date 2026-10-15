@@ -1,36 +1,56 @@
 
-
-
-
 import os
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-import pymysql.cursors
-
-from datetime import datetime
-from werkzeug.security import generate_password_hash, check_password_hash
 import io
 import time
+import json
+import random
+import subprocess
+import pickle
+
+from datetime import datetime
+
 import pandas as pd
-from hybrid_engine import HybridEngine  # ✅ this is correct
-hybrid_engine = HybridEngine()          # ✅ create the instance
-import os
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
+
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    flash,
+    jsonify,
+)
+
+import pymysql.cursors
+
+from werkzeug.security import (
+    generate_password_hash,
+    check_password_hash,
+)
+from werkzeug.utils import secure_filename
+
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-import pickle
+
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import MinMaxScaler
-from scipy.sparse.linalg import svds
+
 from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import svds
+
 from textblob import TextBlob
 from rapidfuzz import fuzz
-import random
-import json
-import matplotlib.pyplot as plt
 from wordcloud import WordCloud
-import subprocess
-from werkzeug.utils import secure_filename
+
+from hybrid_engine import HybridEngine
+
+
+# Initialize the hybrid recommendation engine
+hybrid_engine = HybridEngine()
 
 # --- Configuration ---
 app = Flask(__name__, static_folder='static')
@@ -755,221 +775,286 @@ def user_wordcloud(user_id):
 
 
 
+
+import re
+import uuid
+from urllib.parse import urlparse, parse_qs
+
+
 @app.route('/admin/upload', methods=['GET', 'POST'])
 def upload_content():
-
     if 'loggedin' not in session or session.get('user_type') != 'admin':
         flash('Please log in as an admin to access this page.', 'danger')
         return redirect(url_for('login'))
 
-    if request.method == 'POST':
+    if request.method == 'GET':
+        return render_template('upload_content.html')
 
-        title = request.form.get('title')
-        story = request.form.get('story')
-        language = request.form.get('language')
-        release_year = request.form.get('release_year')
-        content_type = request.form.get('content_type')
-        genre = request.form.get('genre')
-        youtube_url = request.form.get('youtube_url')
+    conn = None
+    cursor = None
+    saved_files = []
 
-        # ✅ NEW BACKDROP URL
-        backdrop_url = request.form.get('backdrop_url')
+    try:
+        # 1. Read form fields
+        title = request.form.get('title', '').strip()
+        story = request.form.get('story', '').strip()
+        language = request.form.get('language', '').strip()
+        content_type = request.form.get('content_type', '').strip()
+        genre = request.form.get('genre', '').strip()
+        backdrop_url = request.form.get('backdrop_url', '').strip() or None
 
-        # HEROES
-        hero = request.form.get('hero')
-        hero_caste = request.form.get('hero_caste')
+        if not title or not story or not content_type:
+            flash('Title, story and content type are required.', 'danger')
+            return redirect(request.url)
 
-        hero2 = request.form.get('hero2')
-        hero2_caste = request.form.get('hero2_caste')
+        # 2. Validate and extract YouTube video ID
+        youtube_url = request.form.get('youtube_url', '').strip()
+        video_id = ''
 
-        hero3 = request.form.get('hero3')
-        hero3_caste = request.form.get('hero3_caste')
+        try:
+            parsed = urlparse(youtube_url)
+            host = (parsed.hostname or '').lower()
+            host = host.removeprefix('www.')
 
-        # HEROINES
-        heroine = request.form.get('heroine')
-        heroine_caste = request.form.get('heroine_caste')
+            if parsed.scheme in ('http', 'https'):
+                if host in ('youtube.com', 'm.youtube.com', 'music.youtube.com'):
+                    if parsed.path == '/watch':
+                        video_id = parse_qs(parsed.query).get('v', [''])[0]
+                    elif parsed.path.startswith(('/embed/', '/shorts/', '/live/')):
+                        video_id = parsed.path.split('/')[2]
 
-        heroine2 = request.form.get('heroine2')
-        heroine2_caste = request.form.get('heroine2_caste')
+                elif host == 'youtu.be':
+                    video_id = parsed.path.strip('/').split('/')[0]
 
-        heroine3 = request.form.get('heroine3')
-        heroine3_caste = request.form.get('heroine3_caste')
+            if not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
+                video_id = ''
 
-        # DIRECTOR
-        director = request.form.get('director')
+        except (ValueError, IndexError, AttributeError):
+            video_id = ''
 
-        # COMEDIAN
-        comedian = request.form.get('comedian')
-        comedian_caste = request.form.get('comedian_caste')
+        if not video_id:
+            flash('Invalid YouTube URL. Please enter a valid video link.', 'danger')
+            return redirect(request.url)
 
-        # PRODUCER
-        producer = request.form.get('producer')
-        producer_caste = request.form.get('producer_caste')
+        # 3. Read numeric fields safely
+        def optional_int(field, default=None):
+            value = request.form.get(field, '').strip()
+            if not value:
+                return default
+            return int(value)
 
-        trending_rank = request.form.get('trending_rank')
-        deepflix_rank = request.form.get('deepflix_rank')
+        release_year = optional_int('release_year')
+        trending_rank = optional_int('trending_rank', 0)
+        deepflix_rank = optional_int('deepflix_rank', 0)
 
-        trending_rank = int(trending_rank) if trending_rank else 0
-        deepflix_rank = int(deepflix_rank) if deepflix_rank else 0
-        release_year = int(release_year) if release_year else None
+        if trending_rank < 0 or deepflix_rank < 0:
+            flash('Rank values cannot be negative.', 'danger')
+            return redirect(request.url)
 
         is_90s = 1 if request.form.get('is_90s') else 0
         is_kids = 1 if request.form.get('is_kids') else 0
 
-        # THUMBNAIL
-        file = request.files['thumbnail']
-        filename = secure_filename(file.filename)
-        unique_name = str(int(time.time())) + "_" + filename
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_name))
+        # 4. Save uploaded images using unique filenames
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-        # IMAGE SAVE FUNCTION
-        def save_image(field):
-            if field in request.files:
-                img = request.files[field]
-                if img.filename != "" and allowed_file(img.filename):
-                    filename = secure_filename(img.filename)
-                    name = str(int(time.time())) + "_" + filename
-                    img.save(os.path.join(app.config['UPLOAD_FOLDER'], name))
-                    return name
-            return ""
+        def save_image(field, required=False):
+            image_file = request.files.get(field)
 
-        # HERO IMAGES
-        hero_image_name = save_image("hero_image")
-        hero2_image_name = save_image("hero2_image")
-        hero3_image_name = save_image("hero3_image")
+            if not image_file or not image_file.filename:
+                if required:
+                    raise ValueError('Please select a thumbnail image.')
+                return ''
 
-        # HEROINE IMAGES
-        heroine_image_name = save_image("heroine_image")
-        heroine2_image_name = save_image("heroine2_image")
-        heroine3_image_name = save_image("heroine3_image")
+            if not allowed_file(image_file.filename):
+                raise ValueError(
+                    f'Unsupported image format for {field}. '
+                    'Please use an allowed image file.'
+                )
 
-        # DIRECTOR IMAGE
-        director_image_name = save_image("director_image")
+            safe_name = secure_filename(image_file.filename)
+            if not safe_name:
+                raise ValueError(f'Invalid filename for {field}.')
 
-        # COMEDIAN IMAGE
-        comedian_image_name = save_image("comedian_image")
-
-        # PRODUCER IMAGE
-        producer_image_name = save_image("producer_image")
-
-        # YOUTUBE ID
-        video_id = ""
-
-        if youtube_url:
-            if "youtube.com/watch?v=" in youtube_url:
-                video_id = youtube_url.split("watch?v=")[1].split("&")[0]
-            elif "youtu.be/" in youtube_url:
-                video_id = youtube_url.split("youtu.be/")[1].split("?")[0]
-
-        if not video_id:
-            flash('Invalid YouTube URL.', 'danger')
-            return redirect(request.url)
-
-        conn = get_connection()
-
-        try:
-            cursor = conn.cursor()
-
-            # UNIQUE DEEPFLIX RANK FIX
-            if deepflix_rank > 0:
-                cursor.execute("""
-                    UPDATE contents
-                    SET deepflix_rank = 0
-                    WHERE deepflix_rank = %s
-                """, (deepflix_rank,))
-
-            # ✅ UPDATED INSERT (backdrop_url added)
-            cursor.execute("""
-            INSERT INTO contents
-            (
-                title,story,language,release_year,content_type,genre,
-
-                hero,hero_caste,hero_image,
-                hero2,hero2_caste,hero2_image,
-                hero3,hero3_caste,hero3_image,
-
-                heroine,heroine_caste,heroine_image,
-                heroine2,heroine2_caste,heroine2_image,
-                heroine3,heroine3_caste,heroine3_image,
-
-                director,director_image,
-
-                comedian,comedian_caste,comedian_image,
-                producer,producer_caste,producer_image,
-
-                youtube_video_id,thumbnail,backdrop_url,
-
-                trending_rank,deepflix_rank,is_90s,is_kids
+            extension = os.path.splitext(safe_name)[1].lower()
+            unique_name = f'{uuid.uuid4().hex}{extension}'
+            destination = os.path.join(
+                app.config['UPLOAD_FOLDER'], unique_name
             )
-            VALUES
-            (%s,%s,%s,%s,%s,%s,
 
-            %s,%s,%s,
-            %s,%s,%s,
-            %s,%s,%s,
+            image_file.save(destination)
+            saved_files.append(destination)
+            return unique_name
 
-            %s,%s,%s,
-            %s,%s,%s,
-            %s,%s,%s,
+        thumbnail_name = save_image('thumbnail', required=True)
 
-            %s,%s,
+        hero_image_name = save_image('hero_image')
+        hero2_image_name = save_image('hero2_image')
+        hero3_image_name = save_image('hero3_image')
 
-            %s,%s,%s,
-            %s,%s,%s,
+        heroine_image_name = save_image('heroine_image')
+        heroine2_image_name = save_image('heroine2_image')
+        heroine3_image_name = save_image('heroine3_image')
 
-            %s,%s,%s,
+        director_image_name = save_image('director_image')
+        comedian_image_name = save_image('comedian_image')
+        producer_image_name = save_image('producer_image')
 
-            %s,%s,%s,%s)
-            """, (
+        # 5. Connect to the existing database
+        conn = get_connection()
+        if conn is None:
+            raise RuntimeError('Database connection could not be created.')
 
-                title,story,language,release_year,content_type,genre,
+        cursor = conn.cursor()
 
-                hero,hero_caste,hero_image_name,
-                hero2,hero2_caste,hero2_image_name,
-                hero3,hero3_caste,hero3_image_name,
+        # 6. Keep the selected Deepflix rank unique
+        if deepflix_rank > 0:
+            cursor.execute(
+                """
+                UPDATE contents
+                SET deepflix_rank = 0
+                WHERE deepflix_rank = %s
+                """,
+                (deepflix_rank,)
+            )
 
-                heroine,heroine_caste,heroine_image_name,
-                heroine2,heroine2_caste,heroine2_image_name,
-                heroine3,heroine3_caste,heroine3_image_name,
+        # 7. Insert content using the existing database columns
+        cursor.execute(
+            """
+            INSERT INTO contents (
+                title, story, language, release_year, content_type, genre,
 
-                director,director_image_name,
+                hero, hero_caste, hero_image,
+                hero2, hero2_caste, hero2_image,
+                hero3, hero3_caste, hero3_image,
 
-                comedian,comedian_caste,comedian_image_name,
-                producer,producer_caste,producer_image_name,
+                heroine, heroine_caste, heroine_image,
+                heroine2, heroine2_caste, heroine2_image,
+                heroine3, heroine3_caste, heroine3_image,
 
-                video_id,unique_name,backdrop_url,
+                director, director_image,
+                comedian, comedian_caste, comedian_image,
+                producer, producer_caste, producer_image,
 
-                trending_rank,deepflix_rank,is_90s,is_kids
-            ))
+                youtube_video_id, thumbnail, backdrop_url,
+                trending_rank, deepflix_rank, is_90s, is_kids
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s, %s
+            )
+            """,
+            (
+                title, story, language, release_year, content_type, genre,
 
-            content_id = cursor.lastrowid
+                request.form.get('hero', '').strip(),
+                request.form.get('hero_caste', '').strip(),
+                hero_image_name,
 
-            # NOTIFICATION
-            cursor.execute("""
-                INSERT INTO notifications (title, message, content_id)
-                VALUES (%s,%s,%s)
-            """, (
-                "New Content Added",
-                f"{title} is now available to watch!",
+                request.form.get('hero2', '').strip(),
+                request.form.get('hero2_caste', '').strip(),
+                hero2_image_name,
+
+                request.form.get('hero3', '').strip(),
+                request.form.get('hero3_caste', '').strip(),
+                hero3_image_name,
+
+                request.form.get('heroine', '').strip(),
+                request.form.get('heroine_caste', '').strip(),
+                heroine_image_name,
+
+                request.form.get('heroine2', '').strip(),
+                request.form.get('heroine2_caste', '').strip(),
+                heroine2_image_name,
+
+                request.form.get('heroine3', '').strip(),
+                request.form.get('heroine3_caste', '').strip(),
+                heroine3_image_name,
+
+                request.form.get('director', '').strip(),
+                director_image_name,
+
+                request.form.get('comedian', '').strip(),
+                request.form.get('comedian_caste', '').strip(),
+                comedian_image_name,
+
+                request.form.get('producer', '').strip(),
+                request.form.get('producer_caste', '').strip(),
+                producer_image_name,
+
+                video_id,
+                thumbnail_name,
+                backdrop_url,
+                trending_rank,
+                deepflix_rank,
+                is_90s,
+                is_kids
+            )
+        )
+
+        content_id = cursor.lastrowid
+
+        # 8. Create notification
+        cursor.execute(
+            """
+            INSERT INTO notifications (title, message, content_id)
+            VALUES (%s, %s, %s)
+            """,
+            (
+                'New Content Added',
+                f'{title} is now available to watch!',
                 content_id
-            ))
+            )
+        )
 
-            conn.commit()
+        conn.commit()
+        saved_files.clear()
 
-            flash('Content uploaded successfully!', 'success')
-            return redirect(url_for('admin_dashboard'))
+        flash('Content uploaded successfully!', 'success')
+        return redirect(url_for('admin_dashboard'))
 
-        except Exception as e:
+    except ValueError as e:
+        if conn:
             conn.rollback()
-            flash(f'Database error: {str(e)}', 'danger')
-            return redirect(request.url)
+        flash(str(e), 'danger')
+        return redirect(request.url)
 
-        finally:
+    except Exception:
+        if conn:
+            conn.rollback()
+
+        app.logger.exception('Content upload failed')
+
+        flash(
+            'Upload failed. Please check the application logs and database connection.',
+            'danger'
+        )
+        return redirect(request.url)
+
+    finally:
+        if cursor:
             cursor.close()
+
+        if conn:
             conn.close()
 
-    return render_template('upload_content.html')
-        
+        # Remove uploaded files if the database insert failed
+        for path in saved_files:
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except OSError:
+                app.logger.warning('Could not remove temporary upload: %s', path)
+    
 @app.route('/admin/upload_csv', methods=['GET', 'POST'])
 def upload_csv():
 
