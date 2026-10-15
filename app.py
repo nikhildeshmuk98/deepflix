@@ -81,15 +81,27 @@ def load_nlp_model():
 # Call this once at startup
 load_nlp_model()
 
+
 # --- Database Config ---
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '',
-    'db': 'ott_recommendation_db1',
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', ''),
+    'db': os.getenv('DB_NAME', 'ott_recommendation_db1'),
+    'port': int(os.getenv('DB_PORT', '3306')),
     'charset': 'utf8mb4',
-    'cursorclass': pymysql.cursors.DictCursor
+    'cursorclass': pymysql.cursors.DictCursor,
 }
+
+# Aiven SSL certificate
+DB_SSL_CA = os.getenv(
+    'DB_SSL_CA',
+    os.path.join(os.path.dirname(__file__), 'certs', 'ca.pem')
+)
+
+if os.path.isfile(DB_SSL_CA):
+    DB_CONFIG['ssl'] = {'ca': DB_SSL_CA}
+
 
 # --- 1. Database Management & Setup ---
 def get_connection():
@@ -3432,135 +3444,243 @@ def update_progress():
     finally:
         cursor.close()
         conn.close()
+
+# ==========================================
+# AJAX: TOGGLE HEART / LIKE
+# ==========================================
 @app.route('/ajax_toggle_heart', methods=['POST'])
 def ajax_toggle_heart():
-    # 1️⃣ Check if user is logged in
+
+    # Check if user is logged in
     if 'user_id' not in session:
-        return jsonify({'status': 'login_required'})
+        return jsonify({
+            'status': 'login_required'
+        }), 401
 
-    user_id = session['user_id']
-    content_id = request.json.get('content_id')
+    data = request.get_json(silent=True) or {}
+    content_id = data.get('content_id')
 
-    # 2️⃣ Connect to DB
-    conn = pymysql.connect(
-        host=DB_CONFIG['host'],
-        user=DB_CONFIG['user'],
-        password=DB_CONFIG['password'],
-        database=DB_CONFIG['db'],
-        charset=DB_CONFIG['charset'],
-        cursorclass=pymysql.cursors.DictCursor
-    )
+    if not content_id:
+        return jsonify({
+            'status': 'error',
+            'message': 'Content ID is required'
+        }), 400
+
+    conn = None
 
     try:
+        conn = get_connection()
+
+        if conn is None:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 500
+
         with conn.cursor() as cursor:
-            # 3️⃣ Check if user already liked this content
+
+            # Check if the content exists
+            cursor.execute(
+                "SELECT id, hearts FROM contents WHERE id=%s",
+                (content_id,)
+            )
+            content = cursor.fetchone()
+
+            if not content:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Content not found'
+                }), 404
+
+            # Check if the user already liked this content
             cursor.execute("""
-                SELECT * FROM user_hearts
+                SELECT *
+                FROM user_hearts
                 WHERE user_id=%s AND content_id=%s
-            """, (user_id, content_id))
+            """, (session['user_id'], content_id))
+
             existing = cursor.fetchone()
 
             if existing:
-                # Already liked → remove like
+                # Remove existing like
                 cursor.execute("""
                     DELETE FROM user_hearts
                     WHERE user_id=%s AND content_id=%s
-                """, (user_id, content_id))
+                """, (session['user_id'], content_id))
 
                 cursor.execute("""
-                    UPDATE contents SET hearts = hearts - 1
+                    UPDATE contents
+                    SET hearts = GREATEST(COALESCE(hearts, 0) - 1, 0)
                     WHERE id=%s
                 """, (content_id,))
+
             else:
-                # Not liked → add like
+                # Add a new like
                 cursor.execute("""
                     INSERT INTO user_hearts (user_id, content_id)
-                    VALUES (%s,%s)
-                """, (user_id, content_id))
+                    VALUES (%s, %s)
+                """, (session['user_id'], content_id))
 
                 cursor.execute("""
-                    UPDATE contents SET hearts = hearts + 1
+                    UPDATE contents
+                    SET hearts = COALESCE(hearts, 0) + 1
                     WHERE id=%s
                 """, (content_id,))
 
             conn.commit()
 
-            # 4️⃣ Return updated heart count
-            cursor.execute("SELECT hearts FROM contents WHERE id=%s", (content_id,))
+            # Get updated heart count
+            cursor.execute(
+                "SELECT hearts FROM contents WHERE id=%s",
+                (content_id,)
+            )
             updated = cursor.fetchone()
 
-    finally:
-        conn.close()
+        return jsonify({
+            'status': 'success',
+            'hearts': updated['hearts'] if updated else 0
+        })
 
-    return jsonify({
-        'status': 'success',
-        'hearts': updated['hearts']
-    })
+    except Exception as e:
+        if conn:
+            conn.rollback()
+
+        app.logger.exception("Error toggling content heart")
+
+        return jsonify({
+            'status': 'error',
+            'message': 'Unable to update heart. Please try again.'
+        }), 500
+
+    finally:
+        if conn:
+            conn.close()
+
+
+# ==========================================
+# USER PROFILE
+# ==========================================
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
 
+    # Check login
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
     user_id = session['user_id']
+    conn = None
 
-    # GET USER
-    cursor.execute("SELECT * FROM users WHERE id=%s", (user_id,))
-    user = cursor.fetchone()
+    try:
+        conn = get_connection()
 
-    if request.method == 'POST':
+        if conn is None:
+            return "Database connection failed", 500
 
-        # 👇👇 IDI IKADA PETTALI (TOP LO)
-        action = request.form.get('action')
+        with conn.cursor() as cursor:
 
-        if action == 'remove_image':
-
-            # DELETE FILE FROM FOLDER
-            if user['profile_image']:
-                old_path = os.path.join(app.config['UPLOAD_FOLDER'], user['profile_image'])
-                if os.path.exists(old_path):
-                    os.remove(old_path)
-
-            # REMOVE FROM DB
+            # Get user details
             cursor.execute(
-                "UPDATE users SET profile_image=NULL WHERE id=%s",
+                "SELECT * FROM users WHERE id=%s",
                 (user_id,)
             )
-            conn.commit()
+            user = cursor.fetchone()
 
-            return redirect(url_for('profile'))
+            if not user:
+                session.clear()
+                return redirect(url_for('login'))
 
-        # =========================
-        # IMAGE UPLOAD
-        # =========================
-        file = request.files.get('profile_image')
+            if request.method == 'POST':
 
-        if file and file.filename != "":
-            filename = secure_filename(file.filename)
-            filename = str(user_id) + "_" + filename
+                action = request.form.get('action')
 
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                # Remove profile image
+                if action == 'remove_image':
 
-            # DELETE OLD IMAGE
-            if user['profile_image']:
-                old_path = os.path.join(app.config['UPLOAD_FOLDER'], user['profile_image'])
-                if os.path.exists(old_path):
-                    os.remove(old_path)
+                    old_image = user.get('profile_image')
 
-            file.save(filepath)
+                    if old_image:
+                        upload_folder = app.config['UPLOAD_FOLDER']
+                        old_path = os.path.join(
+                            upload_folder,
+                            os.path.basename(old_image)
+                        )
 
-            cursor.execute(
-                "UPDATE users SET profile_image=%s WHERE id=%s",
-                (filename, user_id)
+                        # Delete only files inside the upload folder
+                        if os.path.isfile(old_path):
+                            os.remove(old_path)
+
+                    cursor.execute("""
+                        UPDATE users
+                        SET profile_image=NULL
+                        WHERE id=%s
+                    """, (user_id,))
+
+                    conn.commit()
+
+                    return redirect(url_for('profile'))
+
+                # Upload profile image
+                file = request.files.get('profile_image')
+
+                if file and file.filename:
+
+                    filename = secure_filename(file.filename)
+
+                    if not filename:
+                        return "Invalid filename", 400
+
+                    filename = f"{user_id}_{filename}"
+
+                    upload_folder = app.config['UPLOAD_FOLDER']
+                    os.makedirs(upload_folder, exist_ok=True)
+
+                    filepath = os.path.join(
+                        upload_folder,
+                        filename
+                    )
+
+                    # Save the new image first
+                    file.save(filepath)
+
+                    old_image = user.get('profile_image')
+
+                    cursor.execute("""
+                        UPDATE users
+                        SET profile_image=%s
+                        WHERE id=%s
+                    """, (filename, user_id))
+
+                    conn.commit()
+
+                    # Delete old image after successful DB update
+                    if old_image and old_image != filename:
+                        old_path = os.path.join(
+                            upload_folder,
+                            os.path.basename(old_image)
+                        )
+
+                        if os.path.isfile(old_path):
+                            os.remove(old_path)
+
+                    return redirect(url_for('profile'))
+
+            return render_template(
+                'profile.html',
+                user=user
             )
-            conn.commit()
 
-            return redirect(url_for('profile'))
+    except Exception:
+        if conn:
+            conn.rollback()
 
-    return render_template('profile.html', user=user)
+        app.logger.exception("Error loading or updating profile")
+
+        return "Unable to load profile. Please try again.", 500
+
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/delete_account')
 def delete_account():
     if 'user_id' not in session:
@@ -3822,49 +3942,69 @@ def play_content(content_id):
         conn.close()
 
 
+
+# ==========================================
+# PERSON / ACTOR / DIRECTOR MOVIES
+# ==========================================
 @app.route('/person/<name>')
 def person_movies(name):
 
-    import pymysql
-
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = None
 
     try:
+        # Connect using the central database configuration
+        conn = get_connection()
+
+        if conn is None:
+            return "Database connection failed", 500
+
         with conn.cursor() as cursor:
 
             query = """
-            SELECT * FROM contents
-            WHERE hero=%s
-            OR hero2=%s
-            OR hero3=%s
-            OR heroine=%s
-            OR heroine2=%s
-            OR heroine3=%s
-            OR director=%s
-            OR producer=%s
-            OR comedian=%s
+                SELECT *
+                FROM contents
+                WHERE hero = %s
+                   OR hero2 = %s
+                   OR hero3 = %s
+                   OR heroine = %s
+                   OR heroine2 = %s
+                   OR heroine3 = %s
+                   OR director = %s
+                   OR producer = %s
+                   OR comedian = %s
             """
 
-            cursor.execute(query,(name,name,name,name,name,name,name,name,name))
+            params = (name,) * 9
+
+            cursor.execute(query, params)
             movies = cursor.fetchall()
 
+        # Convert the person's name into an image filename
+        actor_image = name.lower().replace(" ", "_") + ".jpg"
+
+        person = {
+            "name": name,
+            "profile_image": actor_image
+        }
+
+        return render_template(
+            "person_movies.html",
+            name=name,
+            movies=movies,
+            person=person
+        )
+
+    except Exception:
+        app.logger.exception(
+            "Error loading movies for person: %s",
+            name
+        )
+        return "Unable to load movies right now. Please try again.", 500
+
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
-    # 🔥 convert name to image format
-    actor_image = name.lower().replace(" ", "_") + ".jpg"
-
-    person = {
-        "name": name,
-        "profile_image": actor_image
-    }
-
-    return render_template(
-        "person_movies.html",
-        name=name,
-        movies=movies,
-        person=person
-    )
 # ====================================================
 # admin_dashbboard_analysis
 # ==============================
