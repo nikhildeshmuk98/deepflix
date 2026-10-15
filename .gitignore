@@ -1,0 +1,33 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Secrets and environment variables
+.env
+.env.*
+!.env.example
+
+# Local backups
+*.backup
+*.bak
+app.py.backup-before-aiven
+requirements-backup.txt
+
+# Local database dumps
+*.sql
+
+# Logs
+*.log
+
+# IDE and OS files
+.vscode/
+.DS_Store
+Thumbs.db
+
+# User-uploaded files
+static/uploads/
