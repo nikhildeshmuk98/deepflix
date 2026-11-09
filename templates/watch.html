@@ -575,51 +575,345 @@
     <!-- YOUTUBE API + FULL JS LOGIC -->
     <script src="https://www.youtube.com/iframe_api"></script>
     <script>
-        const contentId = {{ content['id'] }};
-        const youtubeVideoId = "{{ content['youtube_video_id'] }}";
-        let player;
-        let progressUpdateInterval;
-        let lastReportedTime = 0;
+       
+const contentId = {{ content['id']|tojson }};
+const youtubeVideoId = {{ content['youtube_video_id']|default('', true)|tojson }};
 
-        function onYouTubeIframeAPIReady() {
-            if (!youtubeVideoId || youtubeVideoId === 'None' || youtubeVideoId === '') { showFallback(); return; }
-            player = new YT.Player('player', { height: '100%', width: '100%', videoId: youtubeVideoId, playerVars: { autoplay: 1, modestbranding: 1, rel: 0 }, events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange, 'onError': onPlayerError } });
+let player = null;
+let progressUpdateInterval = null;
+let lastReportedTime = 0;
+let playerReady = false;
+
+function showFallback(message = 'This video cannot be played here.') {
+    const playerElement = document.getElementById('player');
+    const fallback = document.getElementById('player-fallback');
+
+    if (playerElement) {
+        playerElement.classList.add('hidden');
+    }
+
+    if (fallback) {
+        fallback.classList.remove('hidden');
+        fallback.classList.add('flex');
+
+        const messageElement = fallback.querySelector('.player-message');
+        if (messageElement) {
+            messageElement.textContent = message;
         }
-        function onPlayerReady(event) { fetch(`/api/progress/get?content_id=${contentId}`).then(res=>res.json()).then(data=>{ if(data.success && data.progress>0){ let dur=player.getDuration(); player.seekTo((data.progress/100)*dur,true); } }).catch(()=>{}); progressUpdateInterval = setInterval(()=>reportProgress(), 15000); }
-        function onPlayerStateChange(event){ if(event.data === YT.PlayerState.ENDED) reportProgress(100); }
-        function onPlayerError(){ showFallback(); }
-        function showFallback(){ document.getElementById('player').classList.add('hidden'); document.getElementById('player-fallback').classList.remove('hidden'); }
-        function reportProgress(forcePercent=null){ if(!player||!player.getCurrentTime)return; let percent; if(forcePercent!==null){ percent=forcePercent; } else{ let cur=player.getCurrentTime(), dur=player.getDuration(); if(!dur)return; percent=(cur/dur)*100; if(Math.abs(percent-lastReportedTime)<2)return; } percent=Math.min(100,Math.max(0,percent)); lastReportedTime=percent; fetch('/api/progress/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:contentId,progress:percent})}).catch(()=>{}); }
-        function rateContent(cid,rating){ fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:cid,rating:rating})}).then(res=>res.json()).then(data=>{ if(data.success){ let stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<rating){ star.classList.add('active'); star.style.color='#fbbf24'; } else{ star.classList.remove('active'); star.style.color=''; } }); showToast('⭐ Rating saved!'); } }).catch(()=>showToast('Error saving rating','error')); }
-        function loadUserRating(){ fetch(`/api/rating/get?content_id=${contentId}`).then(res=>res.json()).then(data=>{ if(data.success && data.rating>0){ let stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<data.rating){ star.classList.add('active'); star.style.color='#fbbf24'; } }); } }).catch(()=>{}); }
-        function scrollCarousel(dir){ const car=document.getElementById('recommendations-carousel'); if(!car)return; const amount=dir==='left'? -460 : 460; car.scrollBy({left:amount,behavior:'smooth'}); setTimeout(updateArrowStates,300); }
-        function updateArrowStates(){ const car=document.getElementById('recommendations-carousel'); if(!car)return; const left=document.getElementById('carousel-left'),right=document.getElementById('carousel-right'); if(car.scrollLeft<=15) left.classList.add('disabled'); else left.classList.remove('disabled'); if(car.scrollLeft>=car.scrollWidth-car.clientWidth-15) right.classList.add('disabled'); else right.classList.remove('disabled'); }
-        function showToast(msg,type='success'){ const toast=document.createElement('div'); toast.className=`fixed bottom-6 right-6 ${type==='success'?'bg-green-600':'bg-red-600'} text-white px-6 py-4 rounded-2xl shadow-2xl z-50 flex items-center gap-3 backdrop-blur-sm bg-opacity-90 border ${type==='success'?'border-green-400':'border-red-400'} toast-message`; toast.innerHTML=`<i class="fas ${type==='success'?'fa-check-circle':'fa-exclamation-triangle'}"></i><span>${msg}</span>`; document.body.appendChild(toast); setTimeout(()=>toast.remove(),3000); }
-        const nav = document.querySelector('.navbar');
-        let hideTimeout;
-        function showNav(){ if(nav) nav.classList.remove('navbar-hidden'); clearTimeout(hideTimeout); hideTimeout=setTimeout(()=>{ if(nav) nav.classList.add('navbar-hidden'); },2500); }
-        if(nav){ document.addEventListener('mousemove',showNav); document.addEventListener('keydown',showNav); showNav(); }
-        function openShareModal(){ const modal=document.getElementById('shareModal'); document.getElementById('shareLink').value=window.location.href; modal.classList.remove('hidden'); modal.classList.add('flex'); }
-        function closeShareModal(){ const modal=document.getElementById('shareModal'); modal.classList.add('hidden'); modal.classList.remove('flex'); }
-        function copyLink(){ const inp=document.getElementById('shareLink'); inp.select(); navigator.clipboard.writeText(inp.value).then(()=>showToast('🔗 Link copied!')).catch(()=>showToast('Failed','error')); }
-        function shareWhatsApp(){ window.open(`https://wa.me/?text=${encodeURIComponent("🔥 Check this movie on DeepFlix:\n"+window.location.href)}`,'_blank'); }
-        function nativeShare(){ if(navigator.share){ navigator.share({title:document.title,text:"DeepFlix movie",url:window.location.href}).catch(()=>{}); } else showToast("⚠️ Native share not supported",'error'); }
-        function triggerDownload(){
-            const movieTitle = "{{ content['title'] }}";
-            const movieInfo = `Title: ${movieTitle}\nYear: {{ content['release_year'] }}\nGenre: {{ content.genre|default('N/A') }}\nLanguage: {{ content['language'] }}\nStory: {{ content['story']|truncate(300) }}\n\nWatch on DeepFlix: ${window.location.href}`;
-            const blob = new Blob([movieInfo], {type: 'text/plain'});
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `${movieTitle.replace(/[^a-z0-9]/gi, '_')}_info.txt`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-            showToast(`📥 Downloading info for "${movieTitle}"`, 'success');
+
+        const link = fallback.querySelector('.youtube-fallback-link');
+        if (link && /^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId)) {
+            link.href = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
+            link.classList.remove('hidden');
         }
-        document.addEventListener('DOMContentLoaded',()=>{ loadUserRating(); const car=document.getElementById('recommendations-carousel'); if(car){ car.addEventListener('scroll',updateArrowStates); window.addEventListener('resize',updateArrowStates); setTimeout(updateArrowStates,200); } if(!youtubeVideoId||youtubeVideoId==='None') showFallback(); });
-        window.addEventListener('beforeunload',()=>reportProgress());
-        window.addEventListener('unload',()=>{ if(progressUpdateInterval) clearInterval(progressUpdateInterval); });
+    }
+}
+
+function onYouTubeIframeAPIReady() {
+    if (!youtubeVideoId || !/^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId)) {
+        showFallback('A valid YouTube video has not been configured for this title.');
+        return;
+    }
+
+    try {
+        player = new YT.Player('player', {
+            width: '100%',
+            height: '100%',
+            videoId: youtubeVideoId,
+            playerVars: {
+                autoplay: 1,
+                controls: 1,
+                playsinline: 1,
+                rel: 0,
+                enablejsapi: 1,
+                origin: window.location.origin
+            },
+            events: {
+                onReady: onPlayerReady,
+                onStateChange: onPlayerStateChange,
+                onError: onPlayerError
+            }
+        });
+    } catch (error) {
+        console.error('YouTube player initialization failed:', error);
+        showFallback('The video player could not be initialized. Please refresh the page.');
+    }
+}
+
+function onPlayerReady(event) {
+    playerReady = true;
+
+    // Do not make video playback depend on the progress API.
+    fetch(`/api/progress/get?content_id=${encodeURIComponent(contentId)}`)
+        .then(response => {
+            if (!response.ok) throw new Error('Progress request failed');
+            return response.json();
+        })
+        .then(data => {
+            if (
+                data.success &&
+                Number(data.progress) > 0 &&
+                player &&
+                playerReady
+            ) {
+                const duration = player.getDuration();
+
+                if (duration > 0) {
+                    const seconds = duration * Number(data.progress) / 100;
+                    player.seekTo(seconds, true);
+                }
+            }
+        })
+        .catch(error => {
+            console.warn('Could not restore playback progress:', error);
+        });
+
+    if (progressUpdateInterval) {
+        clearInterval(progressUpdateInterval);
+    }
+
+    progressUpdateInterval = setInterval(reportProgress, 15000);
+}
+
+function onPlayerStateChange(event) {
+    if (!window.YT || !YT.PlayerState) return;
+
+    if (event.data === YT.PlayerState.PLAYING) {
+        document.getElementById('player-fallback')?.classList.add('hidden');
+    }
+
+    if (event.data === YT.PlayerState.ENDED) {
+        reportProgress(100);
+    }
+}
+
+function onPlayerError(event) {
+    console.error('YouTube player error code:', event.data);
+
+    const messages = {
+        2: 'The video ID is invalid.',
+        5: 'This video format cannot be played in the embedded player.',
+        100: 'This video is unavailable or has been removed.',
+        101: 'The video owner does not allow embedded playback.',
+        150: 'The video owner does not allow embedded playback.',
+        153: 'YouTube could not verify the playback request. Check browser privacy or referrer settings.'
+    };
+
+    showFallback(
+        messages[event.data] ||
+        'YouTube could not play this video. Please try opening it on YouTube.'
+    );
+}
+
+function reportProgress(forcePercent = null) {
+    if (!player || !playerReady) return;
+
+    try {
+        const duration = player.getDuration();
+        if (!duration || duration <= 0) return;
+
+        const currentTime = player.getCurrentTime();
+        let percent = forcePercent !== null
+            ? forcePercent
+            : (currentTime / duration) * 100;
+
+        percent = Math.min(100, Math.max(0, percent));
+
+        if (
+            forcePercent === null &&
+            Math.abs(percent - lastReportedTime) < 2
+        ) {
+            return;
+        }
+
+        lastReportedTime = percent;
+
+        fetch('/api/progress/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content_id: contentId,
+                progress: percent
+            })
+        }).catch(error => {
+            console.warn('Could not save playback progress:', error);
+        });
+    } catch (error) {
+        console.warn('Playback progress unavailable:', error);
+    }
+}
+
+function loadUserRating() {
+    fetch(`/api/rating/get?content_id=${encodeURIComponent(contentId)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && Number(data.rating) > 0) {
+                document.querySelectorAll('.star-btn').forEach((star, index) => {
+                    star.classList.toggle('active', index < Number(data.rating));
+                    star.style.color = index < Number(data.rating) ? '#fbbf24' : '';
+                });
+            }
+        })
+        .catch(error => console.warn('Could not load rating:', error));
+}
+
+function rateContent(cid, rating) {
+    fetch('/api/rate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content_id: cid, rating: rating })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) throw new Error('Rating was not saved');
+
+            document.querySelectorAll('.star-btn').forEach((star, index) => {
+                star.classList.toggle('active', index < rating);
+                star.style.color = index < rating ? '#fbbf24' : '';
+            });
+
+            showToast('Rating saved!');
+        })
+        .catch(error => {
+            console.error(error);
+            showToast('Error saving rating', 'error');
+        });
+}
+
+function scrollCarousel(direction) {
+    const carousel = document.getElementById('recommendations-carousel');
+    if (!carousel) return;
+
+    carousel.scrollBy({
+        left: direction === 'left' ? -460 : 460,
+        behavior: 'smooth'
+    });
+}
+
+function updateArrowStates() {
+    const carousel = document.getElementById('recommendations-carousel');
+    if (!carousel) return;
+
+    const left = document.querySelector('.carousel-arrow.left');
+    const right = document.querySelector('.carousel-arrow.right');
+
+    if (left) {
+        left.classList.toggle('disabled', carousel.scrollLeft <= 15);
+    }
+
+    if (right) {
+        right.classList.toggle(
+            'disabled',
+            carousel.scrollLeft >= carousel.scrollWidth - carousel.clientWidth - 15
+        );
+    }
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `fixed bottom-6 right-6 ${
+        type === 'success' ? 'bg-green-600' : 'bg-red-600'
+    } text-white px-6 py-4 rounded-2xl shadow-2xl z-50`;
+
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+function openShareModal() {
+    const modal = document.getElementById('shareModal');
+    document.getElementById('shareLink').value = window.location.href;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeShareModal() {
+    const modal = document.getElementById('shareModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+function copyLink() {
+    const input = document.getElementById('shareLink');
+    input.select();
+
+    navigator.clipboard.writeText(input.value)
+        .then(() => showToast('Link copied!'))
+        .catch(() => showToast('Could not copy link', 'error'));
+}
+
+function shareWhatsApp() {
+    window.open(
+        `https://wa.me/?text=${encodeURIComponent(
+            'Check this movie on DeepFlix: ' + window.location.href
+        )}`,
+        '_blank',
+        'noopener'
+    );
+}
+
+function nativeShare() {
+    if (navigator.share) {
+        navigator.share({
+            title: document.title,
+            text: 'DeepFlix movie',
+            url: window.location.href
+        }).catch(() => {});
+    } else {
+        showToast('Sharing is not supported in this browser', 'error');
+    }
+}
+
+function triggerDownload() {
+    const movieInfo = [
+        `Title: {{ content['title']|default('')|replace('\n', ' ') }}`,
+        `Year: {{ content['release_year']|default('N/A') }}`,
+        `Genre: {{ content['genre']|default('N/A') }}`,
+        `Language: {{ content['language']|default('N/A') }}`,
+        '',
+        `Watch on DeepFlix: ${window.location.href}`
+    ].join('\n');
+
+    const blob = new Blob([movieInfo], { type: 'text/plain;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = objectUrl;
+    link.download = 'deepflix_movie_info.txt';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadUserRating();
+
+    const carousel = document.getElementById('recommendations-carousel');
+    if (carousel) {
+        carousel.addEventListener('scroll', updateArrowStates);
+        window.addEventListener('resize', updateArrowStates);
+        updateArrowStates();
+    }
+
+    // If the YouTube API never loads, show a useful error instead of a blank area.
+    setTimeout(() => {
+        if (!player && typeof YT === 'undefined') {
+            showFallback('YouTube player could not load. Check your internet connection or browser settings.');
+        }
+    }, 10000);
+});
+
+window.addEventListener('beforeunload', () => reportProgress());
+
+window.addEventListener('pagehide', () => {
+    if (progressUpdateInterval) {
+        clearInterval(progressUpdateInterval);
+        progressUpdateInterval = null;
+    }
+});
+
     </script>
 </body>
 </html>

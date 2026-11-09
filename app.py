@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 
 from flask import (
     Flask,
+    abort,
+    current_app,
     render_template,
     request,
     redirect,
@@ -199,48 +201,252 @@ def setup_database():
         conn.close()
 
 # --- 2. AI & Hybrid Engines ---
-
+# =========================================================
+# 2. AI & HYBRID RECOMMENDATION ENGINE
+# =========================================================
 
 class ALSRecommender:
-    """Method A: ALS Matrix Factorization using SVD"""
-    def predict(self, user_id, all_content_ids):
-        conn = get_connection()
-        if not conn: return {}
+    """
+    SVD-based collaborative filtering recommender.
+
+    Note:
+    This uses SVD matrix factorization, not true ALS.
+    The calculation is bounded to reduce Render memory usage.
+    """
+
+    MAX_USERS = 200
+    MAX_ITEMS = 500
+    MAX_USER_ITEMS = 100
+    MIN_RATINGS = 5
+    MAX_FACTORS = 20
+
+    def predict(self, user_id, all_content_ids=None):
+
+        conn = None
+        cursor = None
+
         try:
-            # Fetch all ratings
-            query = "SELECT user_id, content_id, rating FROM ratings"
-            df = pd.read_sql(query, conn)
-            
-            if df.empty or len(df) < 5: return {} # Not enough data
-            
-            # Create pivot table (User x Item)
-            pivot_df = df.pivot(index='user_id', columns='content_id', values='rating').fillna(0)
-            
-            # Convert to matrix
-            R = pivot_df.values
-            user_ratings_mean = np.mean(R, axis=1)
-            R_demeaned = R - user_ratings_mean.reshape(-1, 1)
-            
-            # Singular Value Decomposition (Math behind ALS)
-            k = min(50, min(R_demeaned.shape) - 1) # Latent features
-            if k < 1: return {}
-            
-            U, sigma, Vt = svds(R_demeaned, k=k)
-            sigma = np.diag(sigma)
-            
-            # Reconstruct Prediction Matrix
-            all_user_predicted_ratings = np.dot(np.dot(U, sigma), Vt) + user_ratings_mean.reshape(-1, 1)
-            preds_df = pd.DataFrame(all_user_predicted_ratings, columns=pivot_df.columns, index=pivot_df.index)
-            
-            if user_id in preds_df.index:
-                # Return dictionary {content_id: predicted_rating}
-                return preds_df.loc[user_id].to_dict()
-            return {}
+            conn = get_connection()
+
+            if conn is None:
+                print("ALS: Database connection unavailable.")
+                return {}
+
+            cursor = conn.cursor()
+
+            # -----------------------------------------
+            # 1. Find the most active users
+            # -----------------------------------------
+
+            cursor.execute(
+                """
+                SELECT user_id
+                FROM ratings
+                GROUP BY user_id
+                ORDER BY COUNT(*) DESC
+                LIMIT %s
+                """,
+                (self.MAX_USERS - 1,)
+            )
+
+            user_ids = [row[0] for row in cursor.fetchall()]
+
+            # Always include the current user
+            if user_id not in user_ids:
+                user_ids.append(user_id)
+
+            if not user_ids:
+                return {}
+
+            # -----------------------------------------
+            # 2. Find popular content IDs
+            # -----------------------------------------
+
+            cursor.execute(
+                """
+                SELECT content_id
+                FROM ratings
+                GROUP BY content_id
+                ORDER BY COUNT(*) DESC
+                LIMIT %s
+                """,
+                (self.MAX_ITEMS,)
+            )
+
+            content_ids = [row[0] for row in cursor.fetchall()]
+
+            # Include some content rated by the current user
+            cursor.execute(
+                """
+                SELECT content_id
+                FROM ratings
+                WHERE user_id = %s
+                LIMIT %s
+                """,
+                (user_id, self.MAX_USER_ITEMS)
+            )
+
+            own_content_ids = [row[0] for row in cursor.fetchall()]
+
+            for content_id in own_content_ids:
+                if content_id not in content_ids:
+                    content_ids.append(content_id)
+
+            if not content_ids:
+                return {}
+
+            # -----------------------------------------
+            # 3. Fetch only selected ratings
+            # -----------------------------------------
+
+            user_placeholders = ",".join(["%s"] * len(user_ids))
+            content_placeholders = ",".join(["%s"] * len(content_ids))
+
+            query = f"""
+                SELECT
+                    user_id,
+                    content_id,
+                    AVG(rating) AS rating
+                FROM ratings
+                WHERE user_id IN ({user_placeholders})
+                  AND content_id IN ({content_placeholders})
+                GROUP BY user_id, content_id
+            """
+
+            params = tuple(user_ids) + tuple(content_ids)
+
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+            if not rows or len(rows) < self.MIN_RATINGS:
+                return {}
+
+            # -----------------------------------------
+            # 4. Build bounded rating matrix
+            # -----------------------------------------
+
+            user_index = {
+                uid: index
+                for index, uid in enumerate(user_ids)
+            }
+
+            item_index = {
+                cid: index
+                for index, cid in enumerate(content_ids)
+            }
+
+            matrix = np.zeros(
+                (len(user_ids), len(content_ids)),
+                dtype=np.float32
+            )
+
+            for rated_user, rated_content, rating in rows:
+
+                if rated_user in user_index and rated_content in item_index:
+
+                    matrix[
+                        user_index[rated_user],
+                        item_index[rated_content]
+                    ] = float(rating)
+
+            # -----------------------------------------
+            # 5. Validate matrix
+            # -----------------------------------------
+
+            if matrix.size == 0:
+                return {}
+
+            if np.count_nonzero(matrix) < self.MIN_RATINGS:
+                return {}
+
+            if user_id not in user_index:
+                return {}
+
+            # -----------------------------------------
+            # 6. Mean-centering
+            # -----------------------------------------
+
+            user_means = np.zeros(
+                matrix.shape[0],
+                dtype=np.float32
+            )
+
+            for index in range(matrix.shape[0]):
+
+                rated_values = matrix[index][matrix[index] > 0]
+
+                if len(rated_values) > 0:
+                    user_means[index] = np.mean(rated_values)
+
+            demeaned = matrix - user_means.reshape(-1, 1)
+
+            # -----------------------------------------
+            # 7. SVD decomposition
+            # -----------------------------------------
+
+            min_dimension = min(demeaned.shape)
+
+            k = min(
+                self.MAX_FACTORS,
+                min_dimension - 1
+            )
+
+            if k < 1:
+                return {}
+
+            U, sigma, Vt = svds(
+                demeaned,
+                k=k,
+                which="LM"
+            )
+
+            # svds returns singular values in ascending order
+            order = np.argsort(sigma)[::-1]
+
+            U = U[:, order]
+            sigma = sigma[order]
+            Vt = Vt[order, :]
+
+            # -----------------------------------------
+            # 8. Reconstruct predicted ratings
+            # -----------------------------------------
+
+            predicted_matrix = (
+                U @ np.diag(sigma) @ Vt
+            ) + user_means.reshape(-1, 1)
+
+            current_user_index = user_index[user_id]
+
+            predictions = predicted_matrix[current_user_index]
+
+            # -----------------------------------------
+            # 9. Return content predictions
+            # -----------------------------------------
+
+            result = {}
+
+            for index, content_id in enumerate(content_ids):
+
+                # Skip content already rated by this user
+                if matrix[current_user_index, index] > 0:
+                    continue
+
+                result[content_id] = float(predictions[index])
+
+            return result
+
         except Exception as e:
-            print(f"ALS Error: {e}")
+
+            print(f"ALS Recommendation Error: {e}")
             return {}
+
         finally:
-            conn.close()
+
+            if cursor:
+                cursor.close()
+
+            if conn:
+                conn.close()
 
 class DemographicPSORecommender:
     """Method B: Demographic Similarity + PSO Weights"""
@@ -1497,106 +1703,197 @@ def watch_based():
         profiles=profiles,
         deepflix_top=deepflix_top
     )
+# =========================================================
+# SELECT PROFILE
+# =========================================================
 
 @app.route('/select_profile/<profile>')
 def select_profile(profile):
 
-    # 🔐 Login check
-    if 'loggedin' not in session:
+    # -----------------------------------------
+    # 1. Login validation
+    # -----------------------------------------
+
+    if 'loggedin' not in session or 'user_id' not in session:
         return redirect(url_for('login'))
 
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
+    # -----------------------------------------
+    # 2. KIDS PROFILE
+    # -----------------------------------------
+
+    if profile == "kids":
+
+        session['profile_type'] = "kids"
+        session['profile_name'] = "Kids"
+        session['profile_image'] = "kids.png"
+
+        return redirect(url_for('kids_dashboard'))
+
+    # -----------------------------------------
+    # 3. GUEST PROFILE
+    # -----------------------------------------
+
+    if profile == "guest":
+
+        session['profile_type'] = "guest"
+        session['profile_name'] = "Guest"
+        session['profile_image'] = "m_profile.png"
+
+        return redirect(url_for('user_dashboard'))
+
+    conn = None
+    cursor = None
 
     try:
 
-        # ===============================
-        # 🟢 MAIN PROFILE
-        # ===============================
+        conn = get_connection()
+
+        if conn is None:
+            abort(503, description="Database connection unavailable.")
+
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        # -----------------------------------------
+        # 4. MAIN USER PROFILE
+        # -----------------------------------------
+
         if profile == "main":
 
             cursor.execute(
-                "SELECT username, gender, profile_image FROM users WHERE id=%s",
+                """
+                SELECT username, gender, profile_image
+                FROM users
+                WHERE id = %s
+                LIMIT 1
+                """,
                 (session['user_id'],)
             )
 
             user = cursor.fetchone()
 
-            if user:
-                session['profile_type'] = "main"
-                session['profile_name'] = user['username']
+            if not user:
+                session.clear()
+                return redirect(url_for('login'))
 
-                # 🔥 IMAGE PRIORITY LOGIC
-                # 1️⃣ User uploaded image
-                # 2️⃣ Gender based default
-                # 3️⃣ Final fallback
+            session['profile_type'] = "main"
+            session['profile_name'] = user.get('username') or "User"
 
-                if user['profile_image'] and user['profile_image'].strip() != "":
-                    session['profile_image'] = 'uploads/' + user['profile_image']
+            gender = (user.get('gender') or '').strip().lower()
 
-                elif user['gender'] and user['gender'].lower() == 'female':
-                    session['profile_image'] = 'f_profile.png'
-
-                else:
-                    session['profile_image'] = 'm_profile.png'
-
-            return redirect(url_for('user_dashboard'))
-
-        # ===============================
-        # 🧒 KIDS PROFILE
-        # ===============================
-        elif profile == "kids":
-
-            session['profile_type'] = "kids"
-            session['profile_name'] = "Kids"
-            session['profile_image'] = 'kids.png'
-
-            return redirect(url_for('kids_dashboard'))
-
-        # ===============================
-        # 👤 GUEST PROFILE
-        # ===============================
-        elif profile == "guest":
-
-            session['profile_type'] = "guest"
-            session['profile_name'] = "Guest"
-            session['profile_image'] = 'm_profile.png'
-
-            return redirect(url_for('user_dashboard'))
-
-        # ===============================
-        # ⭐ EXTRA PROFILE
-        # ===============================
-        else:
-
-            cursor.execute(
-                "SELECT name, gender, profile_image FROM user_profiles WHERE id=%s AND user_id=%s",
-                (profile, session['user_id'])
+            default_image = (
+                'f_profile.png'
+                if gender == 'female'
+                else 'm_profile.png'
             )
 
-            selected_profile = cursor.fetchone()
+            uploaded_image = user.get('profile_image')
 
-            if selected_profile:
+            if uploaded_image:
 
-                session['profile_type'] = "extra"
-                session['profile_name'] = selected_profile['name']
+                image_filename = os.path.basename(
+                    uploaded_image.strip()
+                )
 
-                # 🔥 SAME IMAGE LOGIC HERE ALSO
-                if selected_profile['profile_image'] and selected_profile['profile_image'].strip() != "":
-                    session['profile_image'] = 'uploads/' + selected_profile['profile_image']
+                image_path = os.path.join(
+                    current_app.static_folder,
+                    'uploads',
+                    image_filename
+                )
 
-                elif selected_profile['gender'] and selected_profile['gender'].lower() == 'female':
-                    session['profile_image'] = 'f_profile.png'
-
+                if os.path.isfile(image_path):
+                    session['profile_image'] = (
+                        'uploads/' + image_filename
+                    )
                 else:
-                    session['profile_image'] = 'm_profile.png'
+                    session['profile_image'] = default_image
+
+            else:
+                session['profile_image'] = default_image
 
             return redirect(url_for('user_dashboard'))
 
-    finally:
-        cursor.close()
-        conn.close()
+        # -----------------------------------------
+        # 5. EXTRA PROFILE
+        # -----------------------------------------
 
+        try:
+            extra_profile_id = int(profile)
+        except (TypeError, ValueError):
+            return redirect(url_for('watch_based'))
+
+        cursor.execute(
+            """
+            SELECT name, gender, profile_image
+            FROM user_profiles
+            WHERE id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (extra_profile_id, session['user_id'])
+        )
+
+        selected_profile = cursor.fetchone()
+
+        # Profile must belong to logged-in user
+        if not selected_profile:
+            return redirect(url_for('watch_based'))
+
+        session['profile_type'] = "extra"
+        session['profile_name'] = (
+            selected_profile.get('name') or "Profile"
+        )
+
+        gender = (
+            selected_profile.get('gender') or ''
+        ).strip().lower()
+
+        default_image = (
+            'f_profile.png'
+            if gender == 'female'
+            else 'm_profile.png'
+        )
+
+        uploaded_image = selected_profile.get('profile_image')
+
+        if uploaded_image:
+
+            image_filename = os.path.basename(
+                uploaded_image.strip()
+            )
+
+            image_path = os.path.join(
+                current_app.static_folder,
+                'uploads',
+                image_filename
+            )
+
+            if os.path.isfile(image_path):
+                session['profile_image'] = (
+                    'uploads/' + image_filename
+                )
+            else:
+                session['profile_image'] = default_image
+
+        else:
+            session['profile_image'] = default_image
+
+        return redirect(url_for('user_dashboard'))
+
+    except Exception as e:
+
+        current_app.logger.exception(
+            "Select Profile Error: %s",
+            e
+        )
+
+        abort(500, description="Unable to select profile.")
+
+    finally:
+
+        if cursor:
+            cursor.close()
+
+        if conn:
+            conn.close()
 # ==========================================
 # ADD PROFILE
 # ==========================================
