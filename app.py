@@ -6,6 +6,7 @@ import json
 import random
 import subprocess
 import pickle
+import threading
 
 from datetime import datetime
 
@@ -48,11 +49,6 @@ from textblob import TextBlob
 from rapidfuzz import fuzz
 from wordcloud import WordCloud
 
-from hybrid_engine import HybridEngine
-
-
-# Initialize the hybrid recommendation engine
-hybrid_engine = HybridEngine()
 
 # --- Configuration ---
 app = Flask(__name__, static_folder='static')
@@ -76,32 +72,9 @@ MAX_SEQUENCE_LENGTH = 500
 MODEL = None
 TOKENIZER = None
 
-# --- Load NLP Model & Tokenizer ---
-def load_nlp_model():
-    global MODEL, TOKENIZER
+# NLP model loading is defined below and executed once during app initialization.
 
-    # Load Keras model
-    try:
-        MODEL = load_model(MODEL_FILE)
-        print("✅ Model loaded successfully")
-    except Exception as e:
-        print("❌ Error loading model:", e)
 
-    # Compatibility fix for old tokenizer.pkl
-    import sys
-    import tensorflow.keras.preprocessing.text as tktext
-    sys.modules['keras.preprocessing.text'] = tktext
-
-    # Load tokenizer
-    try:
-        with open(TOKENIZER_FILE, 'rb') as handle:
-            TOKENIZER = pickle.load(handle)
-        print("✅ Tokenizer loaded successfully")
-    except Exception as e:
-        print("❌ Error loading tokenizer:", e)
-
-# Call this once at startup
-load_nlp_model()
 
 
 # --- Database Config ---
@@ -204,21 +177,100 @@ def setup_database():
 # =========================================================
 # 2. AI & HYBRID RECOMMENDATION ENGINE
 # =========================================================
+# =========================================================
+# ALS / SVD COLLABORATIVE FILTERING RECOMMENDER
+# RENDER MEMORY OPTIMIZED
+# =========================================================
 
 class ALSRecommender:
+
     """
-    SVD-based collaborative filtering recommender.
+    Memory-bounded SVD Collaborative Filtering.
+
+    Features:
+    1. Maximum 200 users
+    2. Maximum 600 content items
+    3. Maximum 20 latent factors
+    4. 5-minute prediction cache
+    5. Excludes already rated movies
+    6. Safe database connection handling
 
     Note:
-    This uses SVD matrix factorization, not true ALS.
-    The calculation is bounded to reduce Render memory usage.
+    This is SVD matrix factorization, not true ALS.
     """
 
     MAX_USERS = 200
     MAX_ITEMS = 500
     MAX_USER_ITEMS = 100
+
     MIN_RATINGS = 5
     MAX_FACTORS = 20
+
+    CACHE_SECONDS = 300
+    MAX_CACHE_USERS = 256
+
+    _cache = {}
+    _cache_lock = threading.Lock()
+
+    # -----------------------------------------------------
+    # CACHE MANAGEMENT
+    # -----------------------------------------------------
+
+    @classmethod
+    def _get_cached(cls, user_id):
+
+        current_time = time.monotonic()
+
+        with cls._cache_lock:
+
+            cached = cls._cache.get(user_id)
+
+            if cached:
+
+                timestamp, predictions = cached
+
+                if current_time - timestamp < cls.CACHE_SECONDS:
+                    return predictions.copy()
+
+                cls._cache.pop(user_id, None)
+
+        return None
+
+    @classmethod
+    def _save_cache(cls, user_id, predictions):
+
+        current_time = time.monotonic()
+
+        with cls._cache_lock:
+
+            # Remove expired entries
+            expired_users = [
+                uid
+                for uid, value in cls._cache.items()
+                if current_time - value[0] >= cls.CACHE_SECONDS
+            ]
+
+            for uid in expired_users:
+                cls._cache.pop(uid, None)
+
+            # Keep cache bounded
+            if len(cls._cache) >= cls.MAX_CACHE_USERS:
+
+                oldest_user = min(
+                    cls._cache,
+                    key=lambda uid: cls._cache[uid][0]
+                )
+
+                cls._cache.pop(oldest_user, None)
+
+            cls._cache[user_id] = (
+                current_time,
+                predictions.copy()
+            )
+
+    # -----------------------------------------------------
+    # MAIN PREDICTION FUNCTION
+    # -----------------------------------------------------
 
     def predict(self, user_id, all_content_ids=None):
 
@@ -226,17 +278,47 @@ class ALSRecommender:
         cursor = None
 
         try:
+
+            if user_id is None:
+                return {}
+
+            # ---------------------------------------------
+            # 1. CHECK CACHE
+            # ---------------------------------------------
+
+            cached_predictions = self._get_cached(user_id)
+
+            if cached_predictions is not None:
+
+                if all_content_ids is not None:
+
+                    allowed_ids = set(all_content_ids)
+
+                    return {
+                        cid: score
+                        for cid, score in cached_predictions.items()
+                        if cid in allowed_ids
+                    }
+
+                return cached_predictions
+
+            # ---------------------------------------------
+            # 2. DATABASE CONNECTION
+            # ---------------------------------------------
+
             conn = get_connection()
 
             if conn is None:
+
                 print("ALS: Database connection unavailable.")
+
                 return {}
 
             cursor = conn.cursor()
 
-            # -----------------------------------------
-            # 1. Find the most active users
-            # -----------------------------------------
+            # ---------------------------------------------
+            # 3. SELECT MOST ACTIVE USERS
+            # ---------------------------------------------
 
             cursor.execute(
                 """
@@ -246,21 +328,26 @@ class ALSRecommender:
                 ORDER BY COUNT(*) DESC
                 LIMIT %s
                 """,
-                (self.MAX_USERS - 1,)
+                (self.MAX_USERS,)
             )
 
-            user_ids = [row[0] for row in cursor.fetchall()]
+            user_ids = [
+                row[0]
+                for row in cursor.fetchall()
+            ]
 
-            # Always include the current user
             if user_id not in user_ids:
+
+                user_ids = user_ids[:self.MAX_USERS - 1]
+
                 user_ids.append(user_id)
 
             if not user_ids:
                 return {}
 
-            # -----------------------------------------
-            # 2. Find popular content IDs
-            # -----------------------------------------
+            # ---------------------------------------------
+            # 4. SELECT POPULAR CONTENT
+            # ---------------------------------------------
 
             cursor.execute(
                 """
@@ -273,9 +360,12 @@ class ALSRecommender:
                 (self.MAX_ITEMS,)
             )
 
-            content_ids = [row[0] for row in cursor.fetchall()]
+            content_ids = [
+                row[0]
+                for row in cursor.fetchall()
+            ]
 
-            # Include some content rated by the current user
+            # Include current user's rated content
             cursor.execute(
                 """
                 SELECT content_id
@@ -286,21 +376,35 @@ class ALSRecommender:
                 (user_id, self.MAX_USER_ITEMS)
             )
 
-            own_content_ids = [row[0] for row in cursor.fetchall()]
+            own_content_ids = [
+                row[0]
+                for row in cursor.fetchall()
+            ]
+
+            existing_content_ids = set(content_ids)
 
             for content_id in own_content_ids:
-                if content_id not in content_ids:
+
+                if content_id not in existing_content_ids:
+
                     content_ids.append(content_id)
+
+                    existing_content_ids.add(content_id)
 
             if not content_ids:
                 return {}
 
-            # -----------------------------------------
-            # 3. Fetch only selected ratings
-            # -----------------------------------------
+            # ---------------------------------------------
+            # 5. FETCH LIMITED RATINGS
+            # ---------------------------------------------
 
-            user_placeholders = ",".join(["%s"] * len(user_ids))
-            content_placeholders = ",".join(["%s"] * len(content_ids))
+            user_placeholders = ",".join(
+                ["%s"] * len(user_ids)
+            )
+
+            content_placeholders = ",".join(
+                ["%s"] * len(content_ids)
+            )
 
             query = f"""
                 SELECT
@@ -316,14 +420,15 @@ class ALSRecommender:
             params = tuple(user_ids) + tuple(content_ids)
 
             cursor.execute(query, params)
+
             rows = cursor.fetchall()
 
-            if not rows or len(rows) < self.MIN_RATINGS:
+            if len(rows) < self.MIN_RATINGS:
                 return {}
 
-            # -----------------------------------------
-            # 4. Build bounded rating matrix
-            # -----------------------------------------
+            # ---------------------------------------------
+            # 6. CREATE INDEX MAPPINGS
+            # ---------------------------------------------
 
             user_index = {
                 uid: index
@@ -335,6 +440,13 @@ class ALSRecommender:
                 for index, cid in enumerate(content_ids)
             }
 
+            if user_id not in user_index:
+                return {}
+
+            # ---------------------------------------------
+            # 7. BUILD MEMORY-BOUNDED MATRIX
+            # ---------------------------------------------
+
             matrix = np.zeros(
                 (len(user_ids), len(content_ids)),
                 dtype=np.float32
@@ -342,47 +454,55 @@ class ALSRecommender:
 
             for rated_user, rated_content, rating in rows:
 
-                if rated_user in user_index and rated_content in item_index:
+                row_index = user_index.get(rated_user)
 
-                    matrix[
-                        user_index[rated_user],
-                        item_index[rated_content]
-                    ] = float(rating)
+                column_index = item_index.get(rated_content)
 
-            # -----------------------------------------
-            # 5. Validate matrix
-            # -----------------------------------------
+                if row_index is None or column_index is None:
+                    continue
 
-            if matrix.size == 0:
-                return {}
+                if rating is not None:
+
+                    matrix[row_index, column_index] = float(rating)
 
             if np.count_nonzero(matrix) < self.MIN_RATINGS:
                 return {}
 
-            if user_id not in user_index:
-                return {}
+            # ---------------------------------------------
+            # 8. CALCULATE USER MEANS
+            # ---------------------------------------------
 
-            # -----------------------------------------
-            # 6. Mean-centering
-            # -----------------------------------------
+            rated_mask = matrix > 0
 
-            user_means = np.zeros(
-                matrix.shape[0],
-                dtype=np.float32
+            rating_counts = rated_mask.sum(axis=1)
+
+            user_means = np.divide(
+                matrix.sum(axis=1),
+                rating_counts,
+                out=np.zeros(
+                    matrix.shape[0],
+                    dtype=np.float32
+                ),
+                where=rating_counts > 0
             )
 
-            for index in range(matrix.shape[0]):
+            # ---------------------------------------------
+            # 9. MEAN CENTERING
+            # ---------------------------------------------
 
-                rated_values = matrix[index][matrix[index] > 0]
+            # IMPORTANT:
+            # Do not subtract user mean from missing ratings.
+            # Keep missing values as zero.
 
-                if len(rated_values) > 0:
-                    user_means[index] = np.mean(rated_values)
+            demeaned = np.where(
+                rated_mask,
+                matrix - user_means.reshape(-1, 1),
+                0
+            ).astype(np.float32)
 
-            demeaned = matrix - user_means.reshape(-1, 1)
-
-            # -----------------------------------------
-            # 7. SVD decomposition
-            # -----------------------------------------
+            # ---------------------------------------------
+            # 10. VALIDATE MATRIX DIMENSIONS
+            # ---------------------------------------------
 
             min_dimension = min(demeaned.shape)
 
@@ -394,59 +514,107 @@ class ALSRecommender:
             if k < 1:
                 return {}
 
-            U, sigma, Vt = svds(
+            # ---------------------------------------------
+            # 11. SVD DECOMPOSITION
+            # ---------------------------------------------
+
+            U, sigma, Vt = np.linalg.svd(
                 demeaned,
-                k=k,
-                which="LM"
+                full_matrices=False
             )
 
-            # svds returns singular values in ascending order
-            order = np.argsort(sigma)[::-1]
+            # Keep only required latent factors
 
-            U = U[:, order]
-            sigma = sigma[order]
-            Vt = Vt[order, :]
+            U = U[:, :k]
 
-            # -----------------------------------------
-            # 8. Reconstruct predicted ratings
-            # -----------------------------------------
+            sigma = sigma[:k]
+
+            Vt = Vt[:k, :]
+
+            # ---------------------------------------------
+            # 12. RECONSTRUCT PREDICTIONS
+            # ---------------------------------------------
 
             predicted_matrix = (
-                U @ np.diag(sigma) @ Vt
+                (U * sigma) @ Vt
             ) + user_means.reshape(-1, 1)
+
+            # ---------------------------------------------
+            # 13. CURRENT USER PREDICTIONS
+            # ---------------------------------------------
 
             current_user_index = user_index[user_id]
 
-            predictions = predicted_matrix[current_user_index]
+            predictions = predicted_matrix[
+                current_user_index
+            ]
 
-            # -----------------------------------------
-            # 9. Return content predictions
-            # -----------------------------------------
+            # ---------------------------------------------
+            # 14. BUILD RESULT
+            # ---------------------------------------------
 
             result = {}
 
             for index, content_id in enumerate(content_ids):
 
-                # Skip content already rated by this user
+                # Skip movies already rated by user
                 if matrix[current_user_index, index] > 0:
                     continue
 
-                result[content_id] = float(predictions[index])
+                score = float(predictions[index])
+
+                if np.isfinite(score):
+
+                    result[content_id] = score
+
+            # ---------------------------------------------
+            # 15. FILTER REQUESTED CONTENT
+            # ---------------------------------------------
+
+            if all_content_ids is not None:
+
+                allowed_ids = set(all_content_ids)
+
+                result = {
+                    cid: score
+                    for cid, score in result.items()
+                    if cid in allowed_ids
+                }
+
+            # ---------------------------------------------
+            # 16. CACHE RESULT
+            # ---------------------------------------------
+
+            self._save_cache(user_id, result)
 
             return result
 
         except Exception as e:
 
-            print(f"ALS Recommendation Error: {e}")
+            print(
+                "ALS Recommendation Error:",
+                str(e)
+            )
+
             return {}
 
         finally:
 
-            if cursor:
-                cursor.close()
+            if cursor is not None:
 
-            if conn:
-                conn.close()
+                try:
+                    cursor.close()
+
+                except Exception:
+                    pass
+
+            if conn is not None:
+
+                try:
+                    conn.close()
+
+                except Exception:
+                    pass
 
 class DemographicPSORecommender:
     """Method B: Demographic Similarity + PSO Weights"""
@@ -633,11 +801,29 @@ class HybridEngine:
 
 # --- Helper for Embeddings (From your original code) ---
 def load_nlp_model():
+    """Load the TensorFlow model and tokenizer once per worker process."""
     global MODEL, TOKENIZER
-    if os.path.exists(MODEL_FILE) and os.path.exists(TOKENIZER_FILE):
+
+    if MODEL is not None and TOKENIZER is not None:
+        return True
+    if not os.path.isfile(MODEL_FILE):
+        print(f"⚠️ TensorFlow model not found: {MODEL_FILE}")
+        return False
+    if not os.path.isfile(TOKENIZER_FILE):
+        print(f"⚠️ Tokenizer not found: {TOKENIZER_FILE}")
+        return False
+
+    try:
         MODEL = load_model(MODEL_FILE)
         with open(TOKENIZER_FILE, 'rb') as handle:
             TOKENIZER = pickle.load(handle)
+        print("✅ Model and tokenizer loaded successfully")
+        return True
+    except Exception as exc:
+        MODEL = None
+        TOKENIZER = None
+        print(f"❌ NLP model initialization failed: {exc}")
+        return False
 
 def get_content_embeddings(descriptions):
     if MODEL is None or TOKENIZER is None: return []
@@ -5326,10 +5512,11 @@ def user_retention():
     return jsonify(result)
 
 
-if __name__ == '__main__':
-    if not os.path.exists('data'): os.makedirs('data')
-    app.run(debug=True)
-
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    os.makedirs(DATA_DIR, exist_ok=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", "5000")),
+        debug=os.environ.get("FLASK_DEBUG", "0") == "1",
+        use_reloader=False,
+    )
