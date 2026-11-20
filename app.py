@@ -1,83 +1,71 @@
-
+"""DeepFlix - Flask OTT app with hybrid recommender (fixed & hardened)."""
 import os
+
+# Must be set BEFORE tensorflow is imported (silences GPU/CUDA noise, saves startup time)
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+
 import io
-import time
 import json
-import random
-import subprocess
 import pickle
+import re
+import subprocess
+import sys
 import threading
-
+import time
+import uuid
 from datetime import datetime
+from functools import wraps
+from urllib.parse import parse_qs, urlparse
 
-import pandas as pd
 import numpy as np
-import tensorflow as tf
-import matplotlib.pyplot as plt
-
+import pymysql
+import pymysql.cursors
 from flask import (
     Flask,
     abort,
     current_app,
-    render_template,
-    request,
-    redirect,
-    url_for,
-    session,
     flash,
     jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
 )
-
-import pymysql.cursors
-
-from werkzeug.security import (
-    generate_password_hash,
-    check_password_hash,
-)
-from werkzeug.utils import secure_filename
-
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import MinMaxScaler
-
-from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import svds
-
-from textblob import TextBlob
 from rapidfuzz import fuzz
+from textblob import TextBlob
+from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 from wordcloud import WordCloud
 
+# =========================================================
+# CONFIGURATION
+# =========================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- Configuration ---
 app = Flask(__name__, static_folder='static')
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'static', 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
-app.secret_key = 'super_secret_hybrid_key'
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
+app.secret_key = os.getenv('SECRET_KEY', 'super_secret_hybrid_key')
 
-# --- Helper Functions ---
+
 def allowed_file(filename):
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+        filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-# --- Global AI Models ---
-# Absolute paths to avoid "file not found" errors
-DATA_DIR = os.path.join(os.getcwd(), 'data')
-MODEL_FILE = os.path.join(DATA_DIR, 'pretrained_model.keras')   # Use .h5 for compatibility
+
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+MODEL_FILE = os.path.join(DATA_DIR, 'pretrained_model.keras')
 TOKENIZER_FILE = os.path.join(DATA_DIR, 'tokenizer.pkl')
-MLB_FILE = os.path.join(DATA_DIR, 'mlb.pkl')
+METRICS_FILE = os.path.join(DATA_DIR, 'model_metrics.json')
 MAX_SEQUENCE_LENGTH = 500
 
-MODEL = None
-TOKENIZER = None
+# Set ENABLE_TEXT_MODEL=0 on Render to skip TensorFlow completely (saves ~400MB RAM)
+ENABLE_TEXT_MODEL = os.getenv('ENABLE_TEXT_MODEL', '1') == '1'
 
-# NLP model loading is defined below and executed once during app initialization.
-
-
-
-
-# --- Database Config ---
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
     'user': os.getenv('DB_USER', 'root'),
@@ -86,19 +74,17 @@ DB_CONFIG = {
     'port': int(os.getenv('DB_PORT', '3306')),
     'charset': 'utf8mb4',
     'cursorclass': pymysql.cursors.DictCursor,
+    'connect_timeout': 10,
 }
 
-# Aiven SSL certificate
-DB_SSL_CA = os.getenv(
-    'DB_SSL_CA',
-    os.path.join(os.path.dirname(__file__), 'certs', 'ca.pem')
-)
-
+DB_SSL_CA = os.getenv('DB_SSL_CA', os.path.join(BASE_DIR, 'certs', 'ca.pem'))
 if os.path.isfile(DB_SSL_CA):
     DB_CONFIG['ssl'] = {'ca': DB_SSL_CA}
 
 
-# --- 1. Database Management & Setup ---
+# =========================================================
+# DATABASE HELPERS
+# =========================================================
 def get_connection():
     try:
         return pymysql.connect(**DB_CONFIG)
@@ -106,19 +92,52 @@ def get_connection():
         print(f"DB Connection Error: {e}")
         return None
 
+
+def safe_fetchall(cursor, sql, params=()):
+    """Run a query that may fail on older schemas; return [] instead of crashing."""
+    try:
+        cursor.execute(sql, params)
+        return cursor.fetchall()
+    except Exception as e:
+        print("Optional query failed:", e)
+        return []
+
+
+def safe_delete(cursor, table, column, value):
+    """Delete rows from a dependent table; ignore tables that don't exist.
+    `table` and `column` are always hard-coded constants (never user input)."""
+    try:
+        cursor.execute(f"DELETE FROM {table} WHERE {column}=%s", (value,))
+    except Exception as e:
+        print(f"safe_delete skipped {table}.{column}: {e}")
+
+
+def ensure_unique(cursor, table, index_name, columns):
+    try:
+        cursor.execute(f"SHOW INDEX FROM {table} WHERE Key_name=%s", (index_name,))
+        if not cursor.fetchone():
+            cursor.execute(
+                f"ALTER TABLE {table} ADD UNIQUE KEY {index_name} ({', '.join(columns)})"
+            )
+    except Exception as e:
+        print(f"Unique key {table}.{index_name} not added: {e}")
+
+
 def setup_database():
-    """Creates necessary tables for the Hybrid System if they don't exist."""
+    """Creates the extra tables needed for the hybrid system if missing."""
     conn = get_connection()
-    if not conn: return
+    if not conn:
+        return
     try:
         with conn.cursor() as cursor:
-            # 1. Update Users for Demographics
-            cursor.execute("SHOW COLUMNS FROM users LIKE 'age'")
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE users ADD COLUMN age INT DEFAULT 25")
-                cursor.execute("ALTER TABLE users ADD COLUMN gender VARCHAR(20) DEFAULT 'Other'")
-            
-            # 2. Ratings Table (For ALS)
+            for column, ddl in (
+                ('age', "ALTER TABLE users ADD COLUMN age INT DEFAULT 25"),
+                ('gender', "ALTER TABLE users ADD COLUMN gender VARCHAR(20) DEFAULT 'Other'"),
+            ):
+                cursor.execute("SHOW COLUMNS FROM users LIKE %s", (column,))
+                if not cursor.fetchone():
+                    cursor.execute(ddl)
+
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ratings (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -130,8 +149,6 @@ def setup_database():
                     FOREIGN KEY (content_id) REFERENCES contents(id)
                 )
             """)
-
-            # 3. Reviews Table (For Sentiment Analysis)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS reviews (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -144,8 +161,6 @@ def setup_database():
                     FOREIGN KEY (content_id) REFERENCES contents(id)
                 )
             """)
-
-            # 4. Social Graph (For Social Layer)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS social_graph (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -156,8 +171,6 @@ def setup_database():
                     FOREIGN KEY (followed_id) REFERENCES users(id)
                 )
             """)
-            
-            # 5. Likes (Implicit Feedback)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS likes (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -166,812 +179,678 @@ def setup_database():
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_hearts (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT,
+                    content_id INT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uniq_heart (user_id, content_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS model_status (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    trained_at DATETIME,
+                    accuracy FLOAT NULL
+                )
+            """)
+            ensure_unique(cursor, 'ratings', 'uniq_user_content', ('user_id', 'content_id'))
         conn.commit()
-        print("✅ Database Schema Updated for Hybrid Architecture.")
+        print("✅ Database schema ready.")
     except Exception as e:
         print(f"❌ DB Setup Error: {e}")
     finally:
         conn.close()
 
-# --- 2. AI & Hybrid Engines ---
-# =========================================================
-# 2. AI & HYBRID RECOMMENDATION ENGINE
-# =========================================================
-# =========================================================
-# ALS / SVD COLLABORATIVE FILTERING RECOMMENDER
-# RENDER MEMORY OPTIMIZED
-# =========================================================
 
+# =========================================================
+# NLP MODEL (lazy, loaded in a background thread)
+# =========================================================
+MODEL = None
+TOKENIZER = None
+EMBEDDING_MODEL = None
+_NLP_LOCK = threading.Lock()
+_NLP_FAILED = False
+_EMB_LOCK = threading.Lock()
+_EMB_CACHE = {'key': None, 'ids': None, 'matrix': None}
+
+
+def text_model_ready():
+    return EMBEDDING_MODEL is not None and TOKENIZER is not None
+
+
+def load_nlp_model(force=False):
+    """Load TensorFlow model + tokenizer once. Safe to call from a thread."""
+    global MODEL, TOKENIZER, EMBEDDING_MODEL, _NLP_FAILED
+
+    if not ENABLE_TEXT_MODEL:
+        return False
+
+    with _NLP_LOCK:
+        if force:
+            MODEL = TOKENIZER = EMBEDDING_MODEL = None
+            _NLP_FAILED = False
+            with _EMB_LOCK:
+                _EMB_CACHE.update(key=None, ids=None, matrix=None)
+
+        if text_model_ready():
+            return True
+        if _NLP_FAILED:
+            return False
+        if not os.path.isfile(MODEL_FILE) or not os.path.isfile(TOKENIZER_FILE):
+            print(f"⚠️ Model/tokenizer file missing in {DATA_DIR}")
+            _NLP_FAILED = True
+            return False
+
+        try:
+            import tensorflow as tf
+            from tensorflow.keras.models import load_model
+
+            model = load_model(MODEL_FILE, compile=False)
+            with open(TOKENIZER_FILE, 'rb') as handle:
+                tokenizer = pickle.load(handle)
+
+            embedding_layer = model.get_layer('embedding_layer')
+            embedding_model = tf.keras.Model(inputs=model.input, outputs=embedding_layer.output)
+
+            MODEL, TOKENIZER, EMBEDDING_MODEL = model, tokenizer, embedding_model
+            print("✅ Model and tokenizer loaded successfully")
+            return True
+        except Exception as exc:
+            MODEL = TOKENIZER = EMBEDDING_MODEL = None
+            _NLP_FAILED = True
+            print(f"❌ NLP model initialization failed: {exc}")
+            return False
+
+
+def get_content_embeddings(descriptions, batch_size=32):
+    """Return a 2-D array (n_texts, embedding_dim): mean of word embeddings per text."""
+    if not text_model_ready():
+        return np.zeros((0, 0), dtype=np.float32)
+
+    from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+    sequences = TOKENIZER.texts_to_sequences([d or '' for d in descriptions])
+    padded = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
+
+    chunks = []
+    for start in range(0, len(padded), batch_size):
+        batch = padded[start:start + batch_size]
+        emb = np.asarray(EMBEDDING_MODEL.predict(batch, verbose=0))
+        if emb.ndim == 3:  # (batch, seq_len, dim) -> mask padding and average
+            mask = (batch != 0).astype(np.float32)[:, :, None]
+            emb = (emb * mask).sum(axis=1) / np.maximum(mask.sum(axis=1), 1.0)
+        chunks.append(emb.astype(np.float32))
+
+    return np.vstack(chunks) if chunks else np.zeros((0, 0), dtype=np.float32)
+
+
+def _cosine(vector, matrix):
+    v = vector / (np.linalg.norm(vector) + 1e-9)
+    m = matrix / (np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-9)
+    return m @ v
+
+
+# =========================================================
+# RECOMMENDERS
+# =========================================================
 class ALSRecommender:
-
-    """
-    Memory-bounded SVD Collaborative Filtering.
-
-    Features:
-    1. Maximum 200 users
-    2. Maximum 600 content items
-    3. Maximum 20 latent factors
-    4. 5-minute prediction cache
-    5. Excludes already rated movies
-    6. Safe database connection handling
-
-    Note:
-    This is SVD matrix factorization, not true ALS.
-    """
+    """Memory-bounded SVD collaborative filtering (matrix factorisation)."""
 
     MAX_USERS = 200
     MAX_ITEMS = 500
     MAX_USER_ITEMS = 100
-
     MIN_RATINGS = 5
     MAX_FACTORS = 20
-
     CACHE_SECONDS = 300
     MAX_CACHE_USERS = 256
 
     _cache = {}
     _cache_lock = threading.Lock()
 
-    # -----------------------------------------------------
-    # CACHE MANAGEMENT
-    # -----------------------------------------------------
-
     @classmethod
     def _get_cached(cls, user_id):
-
-        current_time = time.monotonic()
-
+        now = time.monotonic()
         with cls._cache_lock:
-
             cached = cls._cache.get(user_id)
-
             if cached:
-
-                timestamp, predictions = cached
-
-                if current_time - timestamp < cls.CACHE_SECONDS:
+                stamp, predictions = cached
+                if now - stamp < cls.CACHE_SECONDS:
                     return predictions.copy()
-
                 cls._cache.pop(user_id, None)
-
         return None
 
     @classmethod
     def _save_cache(cls, user_id, predictions):
-
-        current_time = time.monotonic()
-
+        now = time.monotonic()
         with cls._cache_lock:
-
-            # Remove expired entries
-            expired_users = [
-                uid
-                for uid, value in cls._cache.items()
-                if current_time - value[0] >= cls.CACHE_SECONDS
-            ]
-
-            for uid in expired_users:
+            for uid in [u for u, v in cls._cache.items() if now - v[0] >= cls.CACHE_SECONDS]:
                 cls._cache.pop(uid, None)
-
-            # Keep cache bounded
             if len(cls._cache) >= cls.MAX_CACHE_USERS:
-
-                oldest_user = min(
-                    cls._cache,
-                    key=lambda uid: cls._cache[uid][0]
-                )
-
-                cls._cache.pop(oldest_user, None)
-
-            cls._cache[user_id] = (
-                current_time,
-                predictions.copy()
-            )
-
-    # -----------------------------------------------------
-    # MAIN PREDICTION FUNCTION
-    # -----------------------------------------------------
+                oldest = min(cls._cache, key=lambda u: cls._cache[u][0])
+                cls._cache.pop(oldest, None)
+            cls._cache[user_id] = (now, predictions.copy())
 
     def predict(self, user_id, all_content_ids=None):
+        if user_id is None:
+            return {}
 
+        result = self._get_cached(user_id)
+        if result is None:
+            result = self._compute(user_id)
+            if result is None:      # error -> don't cache
+                return {}
+            self._save_cache(user_id, result)
+
+        if all_content_ids is not None:
+            allowed = set(all_content_ids)
+            return {cid: s for cid, s in result.items() if cid in allowed}
+        return result
+
+    def _compute(self, user_id):
         conn = None
-        cursor = None
-
         try:
-
-            if user_id is None:
-                return {}
-
-            # ---------------------------------------------
-            # 1. CHECK CACHE
-            # ---------------------------------------------
-
-            cached_predictions = self._get_cached(user_id)
-
-            if cached_predictions is not None:
-
-                if all_content_ids is not None:
-
-                    allowed_ids = set(all_content_ids)
-
-                    return {
-                        cid: score
-                        for cid, score in cached_predictions.items()
-                        if cid in allowed_ids
-                    }
-
-                return cached_predictions
-
-            # ---------------------------------------------
-            # 2. DATABASE CONNECTION
-            # ---------------------------------------------
-
             conn = get_connection()
-
             if conn is None:
+                return None
 
-                print("ALS: Database connection unavailable.")
+            # NOTE: tuple cursor on purpose (default cursor is DictCursor)
+            with conn.cursor(pymysql.cursors.Cursor) as cursor:
+                cursor.execute(
+                    "SELECT user_id FROM ratings GROUP BY user_id "
+                    "ORDER BY COUNT(*) DESC LIMIT %s", (self.MAX_USERS,))
+                user_ids = [row[0] for row in cursor.fetchall()]
+                if user_id not in user_ids:
+                    user_ids = user_ids[:self.MAX_USERS - 1]
+                    user_ids.append(user_id)
 
-                return {}
+                cursor.execute(
+                    "SELECT content_id FROM ratings GROUP BY content_id "
+                    "ORDER BY COUNT(*) DESC LIMIT %s", (self.MAX_ITEMS,))
+                content_ids = [row[0] for row in cursor.fetchall()]
 
-            cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT content_id FROM ratings WHERE user_id=%s LIMIT %s",
+                    (user_id, self.MAX_USER_ITEMS))
+                known = set(content_ids)
+                for (cid,) in cursor.fetchall():
+                    if cid not in known:
+                        content_ids.append(cid)
+                        known.add(cid)
 
-            # ---------------------------------------------
-            # 3. SELECT MOST ACTIVE USERS
-            # ---------------------------------------------
+                if not content_ids:
+                    return {}
 
-            cursor.execute(
-                """
-                SELECT user_id
-                FROM ratings
-                GROUP BY user_id
-                ORDER BY COUNT(*) DESC
-                LIMIT %s
-                """,
-                (self.MAX_USERS,)
-            )
-
-            user_ids = [
-                row[0]
-                for row in cursor.fetchall()
-            ]
-
-            if user_id not in user_ids:
-
-                user_ids = user_ids[:self.MAX_USERS - 1]
-
-                user_ids.append(user_id)
-
-            if not user_ids:
-                return {}
-
-            # ---------------------------------------------
-            # 4. SELECT POPULAR CONTENT
-            # ---------------------------------------------
-
-            cursor.execute(
-                """
-                SELECT content_id
-                FROM ratings
-                GROUP BY content_id
-                ORDER BY COUNT(*) DESC
-                LIMIT %s
-                """,
-                (self.MAX_ITEMS,)
-            )
-
-            content_ids = [
-                row[0]
-                for row in cursor.fetchall()
-            ]
-
-            # Include current user's rated content
-            cursor.execute(
-                """
-                SELECT content_id
-                FROM ratings
-                WHERE user_id = %s
-                LIMIT %s
-                """,
-                (user_id, self.MAX_USER_ITEMS)
-            )
-
-            own_content_ids = [
-                row[0]
-                for row in cursor.fetchall()
-            ]
-
-            existing_content_ids = set(content_ids)
-
-            for content_id in own_content_ids:
-
-                if content_id not in existing_content_ids:
-
-                    content_ids.append(content_id)
-
-                    existing_content_ids.add(content_id)
-
-            if not content_ids:
-                return {}
-
-            # ---------------------------------------------
-            # 5. FETCH LIMITED RATINGS
-            # ---------------------------------------------
-
-            user_placeholders = ",".join(
-                ["%s"] * len(user_ids)
-            )
-
-            content_placeholders = ",".join(
-                ["%s"] * len(content_ids)
-            )
-
-            query = f"""
-                SELECT
-                    user_id,
-                    content_id,
-                    AVG(rating) AS rating
-                FROM ratings
-                WHERE user_id IN ({user_placeholders})
-                  AND content_id IN ({content_placeholders})
-                GROUP BY user_id, content_id
-            """
-
-            params = tuple(user_ids) + tuple(content_ids)
-
-            cursor.execute(query, params)
-
-            rows = cursor.fetchall()
+                u_ph = ",".join(["%s"] * len(user_ids))
+                c_ph = ",".join(["%s"] * len(content_ids))
+                cursor.execute(
+                    f"""
+                    SELECT user_id, content_id, AVG(rating) AS rating
+                    FROM ratings
+                    WHERE user_id IN ({u_ph}) AND content_id IN ({c_ph})
+                    GROUP BY user_id, content_id
+                    """,
+                    tuple(user_ids) + tuple(content_ids))
+                rows = cursor.fetchall()
 
             if len(rows) < self.MIN_RATINGS:
                 return {}
 
-            # ---------------------------------------------
-            # 6. CREATE INDEX MAPPINGS
-            # ---------------------------------------------
+            user_index = {uid: i for i, uid in enumerate(user_ids)}
+            item_index = {cid: i for i, cid in enumerate(content_ids)}
+            matrix = np.zeros((len(user_ids), len(content_ids)), dtype=np.float32)
 
-            user_index = {
-                uid: index
-                for index, uid in enumerate(user_ids)
-            }
-
-            item_index = {
-                cid: index
-                for index, cid in enumerate(content_ids)
-            }
-
-            if user_id not in user_index:
-                return {}
-
-            # ---------------------------------------------
-            # 7. BUILD MEMORY-BOUNDED MATRIX
-            # ---------------------------------------------
-
-            matrix = np.zeros(
-                (len(user_ids), len(content_ids)),
-                dtype=np.float32
-            )
-
-            for rated_user, rated_content, rating in rows:
-
-                row_index = user_index.get(rated_user)
-
-                column_index = item_index.get(rated_content)
-
-                if row_index is None or column_index is None:
-                    continue
-
-                if rating is not None:
-
-                    matrix[row_index, column_index] = float(rating)
+            for r_user, r_content, rating in rows:
+                ri, ci = user_index.get(r_user), item_index.get(r_content)
+                if ri is not None and ci is not None and rating is not None:
+                    matrix[ri, ci] = float(rating)
 
             if np.count_nonzero(matrix) < self.MIN_RATINGS:
                 return {}
 
-            # ---------------------------------------------
-            # 8. CALCULATE USER MEANS
-            # ---------------------------------------------
-
+            me = user_index[user_id]
             rated_mask = matrix > 0
+            if not rated_mask[me].any():       # user has no ratings -> nothing to predict
+                return {}
 
-            rating_counts = rated_mask.sum(axis=1)
-
+            counts = rated_mask.sum(axis=1)
             user_means = np.divide(
-                matrix.sum(axis=1),
-                rating_counts,
-                out=np.zeros(
-                    matrix.shape[0],
-                    dtype=np.float32
-                ),
-                where=rating_counts > 0
-            )
+                matrix.sum(axis=1), counts,
+                out=np.zeros(matrix.shape[0], dtype=np.float32),
+                where=counts > 0)
 
-            # ---------------------------------------------
-            # 9. MEAN CENTERING
-            # ---------------------------------------------
+            demeaned = np.where(rated_mask, matrix - user_means.reshape(-1, 1), 0).astype(np.float32)
 
-            # IMPORTANT:
-            # Do not subtract user mean from missing ratings.
-            # Keep missing values as zero.
-
-            demeaned = np.where(
-                rated_mask,
-                matrix - user_means.reshape(-1, 1),
-                0
-            ).astype(np.float32)
-
-            # ---------------------------------------------
-            # 10. VALIDATE MATRIX DIMENSIONS
-            # ---------------------------------------------
-
-            min_dimension = min(demeaned.shape)
-
-            k = min(
-                self.MAX_FACTORS,
-                min_dimension - 1
-            )
-
+            k = min(self.MAX_FACTORS, min(demeaned.shape) - 1)
             if k < 1:
                 return {}
 
-            # ---------------------------------------------
-            # 11. SVD DECOMPOSITION
-            # ---------------------------------------------
-
-            U, sigma, Vt = np.linalg.svd(
-                demeaned,
-                full_matrices=False
-            )
-
-            # Keep only required latent factors
-
-            U = U[:, :k]
-
-            sigma = sigma[:k]
-
-            Vt = Vt[:k, :]
-
-            # ---------------------------------------------
-            # 12. RECONSTRUCT PREDICTIONS
-            # ---------------------------------------------
-
-            predicted_matrix = (
-                (U * sigma) @ Vt
-            ) + user_means.reshape(-1, 1)
-
-            # ---------------------------------------------
-            # 13. CURRENT USER PREDICTIONS
-            # ---------------------------------------------
-
-            current_user_index = user_index[user_id]
-
-            predictions = predicted_matrix[
-                current_user_index
-            ]
-
-            # ---------------------------------------------
-            # 14. BUILD RESULT
-            # ---------------------------------------------
+            U, sigma, Vt = np.linalg.svd(demeaned, full_matrices=False)
+            predicted = (U[:, :k] * sigma[:k]) @ Vt[:k, :] + user_means.reshape(-1, 1)
+            mine = predicted[me]
 
             result = {}
-
-            for index, content_id in enumerate(content_ids):
-
-                # Skip movies already rated by user
-                if matrix[current_user_index, index] > 0:
+            for idx, cid in enumerate(content_ids):
+                if matrix[me, idx] > 0:       # skip already-rated
                     continue
-
-                score = float(predictions[index])
-
+                score = float(mine[idx])
                 if np.isfinite(score):
-
-                    result[content_id] = score
-
-            # ---------------------------------------------
-            # 15. FILTER REQUESTED CONTENT
-            # ---------------------------------------------
-
-            if all_content_ids is not None:
-
-                allowed_ids = set(all_content_ids)
-
-                result = {
-                    cid: score
-                    for cid, score in result.items()
-                    if cid in allowed_ids
-                }
-
-            # ---------------------------------------------
-            # 16. CACHE RESULT
-            # ---------------------------------------------
-
-            self._save_cache(user_id, result)
-
+                    result[cid] = float(np.clip(score, 0.0, 5.0))
             return result
 
         except Exception as e:
-
-            print(
-                "ALS Recommendation Error:",
-                str(e)
-            )
-
-            return {}
-
+            print("ALS Recommendation Error:", e)
+            return None
         finally:
-
-            if cursor is not None:
-
-                try:
-                    cursor.close()
-
-                except Exception:
-                    pass
-
             if conn is not None:
-
                 try:
                     conn.close()
-
                 except Exception:
                     pass
 
+
 class DemographicPSORecommender:
-    """Method B: Demographic Similarity + PSO Weights"""
+    """Demographic similarity (age / gender / genre overlap)."""
+
     def get_similar_users(self, user_id):
         conn = get_connection()
+        if conn is None:
+            return []
         try:
-            # Fetch current user
             with conn.cursor() as cursor:
                 cursor.execute("SELECT age, gender, fav_genre FROM users WHERE id=%s", (user_id,))
-                target_user = cursor.fetchone()
-                
-                if not target_user: return []
-
-                # Fetch all users
+                target = cursor.fetchone()
+                if not target:
+                    return []
                 cursor.execute("SELECT id, age, gender, fav_genre FROM users WHERE id != %s", (user_id,))
-                other_users = cursor.fetchall()
-
-            # Calculate Similarity
-            similar_users = []
-            target_genres = set(target_user['fav_genre'].split(','))
-            
-            for u in other_users:
-                score = 0
-                # Age similarity (0 to 1)
-                age_diff = abs(int(target_user['age']) - int(u['age']))
-                score += 1 / (1 + age_diff * 0.1) 
-                
-                # Gender match
-                if target_user['gender'] == u['gender']:
-                    score += 0.5
-                
-                # Genre Overlap (Jaccard)
-                u_genres = set(u['fav_genre'].split(','))
-                overlap = len(target_genres.intersection(u_genres))
-                union = len(target_genres.union(u_genres))
-                if union > 0:
-                    score += (overlap / union) * 2.0 # Give higher weight to genre
-                
-                similar_users.append((u['id'], score))
-            
-            # Sort by score
-            similar_users.sort(key=lambda x: x[1], reverse=True)
-            return similar_users[:5] # Top 5 similar users
+                others = cursor.fetchall()
         finally:
             conn.close()
 
+        def genres_of(value):
+            return {g.strip() for g in (value or '').split(',') if g.strip()}
+
+        target_age = int(target.get('age') or 25)
+        target_genres = genres_of(target.get('fav_genre'))
+
+        scored = []
+        for u in others:
+            score = 1 / (1 + abs(target_age - int(u.get('age') or 25)) * 0.1)
+            if target.get('gender') == u.get('gender'):
+                score += 0.5
+            u_genres = genres_of(u.get('fav_genre'))
+            union = len(target_genres | u_genres)
+            if union:
+                score += (len(target_genres & u_genres) / union) * 2.0
+            scored.append((u['id'], score))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:5]
+
     def predict(self, user_id):
-        # 1. Find similar users
-        similar_users = self.get_similar_users(user_id)
-        if not similar_users: return {}
-        
+        similar = self.get_similar_users(user_id)
+        if not similar:
+            return {}
+
+        ids = [u[0] for u in similar]
         conn = get_connection()
+        if conn is None:
+            return {}
         scores = {}
         try:
-            sim_user_ids = [str(u[0]) for u in similar_users]
-            if not sim_user_ids: return {}
-            
-            # 2. Get movies they liked (Ratings > 3)
-            format_strings = ','.join(['%s'] * len(sim_user_ids))
-            query = f"SELECT content_id, rating FROM ratings WHERE user_id IN ({format_strings}) AND rating >= 4"
-            
+            ph = ','.join(['%s'] * len(ids))
             with conn.cursor() as cursor:
-                cursor.execute(query, tuple(sim_user_ids))
-                results = cursor.fetchall()
-                
-                for r in results:
-                    cid = r['content_id']
-                    if cid not in scores: scores[cid] = 0
-                    scores[cid] += r['rating'] # Simple sum for now, PSO would tune this aggregation
-            
+                cursor.execute(
+                    f"SELECT content_id, rating FROM ratings WHERE user_id IN ({ph}) AND rating >= 4",
+                    tuple(ids))
+                for r in cursor.fetchall():
+                    scores[r['content_id']] = scores.get(r['content_id'], 0) + float(r['rating'])
             return scores
         finally:
             conn.close()
+
 
 class SocialRecommender:
-    """Method D: Social Interaction Layer"""
+    """What the people you follow rated / liked."""
+
     def predict(self, user_id):
         conn = get_connection()
+        if conn is None:
+            return {}
         scores = {}
         try:
             with conn.cursor() as cursor:
-                # 1. Get list of people user follows
-                cursor.execute("SELECT followed_id FROM social_graph WHERE follower_id = %s", (user_id,))
+                cursor.execute("SELECT followed_id FROM social_graph WHERE follower_id=%s", (user_id,))
                 following = [row['followed_id'] for row in cursor.fetchall()]
-                
-                if not following: return {}
+                if not following:
+                    return {}
 
-                # 2. Get what they liked/rated
-                format_strings = ','.join(['%s'] * len(following))
-                
-                # Explicit Ratings
-                cursor.execute(f"SELECT content_id, rating FROM ratings WHERE user_id IN ({format_strings})", tuple(following))
+                ph = ','.join(['%s'] * len(following))
+                cursor.execute(
+                    f"SELECT content_id, rating FROM ratings WHERE user_id IN ({ph})", tuple(following))
                 for r in cursor.fetchall():
-                    scores[r['content_id']] = scores.get(r['content_id'], 0) + r['rating']
-                
-                # Implicit Likes (Count as 5 stars)
-                cursor.execute(f"SELECT content_id FROM likes WHERE user_id IN ({format_strings})", tuple(following))
+                    scores[r['content_id']] = scores.get(r['content_id'], 0) + float(r['rating'] or 0)
+
+                cursor.execute(
+                    f"SELECT content_id FROM likes WHERE user_id IN ({ph})", tuple(following))
                 for r in cursor.fetchall():
                     scores[r['content_id']] = scores.get(r['content_id'], 0) + 5.0
-                    
             return scores
         finally:
             conn.close()
 
+
 class HybridEngine:
-    """Combines A, B, C, D using Weighted Average"""
+    """Weighted fusion of ALS + demographic + text + social scores."""
+
     def __init__(self):
         self.als = ALSRecommender()
         self.demo = DemographicPSORecommender()
         self.social = SocialRecommender()
-        # Weights (Tunable via PSO in theory)
         self.W_ALS = 0.35
         self.W_DEMO = 0.20
         self.W_TEXT = 0.25
         self.W_SOCIAL = 0.20
-    
-    def normalize(self, scores_dict):
-        if not scores_dict: return {}
-        max_val = max(scores_dict.values())
-        if max_val == 0: return scores_dict
-        return {k: v/max_val for k, v in scores_dict.items()}
 
-    def get_hybrid_recommendations(self, user_id, last_watched_desc=None):
-        # 1. Get Scores from all engines
-        # A. ALS
-        scores_als = self.normalize(self.als.predict(user_id, []))
-        
-        # B. Demographic
-        scores_demo = self.normalize(self.demo.predict(user_id))
-        
-        # D. Social
-        scores_social = self.normalize(self.social.predict(user_id))
-        
-        # C. Text AI (Integrated here based on last watched)
-        scores_text = {}
+    @staticmethod
+    def normalize(scores):
+        if not scores:
+            return {}
+        clipped = {k: max(float(v), 0.0) for k, v in scores.items()}
+        top = max(clipped.values())
+        if top <= 0:
+            return {}
+        return {k: v / top for k, v in clipped.items()}
+
+    def _safe(self, name, func, *args):
+        try:
+            return self.normalize(func(*args))
+        except Exception as exc:
+            print(f"{name} engine error:", exc)
+            return {}
+
+    @staticmethod
+    def _load_catalog(user_id):
         conn = get_connection()
-        all_content_ids = []
-        
-        # Fetch all content to map IDs
+        if conn is None:
+            return [], set()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT id, story FROM contents")
-                all_contents = cursor.fetchall()
-                all_content_ids = [c['id'] for c in all_contents]
-                all_stories = [c['story'] for c in all_contents]
-
-                if last_watched_desc and MODEL and TOKENIZER:
-                     # Existing NLP Logic reused here
-                     watched_embedding = get_content_embeddings([last_watched_desc])
-                     all_embeddings = get_content_embeddings(all_stories)
-                     sims = cosine_similarity(watched_embedding, all_embeddings)[0]
-                     
-                     # Map cosine sim to content IDs
-                     for idx, score in enumerate(sims):
-                         scores_text[all_content_ids[idx]] = float(score)
+                cursor.execute("SELECT id, story FROM contents WHERE is_kids = 0 OR is_kids IS NULL")
+                rows = cursor.fetchall()
+                cursor.execute("SELECT content_id FROM user_history WHERE user_id=%s", (user_id,))
+                watched = {r['content_id'] for r in cursor.fetchall()}
+            return rows, watched
         finally:
             conn.close()
-            
-        scores_text = self.normalize(scores_text)
 
-        # 2. Weighted Fusion
-        final_scores = {}
-        
-        # Master list of all unique content IDs involved
-        all_keys = set(scores_als.keys()) | set(scores_demo.keys()) | set(scores_social.keys()) | set(scores_text.keys())
-        
-        for cid in all_keys:
-            s_als = scores_als.get(cid, 0)
-            s_demo = scores_demo.get(cid, 0)
-            s_social = scores_social.get(cid, 0)
-            s_text = scores_text.get(cid, 0)
-            
-            # The Hybrid Formula
-            final_score = (self.W_ALS * s_als) + \
-                          (self.W_DEMO * s_demo) + \
-                          (self.W_SOCIAL * s_social) + \
-                          (self.W_TEXT * s_text)
-            
-            final_scores[cid] = final_score
-            
-        # Sort descending
-        sorted_ids = sorted(final_scores, key=final_scores.get, reverse=True)
-        return sorted_ids[:10] # Top 10
+    @staticmethod
+    def _text_scores(last_desc, rows):
+        if not last_desc or not rows or not text_model_ready():
+            return {}
 
-# --- Helper for Embeddings (From your original code) ---
-def load_nlp_model():
-    """Load the TensorFlow model and tokenizer once per worker process."""
-    global MODEL, TOKENIZER
+        ids = [r['id'] for r in rows]
+        stories = [r['story'] or '' for r in rows]
+        key = (len(ids), sum(ids), sum(len(s) for s in stories))
 
-    if MODEL is not None and TOKENIZER is not None:
-        return True
-    if not os.path.isfile(MODEL_FILE):
-        print(f"⚠️ TensorFlow model not found: {MODEL_FILE}")
-        return False
-    if not os.path.isfile(TOKENIZER_FILE):
-        print(f"⚠️ Tokenizer not found: {TOKENIZER_FILE}")
-        return False
+        with _EMB_LOCK:
+            if _EMB_CACHE['key'] != key:
+                matrix = get_content_embeddings(stories)
+                if matrix.size == 0:
+                    return {}
+                _EMB_CACHE.update(key=key, ids=ids, matrix=matrix)
+            matrix, cache_ids = _EMB_CACHE['matrix'], _EMB_CACHE['ids']
 
+        vec = get_content_embeddings([last_desc])
+        if vec.size == 0:
+            return {}
+        sims = _cosine(vec[0], matrix)
+        return {cid: float(s) for cid, s in zip(cache_ids, sims)}
+
+    def get_hybrid_recommendations(self, user_id, last_watched_desc=None, exclude_ids=None, limit=10):
+        rows, watched = self._load_catalog(user_id)
+        allowed = {r['id'] for r in rows}
+        skip = set(watched) | set(exclude_ids or [])
+
+        scores_als = self._safe('ALS', self.als.predict, user_id, None)
+        scores_demo = self._safe('Demographic', self.demo.predict, user_id)
+        scores_social = self._safe('Social', self.social.predict, user_id)
+        scores_text = self._safe('Text', self._text_scores, last_watched_desc, rows)
+
+        keys = (set(scores_als) | set(scores_demo) | set(scores_social) | set(scores_text)) & allowed
+        keys -= skip
+
+        final = {}
+        for cid in keys:
+            final[cid] = (self.W_ALS * scores_als.get(cid, 0)
+                          + self.W_DEMO * scores_demo.get(cid, 0)
+                          + self.W_SOCIAL * scores_social.get(cid, 0)
+                          + self.W_TEXT * scores_text.get(cid, 0))
+
+        return sorted(final, key=final.get, reverse=True)[:limit]
+
+
+# =========================================================
+# SHARED HELPERS / DECORATORS
+# =========================================================
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if 'loggedin' not in session or session.get('user_type') != 'admin':
+            flash('Please log in as an admin to access this page.', 'danger')
+            return redirect(url_for('login'))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def resolve_profile_image(uploaded, gender):
+    default = 'f_profile.png' if (gender or '').strip().lower() == 'female' else 'm_profile.png'
+    if uploaded:
+        name = os.path.basename(uploaded.strip())
+        if os.path.isfile(os.path.join(current_app.static_folder, 'uploads', name)):
+            return 'uploads/' + name
+    return default
+
+
+def save_image_file(file_storage, prefix=''):
+    """Validate + save an uploaded image under a unique name. Returns (name, path) or (None, None)."""
+    if not file_storage or not file_storage.filename:
+        return None, None
+    if not allowed_file(file_storage.filename):
+        raise ValueError('Unsupported image format. Use png, jpg, jpeg or gif.')
+    safe = secure_filename(file_storage.filename)
+    if not safe:
+        raise ValueError('Invalid filename.')
+    ext = os.path.splitext(safe)[1].lower()
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    name = f"{prefix}{uuid.uuid4().hex}{ext}"
+    path = os.path.join(app.config['UPLOAD_FOLDER'], name)
+    file_storage.save(path)
+    return name, path
+
+
+def extract_youtube_id(value):
+    """Return an 11-char YouTube id from a URL (or a raw id), else ''."""
+    value = (value or '').strip()
+    if re.fullmatch(r'[A-Za-z0-9_-]{11}', value):
+        return value
     try:
-        MODEL = load_model(MODEL_FILE)
-        with open(TOKENIZER_FILE, 'rb') as handle:
-            TOKENIZER = pickle.load(handle)
-        print("✅ Model and tokenizer loaded successfully")
-        return True
-    except Exception as exc:
-        MODEL = None
-        TOKENIZER = None
-        print(f"❌ NLP model initialization failed: {exc}")
-        return False
+        parsed = urlparse(value)
+        host = (parsed.hostname or '').lower()
+        if host.startswith('www.'):
+            host = host[4:]
+        video_id = ''
+        if parsed.scheme in ('http', 'https'):
+            if host in ('youtube.com', 'm.youtube.com', 'music.youtube.com'):
+                if parsed.path == '/watch':
+                    video_id = parse_qs(parsed.query).get('v', [''])[0]
+                elif parsed.path.startswith(('/embed/', '/shorts/', '/live/')):
+                    video_id = parsed.path.split('/')[2]
+            elif host == 'youtu.be':
+                video_id = parsed.path.strip('/').split('/')[0]
+        return video_id if re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id) else ''
+    except (ValueError, IndexError, AttributeError):
+        return ''
 
-def get_content_embeddings(descriptions):
-    if MODEL is None or TOKENIZER is None: return []
-    sequences = TOKENIZER.texts_to_sequences(descriptions)
-    padded = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
-    embedding_layer = MODEL.get_layer('embedding_layer')
-    embedding_model = tf.keras.Model(inputs=MODEL.input, outputs=embedding_layer.output)
-    return embedding_model.predict(padded)
 
-# --- Initialize ---
+def record_history(cursor, user_id, content_id):
+    cursor.execute("SELECT id FROM user_history WHERE user_id=%s AND content_id=%s",
+                   (user_id, content_id))
+    if cursor.fetchone():
+        cursor.execute("UPDATE user_history SET watched_at = NOW() WHERE user_id=%s AND content_id=%s",
+                       (user_id, content_id))
+    else:
+        cursor.execute("INSERT INTO user_history (user_id, content_id, watched_at) VALUES (%s, %s, NOW())",
+                       (user_id, content_id))
+
+
+def touch_continue_watching(cursor, user_id, content_id, progress=None):
+    """Insert/update continue_watching without relying on a unique index.
+    progress=None keeps the existing progress (or 0 for a new row)."""
+    cursor.execute("SELECT progress FROM continue_watching WHERE user_id=%s AND content_id=%s",
+                   (user_id, content_id))
+    row = cursor.fetchone()
+    if row:
+        if progress is None:
+            cursor.execute("UPDATE continue_watching SET last_watched = NOW() "
+                           "WHERE user_id=%s AND content_id=%s", (user_id, content_id))
+        else:
+            cursor.execute("UPDATE continue_watching SET progress=%s, last_watched = NOW() "
+                           "WHERE user_id=%s AND content_id=%s", (progress, user_id, content_id))
+        return row['progress']
+    cursor.execute("INSERT INTO continue_watching (user_id, content_id, progress, last_watched) "
+                   "VALUES (%s, %s, %s, NOW())", (user_id, content_id, progress or 0))
+    return progress or 0
+
+
+def fetch_recommendations(cursor, user_id, story, current_id=None, limit=12):
+    """Hybrid recommendations -> list of content rows (ordered), [] on any failure."""
+    try:
+        exclude = [current_id] if current_id else []
+        rec_ids = hybrid_engine.get_hybrid_recommendations(
+            user_id, story, exclude_ids=exclude, limit=limit)
+        if not rec_ids:
+            return []
+        ph = ",".join(["%s"] * len(rec_ids))
+        cursor.execute(f"SELECT * FROM contents WHERE id IN ({ph}) AND (is_kids = 0 OR is_kids IS NULL)",
+                       tuple(rec_ids))
+        data = cursor.fetchall()
+        data.sort(key=lambda x: rec_ids.index(x['id']))
+        return data
+    except Exception as e:
+        print("Hybrid Engine Error:", e)
+        return []
+
+
+# =========================================================
+# INITIALISE
+# =========================================================
 setup_database()
-with app.app_context():
-    load_nlp_model()
-    hybrid_engine = HybridEngine()
+hybrid_engine = HybridEngine()
 
-# --- ROUTES ---
-from flask import render_template, flash
-import pymysql
+if ENABLE_TEXT_MODEL:
+    # Load TensorFlow in the background so the web server boots (and passes
+    # Render's port check) immediately.
+    threading.Thread(target=load_nlp_model, daemon=True).start()
 
 
+@app.route('/healthz')
+def healthz():
+    return 'ok', 200
+
+
+# =========================================================
+# ROUTES: HOME
+# =========================================================
 @app.route('/')
 def index():
     conn = None
     try:
         conn = get_connection()
-
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # 🔥 TRENDING MOVIES (SAME AS DASHBOARD)
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type = 'movie'
+        cursor = conn.cursor()
+        base = """
+            SELECT * FROM contents
+            WHERE content_type = %s
               AND (is_kids = 0 OR is_kids IS NULL)
               AND (is_90s = 0 OR is_90s IS NULL)
             ORDER BY views DESC, hearts DESC
             LIMIT 10
-        """)
+        """
+        cursor.execute(base, ('movie',))
         trending_movies = cursor.fetchall()
-
-        # =====================================
-        # 🔥 TRENDING SERIES (SAME LOGIC)
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type = 'series'
-              AND (is_kids = 0 OR is_kids IS NULL)
-              AND (is_90s = 0 OR is_90s IS NULL)
-            ORDER BY views DESC, hearts DESC
-            LIMIT 10
-        """)
+        cursor.execute(base, ('series',))
         trending_series = cursor.fetchall()
-
         cursor.close()
-
-        return render_template(
-            "index.html",
-            trending_movies=trending_movies,
-            trending_series=trending_series
-        )
-
+        return render_template("index.html",
+                               trending_movies=trending_movies,
+                               trending_series=trending_series)
     except Exception as e:
         flash(f"Database Error: {str(e)}", "danger")
-        return render_template(
-            "index.html",
-            trending_movies=[],
-            trending_series=[]
-        )
-
+        return render_template("index.html", trending_movies=[], trending_series=[])
     finally:
         if conn:
             conn.close()
-# --- Admin Routes ---
+
+
+# =========================================================
+# ROUTES: ADMIN
+# =========================================================
 @app.route('/admin_dashboard')
+@admin_required
 def admin_dashboard():
-
-    if 'loggedin' not in session or session.get('user_type') != 'admin':
-        return redirect(url_for('login'))
-
     conn = get_connection()
-
+    if not conn:
+        flash("Database connection error", 'danger')
+        return redirect(url_for('login'))
     try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-
-            # 👥 USERS
+        with conn.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) AS count FROM users")
             user_count = cursor.fetchone()['count']
-
-            # 🎬 CONTENT
             cursor.execute("SELECT COUNT(*) AS count FROM contents")
             content_count = cursor.fetchone()['count']
 
-            # 🧠 MODEL STATUS
             cursor.execute("SELECT * FROM model_status ORDER BY id DESC LIMIT 1")
             model = cursor.fetchone()
 
+            model_trained, last_trained, accuracy = False, None, None
             if model:
                 model_trained = True
+                trained_at = model.get('trained_at')
+                if isinstance(trained_at, str):
+                    last_trained = trained_at
+                elif trained_at:
+                    last_trained = trained_at.strftime("%d %b %Y, %I:%M %p")
+                accuracy = model.get('accuracy')
 
-                if isinstance(model['trained_at'], str):
-                    last_trained = model['trained_at']
-                else:
-                    last_trained = model['trained_at'].strftime("%d %b %Y, %I:%M %p")
-
-                accuracy = model['accuracy']
-            else:
-                model_trained = False
-                last_trained = None
-                accuracy = None
-
-            # 🎥 CONTENT LIST
             cursor.execute("SELECT * FROM contents ORDER BY id DESC")
             contents = cursor.fetchall()
 
-        return render_template(
-            'admin_dashboard.html',
-            contents=contents,
-            user_count=user_count,
-            content_count=content_count,
-            model_trained=model_trained,
-            last_trained=last_trained,
-            accuracy=accuracy
-        )
-
+        return render_template('admin_dashboard.html',
+                               contents=contents, user_count=user_count,
+                               content_count=content_count, model_trained=model_trained,
+                               last_trained=last_trained, accuracy=accuracy)
     except Exception as e:
         flash(str(e), 'danger')
         return redirect(url_for('login'))
-
     finally:
         conn.close()
+
+
 @app.route('/admin/users')
+@admin_required
 def admin_users():
-
-    # ---------------------------
-    # AUTH CHECK
-    # ---------------------------
-    if 'loggedin' not in session or session.get('user_type') != 'admin':
-        flash('Admin login required', 'danger')
-        return redirect(url_for('login'))
-
-    # ---------------------------
-    # GET SEARCH + FILTERS + PAGINATION
-    # ---------------------------
     search = request.args.get('search', '').strip()
-    page = request.args.get('page', 1, type=int)
+    page = max(request.args.get('page', 1, type=int), 1)
     per_page = 10
     offset = (page - 1) * per_page
 
@@ -981,204 +860,121 @@ def admin_users():
         return redirect(url_for('login'))
 
     try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # ---------------------------
-        # BUILD WHERE CLAUSE
-        # ---------------------------
-        where_clauses = []
-        params = []
-
-        # split search input to allow filtering by multiple fields
+        cursor = conn.cursor()
+        where_sql, params = "", []
         if search:
-            # allow username, genre, or language to match the search term
-            where_clauses.append("(username LIKE %s OR fav_genre LIKE %s OR fav_language LIKE %s)")
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+            where_sql = " WHERE (username LIKE %s OR fav_genre LIKE %s OR fav_language LIKE %s)"
+            params.extend([f"%{search}%"] * 3)
 
-        where_sql = ""
-        if where_clauses:
-            where_sql = " WHERE " + " AND ".join(where_clauses)
-
-        # ---------------------------
-        # TOTAL COUNT
-        # ---------------------------
-        count_query = f"SELECT COUNT(*) as total FROM users {where_sql}"
-        cursor.execute(count_query, params)
+        cursor.execute(f"SELECT COUNT(*) as total FROM users {where_sql}", params)
         total_users = cursor.fetchone()['total']
 
-        # ---------------------------
-        # MAIN QUERY
-        # ---------------------------
-        query = f"""
-            SELECT 
-                id,
-                username,
-                fav_genre,
-                fav_language,
-                gender,
-                profile_image,
-                COALESCE(is_online, 0) AS is_online,
-                COALESCE(watch_time, 0) AS watch_time
+        cursor.execute(f"""
+            SELECT id, username, fav_genre, fav_language, gender, profile_image,
+                   COALESCE(is_online, 0) AS is_online,
+                   COALESCE(watch_time, 0) AS watch_time
             FROM users
             {where_sql}
             ORDER BY id DESC
             LIMIT %s OFFSET %s
-        """
-        params.extend([per_page, offset])
-        cursor.execute(query, params)
+        """, params + [per_page, offset])
         users = cursor.fetchall()
 
-        # ---------------------------
-        # TOTAL PAGES
-        # ---------------------------
         total_pages = (total_users + per_page - 1) // per_page
-
-        return render_template(
-            'admin_users.html',
-            users=users,
-            page=page,
-            total_pages=total_pages,
-            search=search
-        )
-
+        return render_template('admin_users.html', users=users, page=page,
+                               total_pages=total_pages, search=search)
     except Exception as e:
         flash(f'Error loading users: {e}', 'danger')
         return redirect(url_for('admin_dashboard'))
-
     finally:
         conn.close()
+
+
 @app.route('/admin/users/wordcloud/<int:user_id>')
+@admin_required
 def user_wordcloud(user_id):
-
-    # ---------------------------
-    # AUTH CHECK
-    # ---------------------------
-    if 'loggedin' not in session or session.get('user_type') != 'admin':
-        flash('Please log in as an admin to access this page.', 'danger')
-        return redirect(url_for('login'))
-
     conn = get_connection()
-
     if not conn:
         flash("Database connection error", 'danger')
         return redirect(url_for('login'))
 
-    user = None
     wordcloud_img = None
-    profile_image_url = None
-    watch_time_data = []
-    recent_contents = []
-
     try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # ---------------------------
-        # USER DETAILS
-        # ---------------------------
+        cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, username, gender, profile_image, 
-                   COALESCE(is_online,0) as is_online
+            SELECT id, username, gender, profile_image, COALESCE(is_online,0) as is_online
             FROM users WHERE id=%s
         """, (user_id,))
         user = cursor.fetchone()
-
         if not user:
             flash("User not found", "danger")
             return redirect(url_for('admin_users'))
 
-        # ---------------------------
-        # PROFILE IMAGE
-        # ---------------------------
         if user.get('profile_image'):
             profile_image_url = url_for('static', filename=f'uploads/{user["profile_image"]}')
+        elif (user.get('gender') or '').lower() == 'male':
+            profile_image_url = url_for('static', filename='m_profile.png')
         else:
-            if user.get('gender','').lower() == 'male':
-                profile_image_url = url_for('static', filename='m_profile.png')
-            else:
-                profile_image_url = url_for('static', filename='f_profile.png')
+            profile_image_url = url_for('static', filename='f_profile.png')
 
-        # ---------------------------
-        # WORDCLOUD
-        # ---------------------------
         cursor.execute("""
-            SELECT c.story 
-            FROM user_history uh
+            SELECT c.story FROM user_history uh
             JOIN contents c ON uh.content_id = c.id
             WHERE uh.user_id = %s
         """, (user_id,))
-        watched_stories = cursor.fetchall()
+        text = " ".join(s['story'] for s in cursor.fetchall() if s.get('story'))
 
-        if watched_stories:
-            text = " ".join([s['story'] for s in watched_stories if s.get('story')])
+        if text.strip():
+            img_dir = os.path.join(app.root_path, 'static', 'img')
+            os.makedirs(img_dir, exist_ok=True)
+            WordCloud(width=800, height=400, background_color='black',
+                      colormap='Reds').generate(text).to_file(
+                os.path.join(img_dir, f'wordcloud_{user_id}.png'))
+            wordcloud_img = url_for('static', filename=f'img/wordcloud_{user_id}.png')
 
-            if text.strip():
-                wordcloud = WordCloud(width=800, height=400,
-                                      background_color='black',
-                                      colormap='Reds').generate(text)
-
-                path = os.path.join(app.root_path, 'static', 'img', f'wordcloud_{user_id}.png')
-                wordcloud.to_file(path)
-
-                wordcloud_img = url_for('static', filename=f'img/wordcloud_{user_id}.png')
-
-        # ---------------------------
-        # TOP WATCHED (WITH THUMBNAIL 🔥)
-        # ---------------------------
         cursor.execute("""
             SELECT c.title, c.thumbnail, COUNT(*) as views
-            FROM user_history uh
-            JOIN contents c ON uh.content_id = c.id
+            FROM user_history uh JOIN contents c ON uh.content_id = c.id
             WHERE uh.user_id = %s
-            GROUP BY c.id
-            ORDER BY views DESC
-            LIMIT 5
+            GROUP BY c.id, c.title, c.thumbnail
+            ORDER BY views DESC LIMIT 5
         """, (user_id,))
         watch_time_data = cursor.fetchall()
 
-        # ---------------------------
-        # RECENT CONTENTS
-        # ---------------------------
         cursor.execute("""
             SELECT c.title, c.thumbnail
-            FROM user_history uh
-            JOIN contents c ON uh.content_id = c.id
+            FROM user_history uh JOIN contents c ON uh.content_id = c.id
             WHERE uh.user_id = %s
-            ORDER BY uh.watched_at DESC
-            LIMIT 6
+            ORDER BY uh.watched_at DESC LIMIT 6
         """, (user_id,))
         recent_contents = cursor.fetchall()
 
+        return render_template('user_wordcloud.html', user=user, wordcloud_img=wordcloud_img,
+                               profile_image_url=profile_image_url,
+                               watch_time_data=watch_time_data,
+                               recent_contents=recent_contents)
     except Exception as e:
         flash(f'Error: {e}', 'danger')
         return redirect(url_for('admin_users'))
-
     finally:
         conn.close()
 
-    return render_template(
-        'user_wordcloud.html',
-        user=user,
-        wordcloud_img=wordcloud_img,
-        profile_image_url=profile_image_url,
-        watch_time_data=watch_time_data,
-        recent_contents=recent_contents
-    )
 
-
-
-
-
-import re
-import uuid
-from urllib.parse import urlparse, parse_qs
+CONTENT_TEXT_FIELDS = [
+    'hero', 'hero_caste', 'hero2', 'hero2_caste', 'hero3', 'hero3_caste',
+    'heroine', 'heroine_caste', 'heroine2', 'heroine2_caste', 'heroine3', 'heroine3_caste',
+    'director', 'comedian', 'comedian_caste', 'producer', 'producer_caste',
+]
+CONTENT_IMAGE_FIELDS = [
+    'hero_image', 'hero2_image', 'hero3_image',
+    'heroine_image', 'heroine2_image', 'heroine3_image',
+    'director_image', 'comedian_image', 'producer_image',
+]
 
 
 @app.route('/admin/upload', methods=['GET', 'POST'])
+@admin_required
 def upload_content():
-    if 'loggedin' not in session or session.get('user_type') != 'admin':
-        flash('Please log in as an admin to access this page.', 'danger')
-        return redirect(url_for('login'))
-
     if request.method == 'GET':
         return render_template('upload_content.html')
 
@@ -1187,230 +983,85 @@ def upload_content():
     saved_files = []
 
     try:
-        # 1. Read form fields
         title = request.form.get('title', '').strip()
         story = request.form.get('story', '').strip()
-        language = request.form.get('language', '').strip()
         content_type = request.form.get('content_type', '').strip()
-        genre = request.form.get('genre', '').strip()
-        backdrop_url = request.form.get('backdrop_url', '').strip() or None
-
         if not title or not story or not content_type:
             flash('Title, story and content type are required.', 'danger')
             return redirect(request.url)
 
-        # 2. Validate and extract YouTube video ID
-        youtube_url = request.form.get('youtube_url', '').strip()
-        video_id = ''
-
-        try:
-            parsed = urlparse(youtube_url)
-            host = (parsed.hostname or '').lower()
-            host = host.removeprefix('www.')
-
-            if parsed.scheme in ('http', 'https'):
-                if host in ('youtube.com', 'm.youtube.com', 'music.youtube.com'):
-                    if parsed.path == '/watch':
-                        video_id = parse_qs(parsed.query).get('v', [''])[0]
-                    elif parsed.path.startswith(('/embed/', '/shorts/', '/live/')):
-                        video_id = parsed.path.split('/')[2]
-
-                elif host == 'youtu.be':
-                    video_id = parsed.path.strip('/').split('/')[0]
-
-            if not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
-                video_id = ''
-
-        except (ValueError, IndexError, AttributeError):
-            video_id = ''
-
+        video_id = extract_youtube_id(request.form.get('youtube_url', ''))
         if not video_id:
             flash('Invalid YouTube URL. Please enter a valid video link.', 'danger')
             return redirect(request.url)
 
-        # 3. Read numeric fields safely
         def optional_int(field, default=None):
             value = request.form.get(field, '').strip()
-            if not value:
-                return default
-            return int(value)
+            return default if not value else int(value)
 
-        release_year = optional_int('release_year')
-        trending_rank = optional_int('trending_rank', 0)
-        deepflix_rank = optional_int('deepflix_rank', 0)
+        try:
+            release_year = optional_int('release_year')
+            trending_rank = optional_int('trending_rank', 0)
+            deepflix_rank = optional_int('deepflix_rank', 0)
+        except ValueError:
+            flash('Year and rank fields must be whole numbers.', 'danger')
+            return redirect(request.url)
 
         if trending_rank < 0 or deepflix_rank < 0:
             flash('Rank values cannot be negative.', 'danger')
             return redirect(request.url)
 
-        is_90s = 1 if request.form.get('is_90s') else 0
-        is_kids = 1 if request.form.get('is_kids') else 0
+        record = {
+            'title': title,
+            'story': story,
+            'language': request.form.get('language', '').strip(),
+            'release_year': release_year,
+            'content_type': content_type,
+            'genre': request.form.get('genre', '').strip(),
+            'youtube_video_id': video_id,
+            'backdrop_url': request.form.get('backdrop_url', '').strip() or None,
+            'trending_rank': trending_rank,
+            'deepflix_rank': deepflix_rank,
+            'is_90s': 1 if request.form.get('is_90s') else 0,
+            'is_kids': 1 if request.form.get('is_kids') else 0,
+        }
+        for field in CONTENT_TEXT_FIELDS:
+            record[field] = request.form.get(field, '').strip()
 
-        # 4. Save uploaded images using unique filenames
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        name, path = save_image_file(request.files.get('thumbnail'))
+        if not name:
+            raise ValueError('Please select a thumbnail image.')
+        saved_files.append(path)
+        record['thumbnail'] = name
 
-        def save_image(field, required=False):
-            image_file = request.files.get(field)
+        for field in CONTENT_IMAGE_FIELDS:
+            name, path = save_image_file(request.files.get(field))
+            record[field] = name or ''
+            if path:
+                saved_files.append(path)
 
-            if not image_file or not image_file.filename:
-                if required:
-                    raise ValueError('Please select a thumbnail image.')
-                return ''
-
-            if not allowed_file(image_file.filename):
-                raise ValueError(
-                    f'Unsupported image format for {field}. '
-                    'Please use an allowed image file.'
-                )
-
-            safe_name = secure_filename(image_file.filename)
-            if not safe_name:
-                raise ValueError(f'Invalid filename for {field}.')
-
-            extension = os.path.splitext(safe_name)[1].lower()
-            unique_name = f'{uuid.uuid4().hex}{extension}'
-            destination = os.path.join(
-                app.config['UPLOAD_FOLDER'], unique_name
-            )
-
-            image_file.save(destination)
-            saved_files.append(destination)
-            return unique_name
-
-        thumbnail_name = save_image('thumbnail', required=True)
-
-        hero_image_name = save_image('hero_image')
-        hero2_image_name = save_image('hero2_image')
-        hero3_image_name = save_image('hero3_image')
-
-        heroine_image_name = save_image('heroine_image')
-        heroine2_image_name = save_image('heroine2_image')
-        heroine3_image_name = save_image('heroine3_image')
-
-        director_image_name = save_image('director_image')
-        comedian_image_name = save_image('comedian_image')
-        producer_image_name = save_image('producer_image')
-
-        # 5. Connect to the existing database
         conn = get_connection()
         if conn is None:
             raise RuntimeError('Database connection could not be created.')
-
         cursor = conn.cursor()
 
-        # 6. Keep the selected Deepflix rank unique
         if deepflix_rank > 0:
-            cursor.execute(
-                """
-                UPDATE contents
-                SET deepflix_rank = 0
-                WHERE deepflix_rank = %s
-                """,
-                (deepflix_rank,)
-            )
+            cursor.execute("UPDATE contents SET deepflix_rank = 0 WHERE deepflix_rank = %s",
+                           (deepflix_rank,))
 
-        # 7. Insert content using the existing database columns
+        columns = list(record)  # hard-coded keys only
         cursor.execute(
-            """
-            INSERT INTO contents (
-                title, story, language, release_year, content_type, genre,
-
-                hero, hero_caste, hero_image,
-                hero2, hero2_caste, hero2_image,
-                hero3, hero3_caste, hero3_image,
-
-                heroine, heroine_caste, heroine_image,
-                heroine2, heroine2_caste, heroine2_image,
-                heroine3, heroine3_caste, heroine3_image,
-
-                director, director_image,
-                comedian, comedian_caste, comedian_image,
-                producer, producer_caste, producer_image,
-
-                youtube_video_id, thumbnail, backdrop_url,
-                trending_rank, deepflix_rank, is_90s, is_kids
-            )
-            VALUES (
-                %s, %s, %s, %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s, %s
-            )
-            """,
-            (
-                title, story, language, release_year, content_type, genre,
-
-                request.form.get('hero', '').strip(),
-                request.form.get('hero_caste', '').strip(),
-                hero_image_name,
-
-                request.form.get('hero2', '').strip(),
-                request.form.get('hero2_caste', '').strip(),
-                hero2_image_name,
-
-                request.form.get('hero3', '').strip(),
-                request.form.get('hero3_caste', '').strip(),
-                hero3_image_name,
-
-                request.form.get('heroine', '').strip(),
-                request.form.get('heroine_caste', '').strip(),
-                heroine_image_name,
-
-                request.form.get('heroine2', '').strip(),
-                request.form.get('heroine2_caste', '').strip(),
-                heroine2_image_name,
-
-                request.form.get('heroine3', '').strip(),
-                request.form.get('heroine3_caste', '').strip(),
-                heroine3_image_name,
-
-                request.form.get('director', '').strip(),
-                director_image_name,
-
-                request.form.get('comedian', '').strip(),
-                request.form.get('comedian_caste', '').strip(),
-                comedian_image_name,
-
-                request.form.get('producer', '').strip(),
-                request.form.get('producer_caste', '').strip(),
-                producer_image_name,
-
-                video_id,
-                thumbnail_name,
-                backdrop_url,
-                trending_rank,
-                deepflix_rank,
-                is_90s,
-                is_kids
-            )
-        )
-
+            f"INSERT INTO contents ({', '.join(columns)}) "
+            f"VALUES ({', '.join(['%s'] * len(columns))})",
+            tuple(record[c] for c in columns))
         content_id = cursor.lastrowid
 
-        # 8. Create notification
         cursor.execute(
-            """
-            INSERT INTO notifications (title, message, content_id)
-            VALUES (%s, %s, %s)
-            """,
-            (
-                'New Content Added',
-                f'{title} is now available to watch!',
-                content_id
-            )
-        )
+            "INSERT INTO notifications (title, message, content_id) VALUES (%s, %s, %s)",
+            ('New Content Added', f'{title} is now available to watch!', content_id))
 
         conn.commit()
         saved_files.clear()
-
         flash('Content uploaded successfully!', 'success')
         return redirect(url_for('admin_dashboard'))
 
@@ -1419,1046 +1070,381 @@ def upload_content():
             conn.rollback()
         flash(str(e), 'danger')
         return redirect(request.url)
-
     except Exception:
         if conn:
             conn.rollback()
-
         app.logger.exception('Content upload failed')
-
-        flash(
-            'Upload failed. Please check the application logs and database connection.',
-            'danger'
-        )
+        flash('Upload failed. Please check the application logs and database connection.', 'danger')
         return redirect(request.url)
-
     finally:
         if cursor:
             cursor.close()
-
         if conn:
             conn.close()
-
-        # Remove uploaded files if the database insert failed
-        for path in saved_files:
+        for path in saved_files:  # remove files if DB insert failed
             try:
                 if os.path.isfile(path):
                     os.remove(path)
             except OSError:
                 app.logger.warning('Could not remove temporary upload: %s', path)
-    
+
+
 @app.route('/admin/upload_csv', methods=['GET', 'POST'])
+@admin_required
 def upload_csv():
+    if request.method == 'GET':
+        return render_template('upload_csv.html')
 
-    if 'loggedin' not in session or session.get('user_type') != 'admin':
-        flash('Please log in as admin', 'danger')
-        return redirect(url_for('login'))
+    if 'csv_file' not in request.files:
+        flash('No file selected', 'danger')
+        return redirect(request.url)
+    file = request.files['csv_file']
+    if file.filename == '':
+        flash('No selected file', 'danger')
+        return redirect(request.url)
+    if not file.filename.lower().endswith('.csv'):
+        flash('Only CSV allowed', 'danger')
+        return redirect(request.url)
 
-    if request.method == 'POST':
+    conn = None
+    cursor = None
+    try:
+        import pandas as pd
 
-        if 'csv_file' not in request.files:
-            flash('No file selected', 'danger')
-            return redirect(request.url)
+        df = pd.read_csv(io.StringIO(file.stream.read().decode('utf-8-sig')))
 
-        file = request.files['csv_file']
+        def val(row, key):
+            v = row.get(key)
+            return None if v is None or pd.isna(v) else v
 
-        if file.filename == '':
-            flash('No selected file', 'danger')
-            return redirect(request.url)
+        def as_int(row, key, default=0):
+            v = val(row, key)
+            return default if v is None else int(v)
 
-        if not file.filename.endswith('.csv'):
-            flash('Only CSV allowed', 'danger')
-            return redirect(request.url)
+        def as_flag(row, key):
+            return 1 if str(val(row, key)).strip().lower() in ('true', '1', 'yes', 'y') else 0
 
-        try:
-            import pandas as pd
-            import io
+        conn = get_connection()
+        if conn is None:
+            raise RuntimeError('Database connection failed')
+        cursor = conn.cursor()
 
-            csv_data = file.stream.read().decode('utf-8')
-            df = pd.read_csv(io.StringIO(csv_data))
+        success = failed = 0
+        text_cols = ['title', 'story', 'language', 'content_type', 'genre', 'thumbnail',
+                     'backdrop_url'] + CONTENT_TEXT_FIELDS + CONTENT_IMAGE_FIELDS
 
-            conn = get_connection()
-            cursor = conn.cursor()
-
-            success = 0
-            failed = 0
-
-            for index, row in df.iterrows():
-                try:
-                    # -------------------------
-                    # BASIC FIELDS
-                    # -------------------------
-                    title = row.get('title')
-                    story = row.get('story')
-                    language = row.get('language')
-                    release_year = int(row.get('release_year')) if pd.notna(row.get('release_year')) else None
-                    content_type = row.get('content_type')
-                    genre = row.get('genre')
-
-                    youtube_url = str(row.get('youtube_url')) if pd.notna(row.get('youtube_url')) else ""
-                    thumbnail = row.get('thumbnail')
-
-                    # -------------------------
-                    # HEROES
-                    # -------------------------
-                    hero = row.get('hero')
-                    hero_caste = row.get('hero_caste')
-                    hero_image = row.get('hero_image')
-
-                    hero2 = row.get('hero2')
-                    hero2_caste = row.get('hero2_caste')
-                    hero2_image = row.get('hero2_image')
-
-                    hero3 = row.get('hero3')
-                    hero3_caste = row.get('hero3_caste')
-                    hero3_image = row.get('hero3_image')
-
-                    # -------------------------
-                    # HEROINES
-                    # -------------------------
-                    heroine = row.get('heroine')
-                    heroine_caste = row.get('heroine_caste')
-                    heroine_image = row.get('heroine_image')
-
-                    heroine2 = row.get('heroine2')
-                    heroine2_caste = row.get('heroine2_caste')
-                    heroine2_image = row.get('heroine2_image')
-
-                    heroine3 = row.get('heroine3')
-                    heroine3_caste = row.get('heroine3_caste')
-                    heroine3_image = row.get('heroine3_image')
-
-                    # -------------------------
-                    # DIRECTOR
-                    # -------------------------
-                    director = row.get('director')
-                    director_image = row.get('director_image')
-
-                    # -------------------------
-                    # RANKS & FLAGS
-                    # -------------------------
-                    trending_rank = int(row.get('trending_rank')) if pd.notna(row.get('trending_rank')) else 0
-                    deepflix_rank = int(row.get('deepflix_rank')) if pd.notna(row.get('deepflix_rank')) else 0
-
-                    is_90s = 1 if str(row.get('is_90s')).lower() == 'true' else 0
-                    is_kids = 1 if str(row.get('is_kids')).lower() == 'true' else 0
-
-                    # -------------------------
-                    # YOUTUBE ID EXTRACT
-                    # -------------------------
-                    video_id = ""
-
-                    if "youtube.com/watch?v=" in youtube_url:
-                        video_id = youtube_url.split("watch?v=")[1].split("&")[0]
-                    elif "youtu.be/" in youtube_url:
-                        video_id = youtube_url.split("youtu.be/")[1].split("?")[0]
-
-                    if not video_id:
-                        failed += 1
-                        continue
-
-                    # -------------------------
-                    # HANDLE RANK CONFLICT
-                    # -------------------------
-                    if deepflix_rank > 0:
-                        cursor.execute("""
-                            UPDATE contents
-                            SET deepflix_rank = 0
-                            WHERE deepflix_rank = %s
-                        """, (deepflix_rank,))
-
-                    # -------------------------
-                    # INSERT FULL DATA
-                    # -------------------------
-                    cursor.execute("""
-                        INSERT INTO contents (
-                            title, story, language, release_year, content_type, genre,
-
-                            hero, hero_caste, hero_image,
-                            hero2, hero2_caste, hero2_image,
-                            hero3, hero3_caste, hero3_image,
-
-                            heroine, heroine_caste, heroine_image,
-                            heroine2, heroine2_caste, heroine2_image,
-                            heroine3, heroine3_caste, heroine3_image,
-
-                            director, director_image,
-
-                            youtube_video_id, thumbnail,
-
-                            trending_rank, deepflix_rank,
-                            is_90s, is_kids
-                        )
-                        VALUES (%s,%s,%s,%s,%s,%s,
-                                %s,%s,%s,
-                                %s,%s,%s,
-                                %s,%s,%s,
-                                %s,%s,%s,
-                                %s,%s,%s,
-                                %s,%s,%s,
-                                %s,%s,
-                                %s,%s,
-                                %s,%s,%s,%s)
-                    """, (
-                        title, story, language, release_year, content_type, genre,
-
-                        hero, hero_caste, hero_image,
-                        hero2, hero2_caste, hero2_image,
-                        hero3, hero3_caste, hero3_image,
-
-                        heroine, heroine_caste, heroine_image,
-                        heroine2, heroine2_caste, heroine2_image,
-                        heroine3, heroine3_caste, heroine3_image,
-
-                        director, director_image,
-
-                        video_id, thumbnail,
-
-                        trending_rank, deepflix_rank,
-                        is_90s, is_kids
-                    ))
-
-                    content_id = cursor.lastrowid
-
-                    # -------------------------
-                    # NOTIFICATION
-                    # -------------------------
-                    cursor.execute("""
-                        INSERT INTO notifications (title, message, content_id)
-                        VALUES (%s,%s,%s)
-                    """, (
-                        "New Content Added",
-                        f"{title} is now available!",
-                        content_id
-                    ))
-
-                    success += 1
-
-                except Exception as row_error:
-                    print(f"Row {index} error:", row_error)
+        for index, row in df.iterrows():
+            try:
+                youtube_url = str(val(row, 'youtube_url') or '')
+                video_id = extract_youtube_id(youtube_url)
+                if not video_id or not val(row, 'title') or not val(row, 'story') \
+                        or not val(row, 'content_type'):
                     failed += 1
+                    continue
 
-            conn.commit()
+                record = {c: val(row, c) for c in text_cols}
+                record['release_year'] = as_int(row, 'release_year', None)
+                record['youtube_video_id'] = video_id
+                record['trending_rank'] = as_int(row, 'trending_rank')
+                record['deepflix_rank'] = as_int(row, 'deepflix_rank')
+                record['is_90s'] = as_flag(row, 'is_90s')
+                record['is_kids'] = as_flag(row, 'is_kids')
 
-            flash(f"CSV Upload Done ✅ {success} success, {failed} failed", "success")
-            return redirect(url_for('admin_dashboard'))
+                if record['deepflix_rank'] > 0:
+                    cursor.execute("UPDATE contents SET deepflix_rank = 0 WHERE deepflix_rank = %s",
+                                   (record['deepflix_rank'],))
 
-        except Exception as e:
-            flash(f"Error: {str(e)}", "danger")
-            return redirect(request.url)
+                columns = list(record)
+                cursor.execute(
+                    f"INSERT INTO contents ({', '.join(columns)}) "
+                    f"VALUES ({', '.join(['%s'] * len(columns))})",
+                    tuple(record[c] for c in columns))
+                content_id = cursor.lastrowid
 
-        finally:
+                cursor.execute(
+                    "INSERT INTO notifications (title, message, content_id) VALUES (%s,%s,%s)",
+                    ("New Content Added", f"{record['title']} is now available!", content_id))
+                success += 1
+            except Exception as row_error:
+                print(f"CSV row {index} error:", row_error)
+                failed += 1
+
+        conn.commit()
+        flash(f"CSV Upload Done ✅ {success} success, {failed} failed", "success")
+        return redirect(url_for('admin_dashboard'))
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(request.url)
+    finally:
+        if cursor:
             cursor.close()
+        if conn:
             conn.close()
 
-    return render_template('upload_csv.html')
+
 @app.route('/admin/train_model', methods=['POST'])
+@admin_required
 def train_model():
-
-    # 🔐 ADMIN CHECK
-    if 'loggedin' not in session or session.get('user_type') != 'admin':
-        flash('Please login as admin', 'danger')
-        return redirect(url_for('login'))
-
     conn = get_connection()
-
     if not conn:
         flash("Database connection error", 'danger')
         return redirect(url_for('admin_dashboard'))
 
     try:
-        # ===============================
-        # 🚀 RUN TRAIN SCRIPT
-        # ===============================
-        script_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), 'train_model.py')
-        )
+        script_path = os.path.join(BASE_DIR, 'train_model.py')
+        if not os.path.isfile(script_path):
+            flash('❌ train_model.py not found.', 'danger')
+            return redirect(url_for('admin_dashboard'))
 
         result = subprocess.run(
-            ['python', script_path],
-            capture_output=True,
-            text=True,
-            cwd=os.path.dirname(__file__)
-        )
-
+            [sys.executable, script_path],
+            capture_output=True, text=True, cwd=BASE_DIR,
+            timeout=int(os.getenv('TRAIN_TIMEOUT', '1800')))
         print("STDOUT:", result.stdout)
         print("STDERR:", result.stderr)
 
-        # ❌ TRAIN FAILED
         if result.returncode != 0:
-            flash('❌ Training failed! Check console.', 'danger')
+            flash('❌ Training failed! Check the server logs.', 'danger')
             return redirect(url_for('admin_dashboard'))
 
-        # ===============================
-        # 🎯 GENERATE ACCURACY
-        # ===============================
-        accuracy = round(random.uniform(80, 95), 2)
-
-        # ===============================
-        # 💾 SAVE TO DATABASE (SAFE)
-        # ===============================
-        with conn.cursor() as cursor:
-
-            try:
-                # Try inserting with accuracy
-                cursor.execute(
-                    "INSERT INTO model_status (trained_at, accuracy) VALUES (%s, %s)",
-                    (datetime.now(), accuracy)
-                )
-
-            except Exception:
-                # If accuracy column not exists, fallback
-                cursor.execute(
-                    "INSERT INTO model_status (trained_at) VALUES (%s)",
-                    (datetime.now(),)
-                )
-
-        conn.commit()  # ✅ VERY IMPORTANT
-
-        # ===============================
-        # 🔄 RELOAD MODEL
-        # ===============================
+        # Real accuracy from the metrics file written by train_model.py (no random numbers)
+        accuracy = None
         try:
-            load_nlp_model()
+            with open(METRICS_FILE, 'r') as f:
+                metrics = json.load(f)
+            series = metrics.get('val_accuracy') or metrics.get('accuracy') or []
+            if series:
+                accuracy = float(series[-1])
+                if accuracy <= 1:
+                    accuracy *= 100
+                accuracy = round(accuracy, 2)
         except Exception as e:
-            print("Model reload error:", e)
+            print("Could not read metrics:", e)
 
-        flash(f'✅ Model trained successfully! Accuracy: {accuracy}%', 'success')
+        with conn.cursor() as cursor:
+            cursor.execute("INSERT INTO model_status (trained_at, accuracy) VALUES (%s, %s)",
+                           (datetime.now(), accuracy))
+        conn.commit()
 
+        threading.Thread(target=load_nlp_model, kwargs={'force': True}, daemon=True).start()
+
+        msg = f' Accuracy: {accuracy}%' if accuracy is not None else ''
+        flash(f'✅ Model trained successfully!{msg}', 'success')
+
+    except subprocess.TimeoutExpired:
+        flash('❌ Training timed out.', 'danger')
     except Exception as e:
         flash(f'❌ Error: {e}', 'danger')
-
     finally:
         conn.close()
 
     return redirect(url_for('admin_dashboard'))
-# --- NEW: Route for the analysis page ---
+
+
 @app.route('/admin/analysis')
+@admin_required
 def admin_analysis():
-    """
-    Displays model analysis graphs for the admin.
-    """
-    if 'loggedin' in session and session['user_type'] == 'admin':
-        # Paths to the analysis images
-        accuracy_loss_img = url_for('static', filename='img/accuracy_loss.png')
-        confusion_matrix_img = url_for('static', filename='img/confusion_matrix.png')
-        
-        # Check if files exist to avoid broken links
-        if not os.path.exists(os.path.join(app.root_path, accuracy_loss_img[1:])):
-            accuracy_loss_img = None
-        if not os.path.exists(os.path.join(app.root_path, confusion_matrix_img[1:])):
-            confusion_matrix_img = None
-        
-        return render_template('analysis.html', 
-                               accuracy_loss_img=accuracy_loss_img, 
-                               confusion_matrix_img=confusion_matrix_img)
-    else:
-        flash('Please log in as an admin to access this page.', 'danger')
-        return redirect(url_for('login'))
+    def existing(rel):
+        return url_for('static', filename=rel) if os.path.exists(
+            os.path.join(app.root_path, 'static', rel)) else None
+
+    return render_template('analysis.html',
+                           accuracy_loss_img=existing('img/accuracy_loss.png'),
+                           confusion_matrix_img=existing('img/confusion_matrix.png'))
 
 
+@app.route('/admin/edit/<int:content_id>', methods=['GET', 'POST'])
+@admin_required
+def edit_content(content_id):
+    conn = None
+    new_files = []
+    try:
+        conn = get_connection()
+        if not conn:
+            flash("Database connection failed!", "danger")
+            return redirect(url_for('admin_dashboard'))
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+        content = cursor.fetchone()
+        if not content:
+            flash("Content not found!", "danger")
+            return redirect(url_for('admin_dashboard'))
+
+        if request.method == 'GET':
+            return render_template('edit_content.html', content=content)
+
+        form = request.form
+        release_year = int(form.get('release_year')) if form.get('release_year') else None
+        trending_rank = int(form.get('trending_rank') or 0)
+        deepflix_rank = int(form.get('deepflix_rank') or 0)
+
+        youtube_input = form.get('youtube_video_id', '').strip()
+        youtube_video_id = (extract_youtube_id(youtube_input) or youtube_input) \
+            if youtube_input else content.get('youtube_video_id')
+
+        upload_date = form.get('upload_date') or content.get('upload_date')
+
+        fields = {
+            'title': form.get('title'),
+            'story': form.get('story'),
+            'language': form.get('language'),
+            'release_year': release_year,
+            'content_type': form.get('content_type'),
+            'genre': form.get('genre'),
+            'hero': form.get('hero'), 'hero2': form.get('hero2'), 'hero3': form.get('hero3'),
+            'heroine': form.get('heroine'), 'heroine2': form.get('heroine2'),
+            'heroine3': form.get('heroine3'),
+            'director': form.get('director'), 'comedian': form.get('comedian'),
+            'producer': form.get('producer'),
+            'upload_date': upload_date,
+            'trending_rank': trending_rank,
+            'deepflix_rank': deepflix_rank,
+            'youtube_video_id': youtube_video_id,
+            'is_90s': 1 if form.get('is_90s') else 0,
+            'backdrop_url': form.get('backdrop_url', '').strip() or content.get('backdrop_url'),
+        }
+
+        for field in ['thumbnail'] + CONTENT_IMAGE_FIELDS:
+            name, path = save_image_file(request.files.get(field))
+            if name:
+                fields[field] = name
+                new_files.append(path)
+
+        if deepflix_rank > 0:
+            cursor.execute("UPDATE contents SET deepflix_rank=0 WHERE deepflix_rank=%s AND id!=%s",
+                           (deepflix_rank, content_id))
+
+        columns = list(fields)  # hard-coded keys only
+        cursor.execute(
+            f"UPDATE contents SET {', '.join(c + '=%s' for c in columns)} WHERE id=%s",
+            tuple(fields[c] for c in columns) + (content_id,))
+        conn.commit()
+        new_files.clear()
+
+        flash("Content updated successfully!", "success")
+        return redirect(url_for('admin_dashboard'))
+
+    except Exception as e:
+        print("EDIT ERROR:", e)
+        if conn:
+            conn.rollback()
+        flash(f"Error updating content: {str(e)}", "danger")
+        return redirect(url_for('admin_dashboard'))
+    finally:
+        if conn:
+            conn.close()
+        for path in new_files:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+@app.route('/admin/delete/<int:content_id>')
+@admin_required
+def delete_content(content_id):
+    conn = get_connection()
+    if not conn:
+        flash("Database connection failed!", "danger")
+        return redirect(url_for('admin_dashboard'))
+    try:
+        with conn.cursor() as cursor:
+            # remove rows that reference this content first (foreign keys)
+            for table in ('ratings', 'reviews', 'likes', 'user_hearts', 'user_history',
+                          'continue_watching', 'notifications'):
+                safe_delete(cursor, table, 'content_id', content_id)
+            cursor.execute("DELETE FROM contents WHERE id=%s", (content_id,))
+        conn.commit()
+        flash("Content deleted successfully!", "danger")
+    except Exception as e:
+        conn.rollback()
+        flash(f"Delete failed: {str(e)}", "danger")
+    finally:
+        conn.close()
+    return redirect(url_for('admin_dashboard'))
+
+
+# =========================================================
+# ROUTES: AUTH + PROFILES
+# =========================================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-
     if request.method == 'POST':
-
-        username = request.form['username']
-        password = request.form['password']
-        user_type = request.form['user_type']
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user_type = request.form.get('user_type', 'user')
 
         conn = get_connection()
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        if not conn:
+            flash("Database connection error. Try again in a moment.", "danger")
+            return render_template("login.html")
 
         try:
+            with conn.cursor() as cursor:
+                table = "admins" if user_type == "admin" else "users"
+                cursor.execute(f"SELECT * FROM {table} WHERE username=%s", (username,))
+                user = cursor.fetchone()
 
-            # Admin or User table select
-            table = "admins" if user_type == "admin" else "users"
-
-            cursor.execute(
-                f"SELECT * FROM {table} WHERE username=%s",
-                (username,)
-            )
-
-            user = cursor.fetchone()
-
-            # PASSWORD CHECK
             if user and check_password_hash(user['password'], password):
-
-                # SESSION START
+                session.clear()
                 session['loggedin'] = True
                 session['user_id'] = user['id']
                 session['username'] = user['username']
 
-                # ADMIN LOGIN
                 if table == "admins":
-
                     session['user_type'] = "admin"
                     return redirect(url_for('admin_dashboard'))
 
-                # USER LOGIN
-                else:
+                session['user_type'] = "user"
+                return redirect(url_for('watch_based'))
 
-                    session['user_type'] = "user"
-
-                    # PROFILE SELECT PAGE
-                    return redirect(url_for('watch_based'))
-
-            else:
-
-                flash("Invalid username or password", "danger")
-
+            flash("Invalid username or password", "danger")
         finally:
-            cursor.close()
             conn.close()
 
     return render_template("login.html")
-# ===============================
-# PROFILE SELECT PAGE
-# ===============================
-# ==========================================
-# WATCH BASED PAGE
-# ==========================================
-@app.route('/watch_based')
-def watch_based():
-
-    if 'loggedin' not in session:
-        return redirect(url_for('login'))
-
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-    # ===============================
-    # MAIN USER
-    # ===============================
-
-    cursor.execute(
-        "SELECT id, username, profile_image, gender FROM users WHERE id=%s",
-        (session['user_id'],)
-    )
-
-    user = cursor.fetchone()
-
-    # ✅ DEFAULT IMAGE LOGIC (🔥 IMPORTANT)
-    if user:
-        if user['profile_image']:
-            user['display_image'] = 'uploads/' + user['profile_image']
-        else:
-            if user['gender'] == 'female':
-                user['display_image'] = 'f_profile.png'
-            else:
-                user['display_image'] = 'm_profile.png'
-
-    # ===============================
-    # EXTRA PROFILES
-    # ===============================
-
-    cursor.execute(
-        "SELECT * FROM user_profiles WHERE user_id=%s",
-        (session['user_id'],)
-    )
-
-    profiles = cursor.fetchall()
-
-    # ===============================
-    # 🔥 DEEPFLIX TOP 15 MOVIES
-    # ===============================
-
-    cursor.execute("""
-        SELECT *
-        FROM contents
-        WHERE deepflix_rank > 0
-        ORDER BY deepflix_rank ASC
-        LIMIT 15
-    """)
-
-    deepflix_top = cursor.fetchall()
-
-    # ✅ ADD THIS BLOCK (🔥 BACKDROP LOGIC)
-    for movie in deepflix_top:
-        if movie.get('backdrop_url'):
-            movie['display_image'] = movie['backdrop_url']
-        else:
-            movie['display_image'] = movie.get('thumbnail_url')  # fallback
-
-    cursor.close()
-    conn.close()
-
-    return render_template(
-        "watch_based.html",
-        user=user,
-        profiles=profiles,
-        deepflix_top=deepflix_top
-    )
-# =========================================================
-# SELECT PROFILE
-# =========================================================
-
-@app.route('/select_profile/<profile>')
-def select_profile(profile):
-
-    # -----------------------------------------
-    # 1. Login validation
-    # -----------------------------------------
-
-    if 'loggedin' not in session or 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    # -----------------------------------------
-    # 2. KIDS PROFILE
-    # -----------------------------------------
-
-    if profile == "kids":
-
-        session['profile_type'] = "kids"
-        session['profile_name'] = "Kids"
-        session['profile_image'] = "kids.png"
-
-        return redirect(url_for('kids_dashboard'))
-
-    # -----------------------------------------
-    # 3. GUEST PROFILE
-    # -----------------------------------------
-
-    if profile == "guest":
-
-        session['profile_type'] = "guest"
-        session['profile_name'] = "Guest"
-        session['profile_image'] = "m_profile.png"
-
-        return redirect(url_for('user_dashboard'))
-
-    conn = None
-    cursor = None
-
-    try:
-
-        conn = get_connection()
-
-        if conn is None:
-            abort(503, description="Database connection unavailable.")
-
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # -----------------------------------------
-        # 4. MAIN USER PROFILE
-        # -----------------------------------------
-
-        if profile == "main":
-
-            cursor.execute(
-                """
-                SELECT username, gender, profile_image
-                FROM users
-                WHERE id = %s
-                LIMIT 1
-                """,
-                (session['user_id'],)
-            )
-
-            user = cursor.fetchone()
-
-            if not user:
-                session.clear()
-                return redirect(url_for('login'))
-
-            session['profile_type'] = "main"
-            session['profile_name'] = user.get('username') or "User"
-
-            gender = (user.get('gender') or '').strip().lower()
-
-            default_image = (
-                'f_profile.png'
-                if gender == 'female'
-                else 'm_profile.png'
-            )
-
-            uploaded_image = user.get('profile_image')
-
-            if uploaded_image:
-
-                image_filename = os.path.basename(
-                    uploaded_image.strip()
-                )
-
-                image_path = os.path.join(
-                    current_app.static_folder,
-                    'uploads',
-                    image_filename
-                )
-
-                if os.path.isfile(image_path):
-                    session['profile_image'] = (
-                        'uploads/' + image_filename
-                    )
-                else:
-                    session['profile_image'] = default_image
-
-            else:
-                session['profile_image'] = default_image
-
-            return redirect(url_for('user_dashboard'))
-
-        # -----------------------------------------
-        # 5. EXTRA PROFILE
-        # -----------------------------------------
-
-        try:
-            extra_profile_id = int(profile)
-        except (TypeError, ValueError):
-            return redirect(url_for('watch_based'))
-
-        cursor.execute(
-            """
-            SELECT name, gender, profile_image
-            FROM user_profiles
-            WHERE id = %s AND user_id = %s
-            LIMIT 1
-            """,
-            (extra_profile_id, session['user_id'])
-        )
-
-        selected_profile = cursor.fetchone()
-
-        # Profile must belong to logged-in user
-        if not selected_profile:
-            return redirect(url_for('watch_based'))
-
-        session['profile_type'] = "extra"
-        session['profile_name'] = (
-            selected_profile.get('name') or "Profile"
-        )
-
-        gender = (
-            selected_profile.get('gender') or ''
-        ).strip().lower()
-
-        default_image = (
-            'f_profile.png'
-            if gender == 'female'
-            else 'm_profile.png'
-        )
-
-        uploaded_image = selected_profile.get('profile_image')
-
-        if uploaded_image:
-
-            image_filename = os.path.basename(
-                uploaded_image.strip()
-            )
-
-            image_path = os.path.join(
-                current_app.static_folder,
-                'uploads',
-                image_filename
-            )
-
-            if os.path.isfile(image_path):
-                session['profile_image'] = (
-                    'uploads/' + image_filename
-                )
-            else:
-                session['profile_image'] = default_image
-
-        else:
-            session['profile_image'] = default_image
-
-        return redirect(url_for('user_dashboard'))
-
-    except Exception as e:
-
-        current_app.logger.exception(
-            "Select Profile Error: %s",
-            e
-        )
-
-        abort(500, description="Unable to select profile.")
-
-    finally:
-
-        if cursor:
-            cursor.close()
-
-        if conn:
-            conn.close()
-# ==========================================
-# ADD PROFILE
-# ==========================================
-
-@app.route('/add_profile', methods=['GET','POST'])
-def add_profile():
-
-    if 'loggedin' not in session:
-        return redirect(url_for('login'))
-
-    if request.method == "POST":
-
-        name = request.form['name']
-        age = request.form['age']
-        gender = request.form['gender']
-
-        conn = get_connection()
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # CHECK PROFILE COUNT
-        cursor.execute(
-            "SELECT COUNT(*) as total FROM user_profiles WHERE user_id=%s",
-            (session['user_id'],)
-        )
-
-        result = cursor.fetchone()
-
-        if result['total'] >= 2:
-
-            cursor.close()
-            conn.close()
-
-            return "Maximum 2 profiles allowed"
-
-        # INSERT PROFILE
-        cursor.execute(
-            "INSERT INTO user_profiles (user_id,name,age,gender) VALUES (%s,%s,%s,%s)",
-            (session['user_id'], name, age, gender)
-        )
-
-        conn.commit()
-
-        cursor.close()
-        conn.close()
-
-        return redirect(url_for('watch_based'))
-
-    return render_template("add_profile.html")
-
-
-# ===============================
-# KIDS DASHBOARD
-# ===============================
-
-
-# =========================================================
-# KIDS DASHBOARD
-# =========================================================
-# =========================================================
-# KIDS DASHBOARD
-# =========================================================
-@app.route('/kids_dashboard', endpoint='kids_dashboard')
-def kids_dashboard():
-
-    # -------------------------------
-    # LOGIN CHECK
-    # -------------------------------
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    user_id = session['user_id']
-
-    # -------------------------------
-    # FILTERS
-    # -------------------------------
-    search_query = request.args.get('search', '')
-    language = request.args.get('language', '')
-    genre = request.args.get('genre', '')
-
-    conn = get_connection()
-
-    if not conn:
-        return "Database connection failed"
-
-    try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # 🎬 ALL KIDS CONTENT
-        # =====================================
-        query = "SELECT * FROM contents WHERE is_kids = 1"
-        params = []
-
-        if search_query:
-            query += " AND title LIKE %s"
-            params.append(f"%{search_query}%")
-
-        if language:
-            query += " AND language = %s"
-            params.append(language)
-
-        if genre:
-            query += " AND genre = %s"
-            params.append(genre)
-
-        query += " ORDER BY release_year DESC"
-
-        cursor.execute(query, params)
-        kids_contents = cursor.fetchall()
-
-        # =====================================
-        # ⏳ CONTINUE WATCHING
-        # =====================================
-        cursor.execute("""
-            SELECT c.*, cw.progress, cw.duration
-            FROM continue_watching cw
-            JOIN contents c ON cw.content_id = c.id
-            WHERE cw.user_id = %s
-              AND c.is_kids = 1
-            ORDER BY cw.last_watched DESC
-            LIMIT 10
-        """, (user_id,))
-        continue_watching = cursor.fetchall()
-
-        # =====================================
-        # 🔥 DEEPFLIX TOP 15
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE deepflix_rank > 0
-              AND is_kids = 1
-            ORDER BY deepflix_rank ASC
-            LIMIT 15
-        """)
-        deepflix_top = cursor.fetchall()
-
-        # =====================================
-        # 🚀 TRENDING (LAST 7 DAYS)
-        # =====================================
-        cursor.execute("""
-            SELECT c.*, COUNT(cw.id) AS watch_count
-            FROM continue_watching cw
-            JOIN contents c ON cw.content_id = c.id
-            WHERE c.is_kids = 1
-              AND cw.last_watched >= NOW() - INTERVAL 7 DAY
-            GROUP BY cw.content_id
-            ORDER BY watch_count DESC
-            LIMIT 7
-        """)
-        trending_kids = cursor.fetchall()
-
-        if not trending_kids:
-            cursor.execute("""
-                SELECT * FROM contents
-                WHERE is_kids = 1
-                ORDER BY release_year DESC
-                LIMIT 7
-            """)
-            trending_kids = cursor.fetchall()
-
-        # =====================================
-        # ⭐ BECAUSE YOU WATCHED
-        # =====================================
-        cursor.execute("""
-            SELECT content_id
-            FROM continue_watching
-            WHERE user_id = %s
-            ORDER BY last_watched DESC
-            LIMIT 1
-        """, (user_id,))
-        last = cursor.fetchone()
-
-        because_you_watched = []
-
-        if last:
-            cursor.execute("""
-                SELECT genre, language FROM contents WHERE id=%s
-            """, (last['content_id'],))
-            last_content = cursor.fetchone()
-
-            if last_content:
-                cursor.execute("""
-                    SELECT *
-                    FROM contents
-                    WHERE is_kids = 1
-                      AND genre = %s
-                      AND id != %s
-                    LIMIT 7
-                """, (last_content['genre'], last['content_id']))
-
-                because_you_watched = cursor.fetchall()
-
-        # =====================================
-        # 🆕 NEW ARRIVALS
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE is_kids = 1
-            ORDER BY upload_date DESC
-            LIMIT 10
-        """)
-        new_arrivals = cursor.fetchall()
-
-        # =====================================
-        # 😂 FUNNY CARTOONS
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE is_kids = 1
-              AND genre LIKE '%Comedy%'
-            LIMIT 10
-        """)
-        funny_kids = cursor.fetchall()
-
-        # =====================================
-        # 🐾 ANIMAL ADVENTURES
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE is_kids = 1
-              AND (title LIKE '%Animal%' OR title LIKE '%Dog%' OR title LIKE '%Cat%')
-            LIMIT 10
-        """)
-        animal_kids = cursor.fetchall()
-
-        # =====================================
-        # 🌍 LANGUAGE SECTION (TAMIL)
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE is_kids = 1
-              AND language = 'Tamil'
-            LIMIT 10
-        """)
-        tamil_kids = cursor.fetchall()
-
-        # =====================================
-        # 🔔 KIDS NOTIFICATIONS ONLY
-        # =====================================
-        cursor.execute("""
-            SELECT n.*, c.title AS content_title
-            FROM notifications n
-            LEFT JOIN contents c ON n.content_id = c.id
-            WHERE n.user_id = %s
-              AND n.is_kids = 1
-            ORDER BY n.created_at DESC
-            LIMIT 10
-        """, (user_id,))
-        kids_notifications = cursor.fetchall()
-
-        # =====================================
-        # 🎯 RENDER
-        # =====================================
-        return render_template(
-            "kids_dashboard.html",
-            kids_contents=kids_contents,
-            continue_watching=continue_watching,
-            deepflix_top=deepflix_top,
-            trending_kids=trending_kids,
-            because_you_watched=because_you_watched,
-            new_arrivals=new_arrivals,
-            funny_kids=funny_kids,
-            animal_kids=animal_kids,
-            tamil_kids=tamil_kids,
-            kids_notifications=kids_notifications,
-            search_query=search_query,
-            selected_language=language,
-            selected_genre=genre
-        )
-
-    except Exception as e:
-        print("KIDS DASHBOARD ERROR:", e)
-        return "Something went wrong"
-
-    finally:
-        conn.close()
-# =========================================================
-# KIDS SEARCH
-# =========================================================
-@app.route('/kids_search')
-def kids_search():
-
-    # -------------------------------
-    # LOGIN CHECK
-    # -------------------------------
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    search_query = request.args.get("q", "").strip()
-
-    conn = get_connection()
-
-    if not conn:
-        return "Database connection failed"
-
-    try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # -------------------------------
-        # SEARCH QUERY
-        # -------------------------------
-        sql = """
-            SELECT *
-            FROM contents
-            WHERE is_kids = 1
-            AND (
-                title LIKE %s OR
-                genre LIKE %s OR
-                language LIKE %s OR
-                hero LIKE %s OR
-                heroine LIKE %s OR
-                director LIKE %s
-            )
-            ORDER BY release_year DESC
-        """
-
-        like_value = f"%{search_query}%"
-
-        cursor.execute(sql, (
-            like_value,
-            like_value,
-            like_value,
-            like_value,
-            like_value,
-            like_value
-        ))
-
-        kids_contents = cursor.fetchall()
-
-        return render_template(
-            "kids_dashboard.html",
-            kids_contents=kids_contents,
-            continue_watching=[],   # avoid error in template
-            deepflix_top=[],
-            trending=[],
-            search_query=search_query
-        )
-
-    except Exception as e:
-        print("KIDS SEARCH ERROR:", e)
-        return "Search failed"
-
-    finally:
-        if conn:
-            conn.close()
-
 
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        fav_genre = request.form['fav_genre']
-        fav_language = request.form['fav_language']
-        age = int(request.form['age'])   # convert to integer
-        gender = request.form['gender']
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        fav_genre = request.form.get('fav_genre', '')
+        fav_language = request.form.get('fav_language', '')
+        gender = request.form.get('gender', 'Other')
+        try:
+            age = int(request.form.get('age', ''))
+        except ValueError:
+            flash('Please enter a valid age.', 'danger')
+            return redirect(url_for('register'))
 
-        # Age restriction check
         if age < 18:
             flash('Age Restricted! Only 18+ users can register.', 'danger')
             return redirect(url_for('register'))
+        if not username or not password:
+            flash('Username and password are required.', 'danger')
+            return redirect(url_for('register'))
 
         conn = get_connection()
+        if not conn:
+            flash('Database connection error.', 'danger')
+            return redirect(url_for('register'))
         try:
             with conn.cursor() as cursor:
-                hashed = generate_password_hash(password)
                 cursor.execute(
-                    "INSERT INTO users (username, password, fav_genre, fav_language, age, gender) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (username, hashed, fav_genre, fav_language, age, gender)
-                )
+                    "INSERT INTO users (username, password, fav_genre, fav_language, age, gender) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (username, generate_password_hash(password), fav_genre, fav_language, age, gender))
             conn.commit()
             flash('Registration successful!', 'success')
             return redirect(url_for('login'))
+        except pymysql.err.IntegrityError:
+            flash('That username is already taken.', 'danger')
         except Exception as e:
             flash(f'Error: {e}', 'danger')
         finally:
@@ -2472,1798 +1458,259 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# =====================================
-# USER DASHBOARD ROUTE (FINAL UPGRADE)
-# =====================================
-@app.route('/user_dashboard', endpoint='user_dashboard')
-def user_dashboard():
 
-    # -------------------------------
-    # LOGIN CHECK
-    # -------------------------------
-    if 'user_id' not in session:
+@app.route('/watch_based')
+def watch_based():
+    if 'loggedin' not in session:
         return redirect(url_for('login'))
-
-    user_id = session['user_id']
 
     conn = get_connection()
     if not conn:
-        return "Database connection failed"
-
+        return "Database connection failed", 500
     try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # USER INFO
-        # =====================================
-        cursor.execute("""
-            SELECT id, username, profile_image, fav_genre, fav_language
-            FROM users
-            WHERE id=%s
-        """, (user_id,))
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, profile_image, gender FROM users WHERE id=%s",
+                       (session['user_id'],))
         user = cursor.fetchone()
-
         if not user:
+            session.clear()
             return redirect(url_for('login'))
 
-        display_name = session.get('profile_name', user['username'])
+        if user['profile_image']:
+            user['display_image'] = 'uploads/' + user['profile_image']
+        elif (user['gender'] or '').lower() == 'female':
+            user['display_image'] = 'f_profile.png'
+        else:
+            user['display_image'] = 'm_profile.png'
 
-        # =====================================
-        # 🔥 HERO AUTOPLAY
-        # =====================================
+        cursor.execute("SELECT * FROM user_profiles WHERE user_id=%s", (session['user_id'],))
+        profiles = cursor.fetchall()
+
         cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE backdrop_url IS NOT NULL
-              AND backdrop_url != ''
-              AND is_kids = 0
-            ORDER BY deepflix_rank ASC, hearts DESC
-            LIMIT 5
-        """)
-        hero_banner = cursor.fetchall()
-
-        # =====================================
-        # NOTIFICATIONS
-        # =====================================
-        cursor.execute("""
-            SELECT n.*, c.thumbnail AS content_thumbnail
-            FROM notifications n
-            LEFT JOIN contents c ON n.content_id = c.id
-            WHERE (c.is_kids = 0 OR c.is_kids IS NULL)
-            ORDER BY n.created_at DESC
-            LIMIT 10
-        """)
-        notifications = cursor.fetchall()
-
-        # =====================================
-        # 🔍 FILTERS
-        # =====================================
-        search_query = request.args.get('search', '').strip()
-        selected_genre = request.args.get('genre', '').strip()
-        selected_language = request.args.get('language', '').strip()
-
-        # =====================================
-        # 🎬 ALL CONTENTS
-        # =====================================
-        sql = "SELECT * FROM contents WHERE is_kids = 0"
-        params = []
-
-        if search_query:
-            keywords = search_query.split()
-            for word in keywords:
-                sql += """
-                AND (
-                    title LIKE %s OR
-                    story LIKE %s OR
-                    hero LIKE %s OR
-                    heroine LIKE %s OR
-                    director LIKE %s OR
-                    language LIKE %s OR
-                    genre LIKE %s
-                )
-                """
-                pattern = f"%{word}%"
-                params.extend([pattern]*7)
-
-        if selected_genre:
-            sql += " AND genre LIKE %s"
-            params.append(f"%{selected_genre}%")
-
-        if selected_language:
-            sql += " AND language LIKE %s"
-            params.append(f"%{selected_language}%")
-
-        sql += " ORDER BY release_year DESC"
-
-        cursor.execute(sql, tuple(params))
-        all_contents = cursor.fetchall()
-
-        # =====================================
-        # 🔥 RECENTLY ADDED
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type = 'movie'
-              AND (is_kids = 0 OR is_kids IS NULL)
-              AND (is_90s = 0 OR is_90s IS NULL)         
-            ORDER BY 
-               created_at DESC,
-               id DESC 
-            LIMIT 15      
-        """)
-        recently_added = cursor.fetchall()
-
-        # =====================================
-        # 🇰🇷 KOREAN BLOCKBUSTERS
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE language LIKE '%Korean%'
-              AND is_kids = 0
-            ORDER BY hearts DESC
-            LIMIT 15
-        """)
-        korean_blockbusters = cursor.fetchall()
-
-        # =====================================
-        # DEEPFLIX TOP
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
+            SELECT * FROM contents
             WHERE deepflix_rank > 0
-              AND is_kids = 0
-            ORDER BY deepflix_rank ASC
-            LIMIT 15
+            ORDER BY deepflix_rank ASC LIMIT 15
         """)
         deepflix_top = cursor.fetchall()
+        for movie in deepflix_top:
+            movie['display_image'] = movie.get('backdrop_url') or movie.get('thumbnail')
 
-        # =====================================
-        # 🔥 TRENDING MOVIES (BASED ON VIEWS ✅)
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type='movie'
-              AND (is_kids = 0 OR is_kids IS NULL)
-              AND (is_90s = 0 OR is_90s IS NULL)
-              AND views IS NOT NULL
-            ORDER BY views DESC, hearts DESC
-            LIMIT 10
-        """)
-        trending_movies = cursor.fetchall()
-
-        # =====================================
-        # 🔥 TRENDING SERIES (BASED ON VIEWS ✅)
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type='series'
-              AND is_kids = 0
-            ORDER BY views DESC, hearts DESC
-            LIMIT 10
-        """)
-        trending_series = cursor.fetchall()
-
-        # =====================================
-        # CRIME DRAMA MOVIES
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type='movie'
-              AND (
-                    genre LIKE '%Crime%'
-                   OR genre LIKE '%Drama%'
-                  )
-              AND is_kids = 0
-            ORDER BY hearts DESC
-            LIMIT 10
-        """)
-        crime_drama_movies = cursor.fetchall()
-
-        # =====================================
-        # 90s MOVIES
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE is_90s = 1
-              AND is_kids = 0
-            ORDER BY release_year ASC
-        """)
-        movies_90s = cursor.fetchall()
-
-        # =====================================
-        # CONTINUE WATCHING
-        # =====================================
-        cursor.execute("""
-            SELECT c.*, cw.progress
-            FROM continue_watching cw
-            JOIN contents c ON cw.content_id=c.id
-            WHERE cw.user_id=%s
-              AND c.is_kids = 0
-            ORDER BY cw.last_watched DESC
-            LIMIT 10
-        """, (user_id,))
-        continue_watching = cursor.fetchall()
-
-        # =====================================
-        # RECOMMENDATIONS
-        # =====================================
-        recommendations = []
-
-        cursor.execute("""
-            SELECT COUNT(*) AS total
-            FROM user_history
-            WHERE user_id=%s
-        """, (user_id,))
-        history = cursor.fetchone()
-
-        if history['total'] == 0:
-
-            fav_genre = user.get('fav_genre') or ''
-            fav_language = user.get('fav_language') or ''
-
-            cursor.execute("""
-                SELECT *
-                FROM contents
-                WHERE genre LIKE %s
-                  AND language LIKE %s
-                  AND is_kids = 0
-                ORDER BY hearts DESC
-                LIMIT 12
-            """, (f"%{fav_genre}%", f"%{fav_language}%"))
-
-            recommendations = cursor.fetchall()
-
-        else:
-            last_story = ""
-
-            cursor.execute("""
-                SELECT c.story
-                FROM user_history uh
-                JOIN contents c ON uh.content_id=c.id
-                WHERE uh.user_id=%s
-                ORDER BY uh.watched_at DESC
-                LIMIT 1
-            """, (user_id,))
-            last = cursor.fetchone()
-
-            if last and last.get('story'):
-                last_story = last['story']
-
-            try:
-                rec_ids = hybrid_engine.get_hybrid_recommendations(user_id, last_story)
-
-                if rec_ids:
-                    rec_ids = list(dict.fromkeys(rec_ids))[:12]
-                    placeholders = ",".join(["%s"] * len(rec_ids))
-
-                    cursor.execute(f"""
-                        SELECT *
-                        FROM contents
-                        WHERE id IN ({placeholders})
-                          AND is_kids = 0
-                    """, tuple(rec_ids))
-
-                    data = cursor.fetchall()
-                    data.sort(key=lambda x: rec_ids.index(x['id']))
-                    recommendations = data
-
-            except Exception as e:
-                print("Hybrid Engine Error:", e)
-
-        if len(recommendations) < 12:
-            needed = 12 - len(recommendations)
-
-            cursor.execute("""
-                SELECT *
-                FROM contents
-                WHERE is_kids = 0
-                ORDER BY hearts DESC
-                LIMIT %s
-            """, (needed,))
-
-            recommendations.extend(cursor.fetchall())
-
-        recommendations = recommendations[:12]
-
-        # =====================================
-        # RENDER
-        # =====================================
-        return render_template(
-            "user_dashboard.html",
-            user=user,
-            display_name=display_name,
-            hero_banner=hero_banner,
-            notifications=notifications,
-            all_contents=all_contents,
-            recently_added=recently_added,
-            korean_blockbusters=korean_blockbusters,
-            deepflix_top=deepflix_top,
-            trending_movies=trending_movies,
-            trending_series=trending_series,
-            crime_drama_movies=crime_drama_movies,
-            movies_90s=movies_90s,
-            continue_watching=continue_watching,
-            recommendations=recommendations
-        )
-
-    except Exception as e:
-        print("Dashboard Error:", e)
-        return "Error loading dashboard"
-
+        return render_template("watch_based.html", user=user, profiles=profiles,
+                               deepflix_top=deepflix_top)
     finally:
         conn.close()
-@app.route('/check_notifications')
-def check_notifications():
 
-    if 'user_id' not in session:
-        return jsonify({"count": 0})
 
-    user_id = session['user_id']
-
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-    cursor.execute("""
-        SELECT COUNT(*) as count
-        FROM notifications n
-        JOIN contents c ON n.content_id = c.id
-        WHERE n.user_id = %s
-          AND c.is_kids = 1
-    """, (user_id,))
-
-    result = cursor.fetchone()
-
-    conn.close()
-
-    return jsonify({
-        "count": result['count']
-    })
-@app.route('/content/<int:content_id>')
-def content_page(content_id):
-
-    if 'user_id' not in session:
+@app.route('/select_profile/<profile>')
+def select_profile(profile):
+    if 'loggedin' not in session or 'user_id' not in session:
         return redirect(url_for('login'))
 
-    conn = get_connection()
-
-    try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # FETCH CURRENT MOVIE
-        # =====================================
-        cursor.execute(
-            "SELECT * FROM contents WHERE id=%s",
-            (content_id,)
-        )
-
-        movie = cursor.fetchone()
-
-        if not movie:
-            return "Movie not found"
-
-        # =====================================
-        # SAVE CONTINUE WATCHING
-        # =====================================
-        cursor.execute("""
-        INSERT INTO continue_watching (user_id, content_id, progress)
-        VALUES (%s, %s, 0)
-        ON DUPLICATE KEY UPDATE last_watched = NOW()
-        """, (session['user_id'], content_id))
-
-        conn.commit()
-
-        # =====================================
-        # SIMILAR MOVIES
-        # =====================================
-        cursor.execute("""
-        SELECT * FROM contents
-        WHERE genre LIKE %s AND id != %s
-        LIMIT 10
-        """, ("%" + movie['genre'] + "%", content_id))
-
-        similar_movies = cursor.fetchall()
-
-        return render_template(
-            "content.html",
-            movie=movie,
-            similar_movies=similar_movies
-        )
-
-    except Exception as e:
-        print("Content Page Error:", e)
-        return "Error loading content page"
-
-    finally:
-        conn.close()
-
-@app.route('/watch/<int:content_id>')
-def watch_content(content_id):
-
-    # 🔐 LOGIN CHECK
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    conn = get_connection()
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-
-            # =====================================
-            # 1️⃣ GET CONTENT
-            # =====================================
-            cursor.execute("""
-                SELECT * FROM contents WHERE id=%s
-            """, (content_id,))
-            content = cursor.fetchone()
-
-            if not content:
-                return "Content not found"
-
-            # =====================================
-            # 🔥 1.1️⃣ INCREASE VIEWS (NEW ✅)
-            # =====================================
-            cursor.execute("""
-                UPDATE contents
-                SET views = views + 1
-                WHERE id=%s
-            """, (content_id,))
-
-            # =====================================
-            # 2️⃣ POSTER PATH
-            # =====================================
-            poster_name = (content.get("poster") or "").strip()
-
-            content["poster_path"] = (
-                url_for("static", filename=f"uploads/{poster_name}")
-                if poster_name else None
-            )
-
-            # =====================================
-            # ⭐ 3️⃣ CAST & CREW (UNCHANGED ✅)
-            # =====================================
-            cast = []
-
-            if content.get("hero"):
-                cast.append({
-                    "role": "Hero",
-                    "name": content.get("hero"),
-                    "image": url_for("static", filename=f"uploads/{content.get('hero_image')}") if content.get("hero_image") else None
-                })
-
-            if content.get("hero2"):
-                cast.append({
-                    "role": "Hero",
-                    "name": content.get("hero2"),
-                    "image": url_for("static", filename=f"uploads/{content.get('hero2_image')}") if content.get("hero2_image") else None
-                })
-
-            if content.get("hero3"):
-                cast.append({
-                    "role": "Hero",
-                    "name": content.get("hero3"),
-                    "image": url_for("static", filename=f"uploads/{content.get('hero3_image')}") if content.get("hero3_image") else None
-                })
-
-            if content.get("heroine"):
-                cast.append({
-                    "role": "Heroine",
-                    "name": content.get("heroine"),
-                    "image": url_for("static", filename=f"uploads/{content.get('heroine_image')}") if content.get("heroine_image") else None
-                })
-
-            if content.get("heroine2"):
-                cast.append({
-                    "role": "Heroine",
-                    "name": content.get("heroine2"),
-                    "image": url_for("static", filename=f"uploads/{content.get('heroine2_image')}") if content.get("heroine2_image") else None
-                })
-
-            if content.get("heroine3"):
-                cast.append({
-                    "role": "Heroine",
-                    "name": content.get("heroine3"),
-                    "image": url_for("static", filename=f"uploads/{content.get('heroine3_image')}") if content.get("heroine3_image") else None
-                })
-
-            if content.get("comedian"):
-                cast.append({
-                    "role": "Comedian",
-                    "name": content.get("comedian"),
-                    "image": url_for("static", filename=f"uploads/{content.get('comedian_image')}") if content.get("comedian_image") else None
-                })
-
-            if content.get("comedian2"):
-                cast.append({
-                    "role": "Comedian",
-                    "name": content.get("comedian2"),
-                    "image": url_for("static", filename=f"uploads/{content.get('comedian2_image')}") if content.get("comedian2_image") else None
-                })
-
-            if content.get("director"):
-                cast.append({
-                    "role": "Director",
-                    "name": content.get("director"),
-                    "image": url_for("static", filename=f"uploads/{content.get('director_image')}") if content.get("director_image") else None
-                })
-
-            if content.get("producer"):
-                cast.append({
-                    "role": "Producer",
-                    "name": content.get("producer"),
-                    "image": url_for("static", filename=f"uploads/{content.get('producer_image')}") if content.get("producer_image") else None
-                })
-
-            # =====================================
-            # 4️⃣ USER HISTORY (UNCHANGED ✅)
-            # =====================================
-            cursor.execute("""
-                SELECT id FROM user_history
-                WHERE user_id=%s AND content_id=%s
-            """, (session['user_id'], content_id))
-
-            if cursor.fetchone():
-                cursor.execute("""
-                    UPDATE user_history
-                    SET watched_at = NOW()
-                    WHERE user_id=%s AND content_id=%s
-                """, (session['user_id'], content_id))
-            else:
-                cursor.execute("""
-                    INSERT INTO user_history (user_id, content_id, watched_at)
-                    VALUES (%s, %s, NOW())
-                """, (session['user_id'], content_id))
-
-            # =====================================
-            # 5️⃣ CONTINUE WATCHING (UNCHANGED ✅)
-            # =====================================
-            cursor.execute("""
-                SELECT progress FROM continue_watching
-                WHERE user_id=%s AND content_id=%s
-            """, (session['user_id'], content_id))
-
-            row = cursor.fetchone()
-            saved_progress = row["progress"] if row else 0
-
-            cursor.execute("""
-                INSERT INTO continue_watching
-                (user_id, content_id, progress, last_watched)
-                VALUES (%s, %s, %s, NOW())
-                ON DUPLICATE KEY UPDATE last_watched = NOW()
-            """, (session['user_id'], content_id, saved_progress))
-
-            # =====================================
-            # ❌ REMOVED WRONG LOGIC
-            # (hearts should NOT increase on watch)
-            # =====================================
-            # cursor.execute("""
-            #     UPDATE contents
-            #     SET hearts = hearts + 1
-            #     WHERE id=%s
-            # """, (content_id,))
-
-            # =====================================
-            # 7️⃣ REVIEWS (UNCHANGED ✅)
-            # =====================================
-            cursor.execute("""
-                SELECT r.*, u.username
-                FROM reviews r
-                JOIN users u ON r.user_id = u.id
-                WHERE r.content_id=%s
-                ORDER BY r.timestamp DESC
-            """, (content_id,))
-
-            reviews = cursor.fetchall()
-
-            # =====================================
-            # 8️⃣ RECOMMENDATIONS (UNCHANGED ✅)
-            # =====================================
-            recommended = []
-
-            current_genre = (content.get("genre") or "").strip()
-            current_language = (content.get("language") or "").strip()
-            current_story = (content.get("story") or "").strip()
-
-            try:
-                rec_ids = hybrid_engine.get_hybrid_recommendations(
-                    session['user_id'],
-                    current_story
-                )
-
-                if rec_ids:
-                    placeholders = ",".join(["%s"] * len(rec_ids))
-
-                    cursor.execute(
-                        f"SELECT * FROM contents WHERE id IN ({placeholders})",
-                        tuple(rec_ids)
-                    )
-
-                    recommended = cursor.fetchall()
-
-                    recommended.sort(
-                        key=lambda x: rec_ids.index(x['id'])
-                    )
-
-            except Exception as e:
-                print("Hybrid Error:", e)
-
-            if not recommended and current_genre:
-                cursor.execute("""
-                    SELECT *
-                    FROM contents
-                    WHERE id != %s
-                    AND genre LIKE %s
-                    AND language LIKE %s
-                    ORDER BY hearts DESC
-                    LIMIT 12
-                """, (
-                    content_id,
-                    f"%{current_genre}%",
-                    f"%{current_language}%"
-                ))
-
-                recommended = cursor.fetchall()
-
-            if not recommended and current_genre:
-                cursor.execute("""
-                    SELECT *
-                    FROM contents
-                    WHERE id != %s
-                    AND genre LIKE %s
-                    ORDER BY RAND()
-                    LIMIT 12
-                """, (content_id, f"%{current_genre}%"))
-
-                recommended = cursor.fetchall()
-
-            for item in recommended:
-                poster_name = (item.get("poster") or "").strip()
-
-                item["poster_path"] = (
-                    url_for("static", filename=f"uploads/{poster_name}")
-                    if poster_name else None
-                )
-
-        conn.commit()
-
-        # =====================================
-        # 🎬 FINAL RENDER
-        # =====================================
-        return render_template(
-            "watch.html",
-            content=content,
-            cast=cast,
-            reviews=reviews,
-            saved_progress=saved_progress,
-            recommended=recommended
-        )
-
-    except Exception as e:
-        print("WATCH PAGE ERROR:", e)
-        return "Something went wrong"
-
-    finally:
-        conn.close()
-#------- watch kids content -----------
-
-@app.route('/kids_watch/<int:content_id>')
-def kids_watch(content_id):
-
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    conn = get_connection()
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-
-            cursor.execute(
-                "SELECT * FROM contents WHERE id=%s",
-                (content_id,)
-            )
-
-            content = cursor.fetchone()
-
-            if not content:
-                return "Content not found"
-
-        return render_template("kids_watch.html", content=content)
-
-    finally:
-        conn.close()
-# --- New Social & Interactive Routes ---
-
-
-# -------------------------------
-# SOCIAL HUB PAGE
-# -------------------------------
-@app.route('/social_hub')
-def social_hub():
-
-    # 🔐 Login check
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    conn = get_connection()
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-
-            # -------------------------------
-            # 👤 CURRENT USER
-            # -------------------------------
-            cursor.execute("""
-                SELECT id, username, gender, profile_image
-                FROM users
-                WHERE id = %s
-            """, (session['user_id'],))
-
-            current_user = cursor.fetchone()
-            current_user['initial'] = current_user['username'][0].upper()
-
-            # -------------------------------
-            # 👥 OTHER USERS
-            # -------------------------------
-            cursor.execute("""
-                SELECT id, username, age, fav_genre, gender, profile_image
-                FROM users
-                WHERE id != %s
-            """, (session['user_id'],))
-
-            users = cursor.fetchall()
-            for user in users:
-                user['initial'] = user['username'][0].upper()
-
-            # -------------------------------
-            # ❤️ FOLLOWING
-            # -------------------------------
-            cursor.execute("""
-                SELECT followed_id 
-                FROM social_graph 
-                WHERE follower_id=%s
-            """, (session['user_id'],))
-
-            following = [row['followed_id'] for row in cursor.fetchall()]
-
-            return render_template(
-                'social_hub.html',
-                users=users,
-                following=following,
-                current_user=current_user
-            )
-
-    except Exception as e:
-        print("SOCIAL HUB ERROR:", e)
-        return "Something went wrong", 500
-
-    finally:
-        conn.close()
-
-
-# -------------------------------
-# PROFILE PAGE
-# -------------------------------
-@app.route('/socialhub_profile/<int:user_id>')
-def socialhub_profile(user_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    conn = get_connection()
-    try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # 👤 CURRENT USER
-        cursor.execute("""
-            SELECT id, username, gender, profile_image
-            FROM users WHERE id=%s
-        """, (session['user_id'],))
-        current_user = cursor.fetchone()
-        current_user['initial'] = current_user['username'][0].upper()
-
-        # 👤 PROFILE USER
-        cursor.execute("""
-            SELECT id, username, age, fav_genre, gender, profile_image
-            FROM users WHERE id=%s
-        """, (user_id,))
-        user = cursor.fetchone()
-        if not user: return "User not found", 404
-        user['initial'] = user['username'][0].upper()
-
-        # 🎬 HISTORY
-        cursor.execute("""
-            SELECT DISTINCT c.id, c.title, c.genre, c.thumbnail
-            FROM user_history uh
-            JOIN contents c ON uh.content_id = c.id
-            WHERE uh.user_id=%s
-            ORDER BY uh.watched_at DESC
-            LIMIT 5
-        """, (user_id,))
-        history_based = cursor.fetchall()
-
-        # 🎯 GENRE
-        fav_genre = user.get('fav_genre') or ""
-        cursor.execute("""
-            SELECT id, title, genre, thumbnail
-            FROM contents
-            WHERE genre LIKE %s
-            ORDER BY trending_rank DESC
-            LIMIT 5
-        """, (f"%{fav_genre}%",))
-        genre_based = cursor.fetchall()
-
-        # combine unique recommendations
-        combined = {item['id']: item for item in history_based}
-        for item in genre_based:
-            if item['id'] not in combined:
-                combined[item['id']] = item
-        recommended_contents = list(combined.values())
-
-        # Ensure thumbnails have full URL
-        for item in recommended_contents:
-            if item['thumbnail'] and not item['thumbnail'].startswith(('http://', 'https://')):
-                # Assuming thumbnails are stored in static/uploads/
-                item['thumbnail'] = url_for('static', filename=f'uploads/{item["thumbnail"]}')
-
-        # ❤️ FOLLOW STATUS
-        cursor.execute("""
-            SELECT 1 FROM social_graph
-            WHERE follower_id=%s AND followed_id=%s
-        """, (session['user_id'], user_id))
-        is_following = cursor.fetchone() is not None
-
-        # 👥 FOLLOWERS
-        cursor.execute("""
-            SELECT u.id, u.username, u.profile_image, u.gender
-            FROM social_graph sg
-            JOIN users u ON sg.follower_id = u.id
-            WHERE sg.followed_id=%s
-        """, (user_id,))
-        followers = cursor.fetchall()
-        for f in followers: f['initial'] = f['username'][0].upper()
-
-        # ➡️ FOLLOWING
-        cursor.execute("""
-            SELECT u.id, u.username, u.profile_image, u.gender
-            FROM social_graph sg
-            JOIN users u ON sg.followed_id = u.id
-            WHERE sg.follower_id=%s
-        """, (user_id,))
-        following = cursor.fetchall()
-        for f in following: f['initial'] = f['username'][0].upper()
-
-        return render_template(
-            'socialhub_profile.html',
-            user=user,
-            recommended_contents=recommended_contents,
-            is_following=is_following,
-            followers=followers,
-            following=following,
-            current_user=current_user
-        )
-    except Exception as e:
-        print("PROFILE ERROR:", e)
-        return "Something went wrong", 500
-    finally:
-        conn.close()
-# -------------------------------
-# FOLLOW / UNFOLLOW
-# -------------------------------
-@app.route('/toggle_follow/<int:user_id>', methods=['POST'])
-def toggle_follow(user_id):
-
-    if 'user_id' not in session:
-        return jsonify({"success": False, "message": "Not logged in"})
-
-    me = session['user_id']
-    conn = get_connection()
-
-    try:
-        with conn.cursor() as cursor:
-
-            # Check if already following
-            cursor.execute("""
-                SELECT 1 FROM social_graph
-                WHERE follower_id=%s AND followed_id=%s
-            """, (me, user_id))
-
-            if cursor.fetchone():
-                # UNFOLLOW
-                cursor.execute("""
-                    DELETE FROM social_graph
-                    WHERE follower_id=%s AND followed_id=%s
-                """, (me, user_id))
-                conn.commit()
-                following_status = False
-            else:
-                # FOLLOW
-                cursor.execute("""
-                    INSERT INTO social_graph (follower_id, followed_id)
-                    VALUES (%s,%s)
-                """, (me, user_id))
-                conn.commit()
-                following_status = True
-
-            # ✅ Return updated status for AJAX
-            return jsonify({
-                "success": True,
-                "following": following_status,
-                "user_id": user_id
-            })
-
-    finally:
-        conn.close()
-# -------------------------------
-# CHAT PAGE
-# -------------------------------
-@app.route('/chat/<int:user_id>')
-def chat(user_id):
-
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    conn = get_connection()
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-
-            # 🔥 CHAT USER
-            cursor.execute("""
-                SELECT id, username, profile_image
-                FROM users
-                WHERE id=%s
-            """, (user_id,))
-            chat_user = cursor.fetchone()
-
-            if not chat_user:
-                return "User not found", 404
-
-            # 🔥 LOGGED-IN USER
-            cursor.execute("""
-                SELECT id, username, profile_image
-                FROM users
-                WHERE id=%s
-            """, (session['user_id'],))
-            me = cursor.fetchone()
-
-            # ✅ PROFILE IMAGE OR INITIAL
-            def format_user(user):
-                if user.get('profile_image'):
-                    user['profile_image'] = '/static/uploads/' + user['profile_image']
-                    user['initial'] = None
-                else:
-                    user['profile_image'] = None
-                    user['initial'] = user['username'][0].upper()
-
-                return user
-
-            chat_user = format_user(chat_user)
-            me = format_user(me)
-
-            return render_template(
-                'chat.html',
-                chat_user=chat_user,
-                me=me
-            )
-
-    finally:
-        conn.close()
-
-
-# -------------------------------
-# FETCH MESSAGES
-# -------------------------------
-@app.route('/fetch_messages/<int:user_id>')
-def fetch_messages(user_id):
-
-    if 'user_id' not in session:
-        return jsonify([])
-
-    me_id = session['user_id']
-    conn = get_connection()
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-
-            cursor.execute("""
-                SELECT sender_id, receiver_id, message, timestamp
-                FROM chats
-                WHERE (sender_id=%s AND receiver_id=%s)
-                   OR (sender_id=%s AND receiver_id=%s)
-                ORDER BY timestamp ASC
-            """, (me_id, user_id, user_id, me_id))
-
-            messages = cursor.fetchall()
-
-            # ✅ GET ALL UNIQUE USER IDS
-            user_ids = list(set([msg['sender_id'] for msg in messages]))
-            users = {}
-
-            if user_ids:
-                format_strings = ','.join(['%s'] * len(user_ids))
-                cursor.execute(f"""
-                    SELECT id, username, profile_image
-                    FROM users
-                    WHERE id IN ({format_strings})
-                """, tuple(user_ids))
-
-                for user in cursor.fetchall():
-                    users[user['id']] = user
-
-            # ✅ ATTACH USER DATA
-            for msg in messages:
-                sender = users.get(msg['sender_id'])
-
-                if sender:
-                    # 👤 Username
-                    msg['username'] = sender['username']
-
-                    # 🖼 Profile image OR initial
-                    if sender.get('profile_image'):
-                        msg['profile_image'] = '/static/uploads/' + sender['profile_image']
-                        msg['initial'] = None
-                    else:
-                        msg['profile_image'] = None
-                        msg['initial'] = sender['username'][0].upper()
-
-                else:
-                    msg['username'] = "Unknown"
-                    msg['profile_image'] = None
-                    msg['initial'] = "?"
-
-                # ✅ ADD FLAG (VERY IMPORTANT)
-                msg['is_me'] = (msg['sender_id'] == me_id)
-
-            return jsonify(messages)
-
-    finally:
-        conn.close()
-
-
-# -------------------------------
-# SEND MESSAGE
-# -------------------------------
-@app.route('/send_message/<int:user_id>', methods=['POST'])
-def send_message(user_id):
-
-    if 'user_id' not in session:
-        return jsonify({"success": False})
-
-    me = session['user_id']
-    msg = request.json.get('message', '').strip()
-
-    if not msg:
-        return jsonify({"success": False})
-
-    conn = get_connection()
-
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                INSERT INTO chats (sender_id, receiver_id, message)
-                VALUES (%s,%s,%s)
-            """, (me, user_id, msg))
-            conn.commit()
-
-            return jsonify({"success": True})
-
-    finally:
-        conn.close()
-##########################################################
-@app.route('/api/rate', methods=['POST'])
-def api_rate():
-
-    if 'user_id' not in session:
-        return jsonify({'error': 'Login required'}), 401
-
-    data = request.json
-    content_id = data.get('content_id')
-    rating = data.get('rating')
-
-    if not content_id or not rating:
-        return jsonify({'error': 'Missing data'}), 400
-
-    conn = get_connection()
-
-    try:
-        with conn.cursor() as cursor:
-
-            # Insert OR Update
-            cursor.execute("""
-                INSERT INTO ratings (user_id, content_id, rating)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE rating=%s
-            """, (session['user_id'], content_id, rating, rating))
-
-        conn.commit()
-        return jsonify({'success': True})
-
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 500
-
-    finally:
-        conn.close()
-@app.route('/api/rating/get')
-def get_rating():
-
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'rating': 0})
-
-    content_id = request.args.get('content_id')
-
-    conn = get_connection()
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-
-            cursor.execute("""
-                SELECT rating FROM ratings
-                WHERE user_id=%s AND content_id=%s
-            """, (session['user_id'], content_id))
-
-            result = cursor.fetchone()
-
-            if result:
-                return jsonify({'success': True, 'rating': result['rating']})
-            else:
-                return jsonify({'success': True, 'rating': 0})
-
-    finally:
-        conn.close()
-@app.route('/api/review', methods=['POST'])
-def api_review():
-    """Handle Text AI Review & Sentiment"""
-    if 'user_id' not in session: return redirect(url_for('login'))
-    content_id = request.form['content_id']
-    text = request.form['review_text']
-    
-    # Sentiment Analysis
-    blob = TextBlob(text)
-    sentiment = blob.sentiment.polarity # -1 to 1
-    
-    conn = get_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO reviews (user_id, content_id, review_text, sentiment_score) VALUES (%s, %s, %s, %s)", 
-                           (session['user_id'], content_id, text, sentiment))
-        conn.commit()
-        flash('Review posted!', 'success')
-        return redirect(url_for('watch_content', content_id=content_id))
-    finally:
-        conn.close()
-
-@app.route('/api/follow/<int:target_id>')
-def api_follow(target_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    conn = get_connection()
-    try:
-        with conn.cursor() as cursor:
-            # Toggle follow
-            cursor.execute("SELECT id FROM social_graph WHERE follower_id=%s AND followed_id=%s", (session['user_id'], target_id))
-            exists = cursor.fetchone()
-            if exists:
-                cursor.execute("DELETE FROM social_graph WHERE id=%s", (exists['id'],))
-                flash('Unfollowed user.', 'info')
-            else:
-                cursor.execute("INSERT INTO social_graph (follower_id, followed_id) VALUES (%s, %s)", (session['user_id'], target_id))
-                flash('Followed user!', 'success')
-        conn.commit()
-        return redirect(url_for('social_hub'))
-    finally:
-        conn.close()
-@app.route('/admin/edit/<int:content_id>', methods=['GET', 'POST'])
-def edit_content(content_id):
-
-    # ==========================
-    # AUTH CHECK
-    # ==========================
-    if 'loggedin' not in session or session.get('user_type') != 'admin':
-        return redirect(url_for('login'))
+    if profile == "kids":
+        session.update(profile_type="kids", profile_name="Kids", profile_image="kids.png")
+        return redirect(url_for('kids_dashboard'))
+
+    if profile == "guest":
+        session.update(profile_type="guest", profile_name="Guest", profile_image="m_profile.png")
+        return redirect(url_for('user_dashboard'))
 
     conn = None
-
     try:
         conn = get_connection()
-
-        # ==========================
-        # CONNECTION CHECK
-        # ==========================
-        if not conn:
-            flash("Database connection failed!", "danger")
-            return redirect(url_for('admin_dashboard'))
-
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # ==========================
-        # GET EXISTING CONTENT FIRST
-        # ==========================
-        cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
-        content = cursor.fetchone()
-
-        if not content:
-            flash("Content not found!", "danger")
-            return redirect(url_for('admin_dashboard'))
-
-        # ==========================
-        # POST METHOD
-        # ==========================
-        if request.method == 'POST':
-
-            title = request.form.get('title')
-            story = request.form.get('story')
-            language = request.form.get('language')
-            release_year = request.form.get('release_year')
-            content_type = request.form.get('content_type')
-            genre = request.form.get('genre')
-            upload_date = request.form.get('upload_date')
-
-            # ==========================
-            # BACKDROP URL
-            # ==========================
-            backdrop_url = request.form.get('backdrop_url', '').strip()
-
-            # ==========================
-            # HERO
-            # ==========================
-            hero  = request.form.get('hero')
-            hero2 = request.form.get('hero2')
-            hero3 = request.form.get('hero3')
-
-            # ==========================
-            # HEROINE
-            # ==========================
-            heroine  = request.form.get('heroine')
-            heroine2 = request.form.get('heroine2')
-            heroine3 = request.form.get('heroine3')
-
-            # ==========================
-            # OTHERS
-            # ==========================
-            director = request.form.get('director')
-            comedian = request.form.get('comedian')
-            producer = request.form.get('producer')
-
-            release_year = int(release_year) if release_year else None
-            trending_rank = int(request.form.get('trending_rank') or 0)
-            deepflix_rank = int(request.form.get('deepflix_rank') or 0)
-            is_90s = 1 if request.form.get('is_90s') else 0
-
-            # ==========================
-            # YOUTUBE ID
-            # ==========================
-            youtube_input = request.form.get('youtube_video_id', '').strip()
-            youtube_video_id = None
-
-            if youtube_input:
-                if "youtube.com" in youtube_input and "v=" in youtube_input:
-                    youtube_video_id = youtube_input.split("v=")[1].split("&")[0]
-                elif "youtu.be/" in youtube_input:
-                    youtube_video_id = youtube_input.split("youtu.be/")[1].split("?")[0]
-                else:
-                    youtube_video_id = youtube_input
-
-            # ==========================
-            # FILE UPLOAD
-            # ==========================
-            upload_folder = os.path.join(app.root_path, 'static', 'uploads')
-            os.makedirs(upload_folder, exist_ok=True)
-
-            def save_file(file):
-                if file and file.filename:
-                    filename = secure_filename(file.filename)
-                    filepath = os.path.join(upload_folder, filename)
-                    file.save(filepath)
-                    return filename
-                return None
-
-            thumbnail_filename = save_file(request.files.get('thumbnail'))
-
-            hero_image  = save_file(request.files.get('hero_image'))
-            hero2_image = save_file(request.files.get('hero2_image'))
-            hero3_image = save_file(request.files.get('hero3_image'))
-
-            heroine_image  = save_file(request.files.get('heroine_image'))
-            heroine2_image = save_file(request.files.get('heroine2_image'))
-            heroine3_image = save_file(request.files.get('heroine3_image'))
-
-            director_image = save_file(request.files.get('director_image'))
-            comedian_image = save_file(request.files.get('comedian_image'))
-            producer_image = save_file(request.files.get('producer_image'))
-
-            # ==========================
-            # RANK FIX
-            # ==========================
-            if deepflix_rank > 0:
-                cursor.execute("""
-                    UPDATE contents
-                    SET deepflix_rank=0
-                    WHERE deepflix_rank=%s AND id!=%s
-                """, (deepflix_rank, content_id))
-
-            # ==========================
-            # UPDATE QUERY
-            # ==========================
-            query = """
-                UPDATE contents SET
-                title=%s,
-                story=%s,
-                language=%s,
-                release_year=%s,
-                content_type=%s,
-                genre=%s,
-                hero=%s,
-                hero2=%s,
-                hero3=%s,
-                heroine=%s,
-                heroine2=%s,
-                heroine3=%s,
-                director=%s,
-                comedian=%s,
-                producer=%s,
-                upload_date=%s,
-                trending_rank=%s,
-                deepflix_rank=%s,
-                youtube_video_id=%s,
-                is_90s=%s
-            """
-
-            values = [
-                title, story, language, release_year,
-                content_type, genre,
-                hero, hero2, hero3,
-                heroine, heroine2, heroine3,
-                director, comedian, producer,
-                upload_date,
-                trending_rank, deepflix_rank,
-                youtube_video_id,
-                is_90s
-            ]
-
-            # ==========================
-            # OPTIONAL UPDATES
-            # ==========================
-            if thumbnail_filename:
-                query += ", thumbnail=%s"
-                values.append(thumbnail_filename)
-
-            if hero_image:
-                query += ", hero_image=%s"
-                values.append(hero_image)
-
-            if hero2_image:
-                query += ", hero2_image=%s"
-                values.append(hero2_image)
-
-            if hero3_image:
-                query += ", hero3_image=%s"
-                values.append(hero3_image)
-
-            if heroine_image:
-                query += ", heroine_image=%s"
-                values.append(heroine_image)
-
-            if heroine2_image:
-                query += ", heroine2_image=%s"
-                values.append(heroine2_image)
-
-            if heroine3_image:
-                query += ", heroine3_image=%s"
-                values.append(heroine3_image)
-
-            if director_image:
-                query += ", director_image=%s"
-                values.append(director_image)
-
-            if comedian_image:
-                query += ", comedian_image=%s"
-                values.append(comedian_image)
-
-            if producer_image:
-                query += ", producer_image=%s"
-                values.append(producer_image)
-
-            # ==========================
-            # BACKDROP SAFE UPDATE
-            # ==========================
-            if backdrop_url:
-                query += ", backdrop_url=%s"
-                values.append(backdrop_url)
-            else:
-                query += ", backdrop_url=%s"
-                values.append(content['backdrop_url'])
-
-            query += " WHERE id=%s"
-            values.append(content_id)
-
-            cursor.execute(query, tuple(values))
-            conn.commit()
-
-            flash("Content updated successfully!", "success")
-            return redirect(url_for('admin_dashboard'))
-
-        # ==========================
-        # GET RENDER
-        # ==========================
-        return render_template('edit_content.html', content=content)
-
-    except Exception as e:
-        print("ERROR:", e)
-
-        if conn:
-            conn.rollback()
-
-        flash(f"Error updating content: {str(e)}", "danger")
-        return redirect(url_for('admin_dashboard'))
-
-    finally:
-        if conn:
-            conn.close()
-# =====================================
-# DELETE ROUTE
-# =====================================
-
-@app.route('/admin/delete/<int:content_id>')
-def delete_content(content_id):
-
-    if 'loggedin' not in session or session.get('user_type') != 'admin':
-        return redirect(url_for('login'))
-
-    conn = get_connection()
-
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM contents WHERE id=%s", (content_id,))
-        conn.commit()
-
-        flash("Content deleted successfully!", "danger")
-        return redirect(url_for('admin_dashboard'))
-
-    except Exception as e:
-        conn.rollback()
-        flash(f"Delete failed: {str(e)}", "danger")
-        return redirect(url_for('admin_dashboard'))
-
-    finally:
-        conn.close()
-@app.route('/api/progress/get')
-def get_progress():
-
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'progress': 0})
-
-    content_id = request.args.get('content_id')
-
-    if not content_id:
-        return jsonify({'success': False, 'progress': 0})
-
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-    cursor.execute("""
-        SELECT progress FROM continue_watching
-        WHERE user_id=%s AND content_id=%s
-    """, (session['user_id'], content_id))
-
-    row = cursor.fetchone()
-
-    cursor.close()
-    conn.close()
-
-    if row:
-        return jsonify({'success': True, 'progress': float(row['progress'])})
-    else:
-        return jsonify({'success': True, 'progress': 0})
-@app.route('/api/progress/update', methods=['POST'])
-def update_progress():
-
-    if 'user_id' not in session:
-        return jsonify({'success': False}), 401
-
-    data = request.get_json()
-
-    content_id = data.get('content_id')
-    progress = data.get('progress')
-
-    if not content_id or progress is None:
-        return jsonify({'success': False}), 400
-
-    try:
-        progress = float(progress)
-    except:
-        return jsonify({'success': False}), 400
-
-    # Keep between 0 and 100
-    progress = max(0, min(progress, 100))
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-
-        # If 95% watched remove from continue watching
-        if progress >= 95:
-            cursor.execute("""
-                DELETE FROM continue_watching
-                WHERE user_id=%s AND content_id=%s
-            """, (session['user_id'], content_id))
-        else:
-            cursor.execute("""
-                INSERT INTO continue_watching (user_id, content_id, progress)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    progress = VALUES(progress),
-                    last_watched = CURRENT_TIMESTAMP
-            """, (session['user_id'], content_id, progress))
-
-        conn.commit()
-        return jsonify({'success': True})
-
-    except Exception as e:
-        print("Progress Error:", e)
-        return jsonify({'success': False}), 500
-
-    finally:
-        cursor.close()
-        conn.close()
-
-# ==========================================
-# AJAX: TOGGLE HEART / LIKE
-# ==========================================
-@app.route('/ajax_toggle_heart', methods=['POST'])
-def ajax_toggle_heart():
-
-    # Check if user is logged in
-    if 'user_id' not in session:
-        return jsonify({
-            'status': 'login_required'
-        }), 401
-
-    data = request.get_json(silent=True) or {}
-    content_id = data.get('content_id')
-
-    if not content_id:
-        return jsonify({
-            'status': 'error',
-            'message': 'Content ID is required'
-        }), 400
-
-    conn = None
-
-    try:
-        conn = get_connection()
-
         if conn is None:
-            return jsonify({
-                'status': 'error',
-                'message': 'Database connection failed'
-            }), 500
+            abort(503, description="Database connection unavailable.")
+        cursor = conn.cursor()
 
-        with conn.cursor() as cursor:
+        if profile == "main":
+            cursor.execute("SELECT username, gender, profile_image FROM users WHERE id=%s LIMIT 1",
+                           (session['user_id'],))
+            user = cursor.fetchone()
+            if not user:
+                session.clear()
+                return redirect(url_for('login'))
+            session['profile_type'] = "main"
+            session['profile_name'] = user.get('username') or "User"
+            session['profile_image'] = resolve_profile_image(user.get('profile_image'),
+                                                             user.get('gender'))
+            return redirect(url_for('user_dashboard'))
 
-            # Check if the content exists
-            cursor.execute(
-                "SELECT id, hearts FROM contents WHERE id=%s",
-                (content_id,)
-            )
-            content = cursor.fetchone()
+        try:
+            extra_id = int(profile)
+        except (TypeError, ValueError):
+            return redirect(url_for('watch_based'))
 
-            if not content:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Content not found'
-                }), 404
+        cursor.execute("SELECT name, gender, profile_image FROM user_profiles "
+                       "WHERE id=%s AND user_id=%s LIMIT 1", (extra_id, session['user_id']))
+        selected = cursor.fetchone()
+        if not selected:
+            return redirect(url_for('watch_based'))
 
-            # Check if the user already liked this content
-            cursor.execute("""
-                SELECT *
-                FROM user_hearts
-                WHERE user_id=%s AND content_id=%s
-            """, (session['user_id'], content_id))
-
-            existing = cursor.fetchone()
-
-            if existing:
-                # Remove existing like
-                cursor.execute("""
-                    DELETE FROM user_hearts
-                    WHERE user_id=%s AND content_id=%s
-                """, (session['user_id'], content_id))
-
-                cursor.execute("""
-                    UPDATE contents
-                    SET hearts = GREATEST(COALESCE(hearts, 0) - 1, 0)
-                    WHERE id=%s
-                """, (content_id,))
-
-            else:
-                # Add a new like
-                cursor.execute("""
-                    INSERT INTO user_hearts (user_id, content_id)
-                    VALUES (%s, %s)
-                """, (session['user_id'], content_id))
-
-                cursor.execute("""
-                    UPDATE contents
-                    SET hearts = COALESCE(hearts, 0) + 1
-                    WHERE id=%s
-                """, (content_id,))
-
-            conn.commit()
-
-            # Get updated heart count
-            cursor.execute(
-                "SELECT hearts FROM contents WHERE id=%s",
-                (content_id,)
-            )
-            updated = cursor.fetchone()
-
-        return jsonify({
-            'status': 'success',
-            'hearts': updated['hearts'] if updated else 0
-        })
+        session['profile_type'] = "extra"
+        session['profile_name'] = selected.get('name') or "Profile"
+        session['profile_image'] = resolve_profile_image(selected.get('profile_image'),
+                                                         selected.get('gender'))
+        return redirect(url_for('user_dashboard'))
 
     except Exception as e:
-        if conn:
-            conn.rollback()
-
-        app.logger.exception("Error toggling content heart")
-
-        return jsonify({
-            'status': 'error',
-            'message': 'Unable to update heart. Please try again.'
-        }), 500
-
+        if hasattr(e, 'code'):  # re-raise abort() errors untouched
+            raise
+        current_app.logger.exception("Select Profile Error: %s", e)
+        abort(500, description="Unable to select profile.")
     finally:
         if conn:
             conn.close()
 
 
-# ==========================================
-# USER PROFILE
-# ==========================================
+@app.route('/add_profile', methods=['GET', 'POST'])
+@login_required
+def add_profile():
+    if request.method == "POST":
+        name = request.form.get('name', '').strip()
+        gender = request.form.get('gender', 'Other')
+        try:
+            age = int(request.form.get('age', ''))
+        except ValueError:
+            flash('Please enter a valid age.', 'danger')
+            return redirect(url_for('add_profile'))
+        if not name:
+            flash('Profile name is required.', 'danger')
+            return redirect(url_for('add_profile'))
+
+        conn = get_connection()
+        if not conn:
+            return "Database connection failed", 500
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) as total FROM user_profiles WHERE user_id=%s",
+                               (session['user_id'],))
+                if cursor.fetchone()['total'] >= 2:
+                    flash("Maximum 2 profiles allowed", "danger")
+                    return redirect(url_for('watch_based'))
+                cursor.execute(
+                    "INSERT INTO user_profiles (user_id,name,age,gender) VALUES (%s,%s,%s,%s)",
+                    (session['user_id'], name, age, gender))
+            conn.commit()
+        finally:
+            conn.close()
+        return redirect(url_for('watch_based'))
+
+    return render_template("add_profile.html")
+
+
+@app.route('/delete_profile/<int:id>')
+@login_required
+def delete_profile(id):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM user_profiles WHERE id=%s AND user_id=%s",
+                           (id, session['user_id']))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for('watch_based'))
+
+
+@app.route('/edit_profile/<int:id>', methods=['POST'])
+@login_required
+def edit_profile(id):
+    name = request.form.get('name', '').strip()
+    try:
+        age = int(request.form.get('age', ''))
+    except ValueError:
+        return redirect(url_for('watch_based'))
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE user_profiles SET name=%s, age=%s WHERE id=%s AND user_id=%s",
+                           (name, age, id, session['user_id']))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for('watch_based'))
+
+
 @app.route('/profile', methods=['GET', 'POST'])
+@login_required
 def profile():
-
-    # Check login
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
     user_id = session['user_id']
     conn = None
-
     try:
         conn = get_connection()
-
         if conn is None:
             return "Database connection failed", 500
 
         with conn.cursor() as cursor:
-
-            # Get user details
-            cursor.execute(
-                "SELECT * FROM users WHERE id=%s",
-                (user_id,)
-            )
+            cursor.execute("SELECT * FROM users WHERE id=%s", (user_id,))
             user = cursor.fetchone()
-
             if not user:
                 session.clear()
                 return redirect(url_for('login'))
 
             if request.method == 'POST':
+                upload_folder = app.config['UPLOAD_FOLDER']
+                old_image = user.get('profile_image')
 
-                action = request.form.get('action')
-
-                # Remove profile image
-                if action == 'remove_image':
-
-                    old_image = user.get('profile_image')
-
+                def remove_old():
                     if old_image:
-                        upload_folder = app.config['UPLOAD_FOLDER']
-                        old_path = os.path.join(
-                            upload_folder,
-                            os.path.basename(old_image)
-                        )
-
-                        # Delete only files inside the upload folder
+                        old_path = os.path.join(upload_folder, os.path.basename(old_image))
                         if os.path.isfile(old_path):
                             os.remove(old_path)
 
-                    cursor.execute("""
-                        UPDATE users
-                        SET profile_image=NULL
-                        WHERE id=%s
-                    """, (user_id,))
-
+                if request.form.get('action') == 'remove_image':
+                    remove_old()
+                    cursor.execute("UPDATE users SET profile_image=NULL WHERE id=%s", (user_id,))
                     conn.commit()
-
                     return redirect(url_for('profile'))
 
-                # Upload profile image
                 file = request.files.get('profile_image')
-
                 if file and file.filename:
-
-                    filename = secure_filename(file.filename)
-
-                    if not filename:
-                        return "Invalid filename", 400
-
-                    filename = f"{user_id}_{filename}"
-
-                    upload_folder = app.config['UPLOAD_FOLDER']
-                    os.makedirs(upload_folder, exist_ok=True)
-
-                    filepath = os.path.join(
-                        upload_folder,
-                        filename
-                    )
-
-                    # Save the new image first
-                    file.save(filepath)
-
-                    old_image = user.get('profile_image')
-
-                    cursor.execute("""
-                        UPDATE users
-                        SET profile_image=%s
-                        WHERE id=%s
-                    """, (filename, user_id))
-
+                    try:
+                        filename, _ = save_image_file(file, prefix=f"{user_id}_")
+                    except ValueError as e:
+                        flash(str(e), 'danger')
+                        return redirect(url_for('profile'))
+                    cursor.execute("UPDATE users SET profile_image=%s WHERE id=%s",
+                                   (filename, user_id))
                     conn.commit()
-
-                    # Delete old image after successful DB update
                     if old_image and old_image != filename:
-                        old_path = os.path.join(
-                            upload_folder,
-                            os.path.basename(old_image)
-                        )
-
-                        if os.path.isfile(old_path):
-                            os.remove(old_path)
-
+                        remove_old()
                     return redirect(url_for('profile'))
 
-            return render_template(
-                'profile.html',
-                user=user
-            )
+            return render_template('profile.html', user=user)
 
     except Exception:
         if conn:
             conn.rollback()
-
         app.logger.exception("Error loading or updating profile")
-
         return "Unable to load profile. Please try again.", 500
-
     finally:
         if conn:
             conn.close()
 
-@app.route('/delete_account')
-def delete_account():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
 
+@app.route('/delete_account')
+@login_required
+def delete_account():
     user_id = session['user_id']
     conn = get_connection()
-
     try:
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM ratings WHERE user_id = %s", (user_id,))
+            for table, column in (
+                ('ratings', 'user_id'), ('reviews', 'user_id'), ('likes', 'user_id'),
+                ('user_hearts', 'user_id'), ('user_history', 'user_id'),
+                ('continue_watching', 'user_id'), ('user_profiles', 'user_id'),
+                ('social_graph', 'follower_id'), ('social_graph', 'followed_id'),
+                ('chats', 'sender_id'), ('chats', 'receiver_id'),
+            ):
+                safe_delete(cursor, table, column, user_id)
             cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
-
         conn.commit()
-
+    except Exception as e:
+        conn.rollback()
+        flash(f"Could not delete account: {e}", "danger")
+        return redirect(url_for('profile'))
     finally:
         conn.close()
 
@@ -4272,1251 +1719,1363 @@ def delete_account():
     return redirect(url_for('register'))
 
 
-
-
-# ==========================================================
-# ALL MOVIES PAGE
-# ==========================================================
-
-@app.route('/all_movies')
-def all_movies():
-
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    search = request.args.get('search', '').strip()
-    genre = request.args.get('genre', '').strip()
+# =========================================================
+# ROUTES: KIDS
+# =========================================================
+@app.route('/kids_dashboard', endpoint='kids_dashboard')
+@login_required
+def kids_dashboard():
+    user_id = session['user_id']
+    search_query = request.args.get('search', '')
+    language = request.args.get('language', '')
+    genre = request.args.get('genre', '')
 
     conn = get_connection()
-
-    try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        query = "SELECT * FROM contents WHERE 1=1"
-        params = []
-
-        if search:
-            pattern = "%" + search.lower() + "%"
-            query += """
-            AND (
-                LOWER(title) LIKE %s OR
-                LOWER(hero) LIKE %s OR
-                LOWER(heroine) LIKE %s OR
-                LOWER(director) LIKE %s OR
-                LOWER(language) LIKE %s OR
-                LOWER(genre) LIKE %s
-            )
-            """
-            params.extend([pattern]*6)
-
-        if genre and genre.lower() != "all":
-            query += " AND LOWER(genre) LIKE %s"
-            params.append("%" + genre.lower() + "%")
-
-        query += " ORDER BY id DESC"
-
-        cursor.execute(query, params)
-        movies = cursor.fetchall()
-
-        # ✅ REMOVE KIDS HERE (SAFE)
-        movies = [m for m in movies if not m.get('is_kids')]
-
-        print("ALL MOVIES COUNT:", len(movies))
-
-        cursor.execute(
-            "SELECT username, profile_image FROM users WHERE id=%s",
-            (session['user_id'],)
-        )
-        user = cursor.fetchone()
-
-        return render_template(
-            "all_movies.html",
-            movies=movies,
-            user=user,
-            search_value=search
-        )
-
-    finally:
-        conn.close()
-@app.route('/movie_suggestions')
-def movie_suggestions():
-
-    keyword = request.args.get('q', '').strip()
-
-    # Empty search avoid
-    if not keyword:
-        return jsonify([])
-
-    conn = get_connection()
-
-    try:
-
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        query = """
-        SELECT title, hero, heroine, director, genre, language
-        FROM contents
-        WHERE content_type='movie'
-        AND (
-            LOWER(title) LIKE %s
-            OR LOWER(hero) LIKE %s
-            OR LOWER(heroine) LIKE %s
-            OR LOWER(director) LIKE %s
-            OR LOWER(genre) LIKE %s
-            OR LOWER(language) LIKE %s
-        )
-        LIMIT 25
-        """
-
-        pattern = "%" + keyword.lower() + "%"
-
-        cursor.execute(query, (
-            pattern,
-            pattern,
-            pattern,
-            pattern,
-            pattern,
-            pattern
-        ))
-
-        rows = cursor.fetchall()
-
-        suggestions = []
-
-        # Collect suggestions
-        for row in rows:
-
-            for field in ['title','hero','heroine','director','genre','language']:
-
-                value = row.get(field)
-
-                if value:
-                    suggestions.append(value)
-
-        # Remove duplicates
-        suggestions = list(set(suggestions))
-
-        # -------- FUZZY SORTING --------
-        suggestions.sort(
-            key=lambda x: fuzz.partial_ratio(keyword.lower(), x.lower()),
-            reverse=True
-        )
-
-        # Limit final results
-        suggestions = suggestions[:10]
-
-        return jsonify(suggestions)
-
-    finally:
-
-        conn.close()
-@app.route('/play/<int:content_id>')
-def play_content(content_id):
-
-    # =====================================
-    # 🔐 LOGIN CHECK
-    # =====================================
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    conn = get_connection()
-
-    try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # 🎬 GET MOVIE / SERIES
-        # =====================================
-        cursor.execute(
-            "SELECT * FROM contents WHERE id=%s",
-            (content_id,)
-        )
-
-        movie = cursor.fetchone()
-
-        if not movie:
-            return "Content not found"
-
-        # =====================================
-        # 🧠 SAVE USER HISTORY
-        # (FOR RECOMMENDATION SYSTEM)
-        # =====================================
-        cursor.execute("""
-            INSERT INTO user_history (user_id, content_id)
-            VALUES (%s,%s)
-            ON DUPLICATE KEY UPDATE watched_at = NOW()
-        """, (session['user_id'], content_id))
-
-        # =====================================
-        # ▶ CONTINUE WATCHING UPDATE
-        # =====================================
-        cursor.execute("""
-            INSERT INTO continue_watching
-            (user_id, content_id, progress, last_watched)
-            VALUES (%s,%s,0,NOW())
-            ON DUPLICATE KEY UPDATE
-            last_watched = NOW()
-        """, (session['user_id'], content_id))
-
-        conn.commit()
-
-        # =====================================
-        # 🤖 HYBRID RECOMMENDATIONS
-        # =====================================
-        recommendations = []
-
-        try:
-
-            last_desc = movie.get('story', '')
-
-            rec_ids = hybrid_engine.get_hybrid_recommendations(
-                session['user_id'],
-                last_desc
-            )
-
-            if rec_ids:
-
-                placeholders = ','.join(['%s'] * len(rec_ids))
-
-                cursor.execute(
-                    f"SELECT * FROM contents WHERE id IN ({placeholders})",
-                    tuple(rec_ids)
-                )
-
-                recommendations = cursor.fetchall()
-
-                # Maintain recommendation order
-                recommendations.sort(
-                    key=lambda x: rec_ids.index(x['id'])
-                )
-
-        except Exception as e:
-            print("Recommendation Error:", e)
-
-        # =====================================
-        # 🎥 RENDER PLAYER PAGE
-        # =====================================
-        return render_template(
-            "player.html",
-            movie=movie,
-            recommendations=recommendations
-        )
-
-    except Exception as e:
-        print("Player Error:", e)
-        return "Error loading player"
-
-    finally:
-        conn.close()
-
-
-
-# ==========================================
-# PERSON / ACTOR / DIRECTOR MOVIES
-# ==========================================
-@app.route('/person/<name>')
-def person_movies(name):
-
-    conn = None
-
-    try:
-        # Connect using the central database configuration
-        conn = get_connection()
-
-        if conn is None:
-            return "Database connection failed", 500
-
-        with conn.cursor() as cursor:
-
-            query = """
-                SELECT *
-                FROM contents
-                WHERE hero = %s
-                   OR hero2 = %s
-                   OR hero3 = %s
-                   OR heroine = %s
-                   OR heroine2 = %s
-                   OR heroine3 = %s
-                   OR director = %s
-                   OR producer = %s
-                   OR comedian = %s
-            """
-
-            params = (name,) * 9
-
-            cursor.execute(query, params)
-            movies = cursor.fetchall()
-
-        # Convert the person's name into an image filename
-        actor_image = name.lower().replace(" ", "_") + ".jpg"
-
-        person = {
-            "name": name,
-            "profile_image": actor_image
-        }
-
-        return render_template(
-            "person_movies.html",
-            name=name,
-            movies=movies,
-            person=person
-        )
-
-    except Exception:
-        app.logger.exception(
-            "Error loading movies for person: %s",
-            name
-        )
-        return "Unable to load movies right now. Please try again.", 500
-
-    finally:
-        if conn:
-            conn.close()
-
-# ====================================================
-# admin_dashbboard_analysis
-# ==============================
-# ADMIN DASHBOARD ANALYTICS
-# ==============================
-# =====================================
-# ADMIN DASHBOARD ANALYTICS (UNLIMITED)
-# =====================================
-@app.route('/admin_dashboard_analysis')
-def admin_dashboard_analysis():
-
-    conn = get_connection()
-
     if not conn:
         return "Database connection failed"
 
     try:
         cursor = conn.cursor()
 
-        # =========================================
-        # TOTAL CONTENTS
-        # =========================================
+        query = "SELECT * FROM contents WHERE is_kids = 1"
+        params = []
+        if search_query:
+            query += " AND title LIKE %s"
+            params.append(f"%{search_query}%")
+        if language:
+            query += " AND language = %s"
+            params.append(language)
+        if genre:
+            query += " AND genre = %s"
+            params.append(genre)
+        query += " ORDER BY release_year DESC"
+        cursor.execute(query, params)
+        kids_contents = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT c.*, cw.progress, cw.duration
+            FROM continue_watching cw JOIN contents c ON cw.content_id = c.id
+            WHERE cw.user_id = %s AND c.is_kids = 1
+            ORDER BY cw.last_watched DESC LIMIT 10
+        """, (user_id,))
+        continue_watching = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE deepflix_rank > 0 AND is_kids = 1
+            ORDER BY deepflix_rank ASC LIMIT 15
+        """)
+        deepflix_top = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT c.*, COUNT(cw.id) AS watch_count
+            FROM continue_watching cw JOIN contents c ON cw.content_id = c.id
+            WHERE c.is_kids = 1 AND cw.last_watched >= NOW() - INTERVAL 7 DAY
+            GROUP BY cw.content_id, c.id
+            ORDER BY watch_count DESC LIMIT 7
+        """)
+        trending_kids = cursor.fetchall()
+        if not trending_kids:
+            cursor.execute("SELECT * FROM contents WHERE is_kids = 1 "
+                           "ORDER BY release_year DESC LIMIT 7")
+            trending_kids = cursor.fetchall()
+
+        because_you_watched = []
+        cursor.execute("SELECT content_id FROM continue_watching WHERE user_id = %s "
+                       "ORDER BY last_watched DESC LIMIT 1", (user_id,))
+        last = cursor.fetchone()
+        if last:
+            cursor.execute("SELECT genre, language FROM contents WHERE id=%s", (last['content_id'],))
+            last_content = cursor.fetchone()
+            if last_content:
+                cursor.execute("""
+                    SELECT * FROM contents
+                    WHERE is_kids = 1 AND genre = %s AND id != %s LIMIT 7
+                """, (last_content['genre'], last['content_id']))
+                because_you_watched = cursor.fetchall()
+
+        cursor.execute("SELECT * FROM contents WHERE is_kids = 1 ORDER BY upload_date DESC LIMIT 10")
+        new_arrivals = cursor.fetchall()
+
+        cursor.execute("SELECT * FROM contents WHERE is_kids = 1 AND genre LIKE '%%Comedy%%' LIMIT 10")
+        funny_kids = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE is_kids = 1
+              AND (title LIKE '%%Animal%%' OR title LIKE '%%Dog%%' OR title LIKE '%%Cat%%')
+            LIMIT 10
+        """)
+        animal_kids = cursor.fetchall()
+
+        cursor.execute("SELECT * FROM contents WHERE is_kids = 1 AND language = 'Tamil' LIMIT 10")
+        tamil_kids = cursor.fetchall()
+
+        kids_notifications = safe_fetchall(cursor, """
+            SELECT n.*, c.title AS content_title
+            FROM notifications n LEFT JOIN contents c ON n.content_id = c.id
+            WHERE n.user_id = %s AND n.is_kids = 1
+            ORDER BY n.created_at DESC LIMIT 10
+        """, (user_id,))
+
+        return render_template(
+            "kids_dashboard.html",
+            kids_contents=kids_contents, continue_watching=continue_watching,
+            deepflix_top=deepflix_top, trending_kids=trending_kids,
+            because_you_watched=because_you_watched, new_arrivals=new_arrivals,
+            funny_kids=funny_kids, animal_kids=animal_kids, tamil_kids=tamil_kids,
+            kids_notifications=kids_notifications, search_query=search_query,
+            selected_language=language, selected_genre=genre)
+
+    except Exception as e:
+        print("KIDS DASHBOARD ERROR:", e)
+        return "Something went wrong"
+    finally:
+        conn.close()
+
+
+@app.route('/kids_search')
+@login_required
+def kids_search():
+    search_query = request.args.get("q", "").strip()
+    conn = get_connection()
+    if not conn:
+        return "Database connection failed"
+    try:
+        cursor = conn.cursor()
+        like = f"%{search_query}%"
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE is_kids = 1
+              AND (title LIKE %s OR genre LIKE %s OR language LIKE %s
+                   OR hero LIKE %s OR heroine LIKE %s OR director LIKE %s)
+            ORDER BY release_year DESC
+        """, (like,) * 6)
+        kids_contents = cursor.fetchall()
+
+        return render_template(
+            "kids_dashboard.html",
+            kids_contents=kids_contents, continue_watching=[], deepflix_top=[],
+            trending=[], trending_kids=[], because_you_watched=[], new_arrivals=[],
+            funny_kids=[], animal_kids=[], tamil_kids=[], kids_notifications=[],
+            search_query=search_query, selected_language='', selected_genre='')
+    except Exception as e:
+        print("KIDS SEARCH ERROR:", e)
+        return "Search failed"
+    finally:
+        conn.close()
+
+
+@app.route('/kids_watch/<int:content_id>')
+@login_required
+def kids_watch(content_id):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+            content = cursor.fetchone()
+            if not content:
+                return "Content not found"
+        return render_template("kids_watch.html", content=content)
+    finally:
+        conn.close()
+
+
+# =========================================================
+# ROUTES: USER DASHBOARD
+# =========================================================
+@app.route('/user_dashboard', endpoint='user_dashboard')
+@login_required
+def user_dashboard():
+    user_id = session['user_id']
+    conn = get_connection()
+    if not conn:
+        return "Database connection failed"
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id, username, profile_image, fav_genre, fav_language "
+                       "FROM users WHERE id=%s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            session.clear()
+            return redirect(url_for('login'))
+
+        display_name = session.get('profile_name', user['username'])
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE backdrop_url IS NOT NULL AND backdrop_url != '' AND is_kids = 0
+            ORDER BY deepflix_rank ASC, hearts DESC LIMIT 5
+        """)
+        hero_banner = cursor.fetchall()
+
+        notifications = safe_fetchall(cursor, """
+            SELECT n.*, c.thumbnail AS content_thumbnail
+            FROM notifications n LEFT JOIN contents c ON n.content_id = c.id
+            WHERE (c.is_kids = 0 OR c.is_kids IS NULL)
+            ORDER BY n.created_at DESC LIMIT 10
+        """)
+
+        search_query = request.args.get('search', '').strip()
+        selected_genre = request.args.get('genre', '').strip()
+        selected_language = request.args.get('language', '').strip()
+
+        sql = "SELECT * FROM contents WHERE is_kids = 0"
+        params = []
+        for word in search_query.split():
+            sql += """
+                AND (title LIKE %s OR story LIKE %s OR hero LIKE %s OR heroine LIKE %s
+                     OR director LIKE %s OR language LIKE %s OR genre LIKE %s)
+            """
+            params.extend([f"%{word}%"] * 7)
+        if selected_genre:
+            sql += " AND genre LIKE %s"
+            params.append(f"%{selected_genre}%")
+        if selected_language:
+            sql += " AND language LIKE %s"
+            params.append(f"%{selected_language}%")
+        sql += " ORDER BY release_year DESC"
+        cursor.execute(sql, tuple(params))
+        all_contents = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE content_type = 'movie' AND (is_kids = 0 OR is_kids IS NULL)
+              AND (is_90s = 0 OR is_90s IS NULL)
+            ORDER BY created_at DESC, id DESC LIMIT 15
+        """)
+        recently_added = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE language LIKE '%%Korean%%' AND is_kids = 0
+            ORDER BY hearts DESC LIMIT 15
+        """)
+        korean_blockbusters = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE deepflix_rank > 0 AND is_kids = 0
+            ORDER BY deepflix_rank ASC LIMIT 15
+        """)
+        deepflix_top = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE content_type='movie' AND (is_kids = 0 OR is_kids IS NULL)
+              AND (is_90s = 0 OR is_90s IS NULL) AND views IS NOT NULL
+            ORDER BY views DESC, hearts DESC LIMIT 10
+        """)
+        trending_movies = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE content_type='series' AND is_kids = 0
+            ORDER BY views DESC, hearts DESC LIMIT 10
+        """)
+        trending_series = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE content_type='movie'
+              AND (genre LIKE '%%Crime%%' OR genre LIKE '%%Drama%%') AND is_kids = 0
+            ORDER BY hearts DESC LIMIT 10
+        """)
+        crime_drama_movies = cursor.fetchall()
+
+        cursor.execute("SELECT * FROM contents WHERE is_90s = 1 AND is_kids = 0 "
+                       "ORDER BY release_year ASC")
+        movies_90s = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT c.*, cw.progress
+            FROM continue_watching cw JOIN contents c ON cw.content_id=c.id
+            WHERE cw.user_id=%s AND c.is_kids = 0
+            ORDER BY cw.last_watched DESC LIMIT 10
+        """, (user_id,))
+        continue_watching = cursor.fetchall()
+
+        # ---------------- Recommendations ----------------
+        recommendations = []
+        cursor.execute("SELECT COUNT(*) AS total FROM user_history WHERE user_id=%s", (user_id,))
+        if cursor.fetchone()['total'] == 0:
+            cursor.execute("""
+                SELECT * FROM contents
+                WHERE genre LIKE %s AND language LIKE %s AND is_kids = 0
+                ORDER BY hearts DESC LIMIT 12
+            """, (f"%{user.get('fav_genre') or ''}%", f"%{user.get('fav_language') or ''}%"))
+            recommendations = cursor.fetchall()
+        else:
+            cursor.execute("""
+                SELECT c.id, c.story
+                FROM user_history uh JOIN contents c ON uh.content_id=c.id
+                WHERE uh.user_id=%s
+                ORDER BY uh.watched_at DESC LIMIT 1
+            """, (user_id,))
+            last = cursor.fetchone() or {}
+            recommendations = fetch_recommendations(
+                cursor, user_id, last.get('story') or '', current_id=last.get('id'))
+
+        if len(recommendations) < 12:
+            existing = [r['id'] for r in recommendations]
+            fill_sql = "SELECT * FROM contents WHERE is_kids = 0"
+            fill_params = []
+            if existing:
+                fill_sql += f" AND id NOT IN ({','.join(['%s'] * len(existing))})"
+                fill_params.extend(existing)
+            fill_sql += " ORDER BY hearts DESC LIMIT %s"
+            fill_params.append(12 - len(recommendations))
+            cursor.execute(fill_sql, tuple(fill_params))
+            recommendations.extend(cursor.fetchall())
+
+        return render_template(
+            "user_dashboard.html",
+            user=user, display_name=display_name, hero_banner=hero_banner,
+            notifications=notifications, all_contents=all_contents,
+            recently_added=recently_added, korean_blockbusters=korean_blockbusters,
+            deepflix_top=deepflix_top, trending_movies=trending_movies,
+            trending_series=trending_series, crime_drama_movies=crime_drama_movies,
+            movies_90s=movies_90s, continue_watching=continue_watching,
+            recommendations=recommendations[:12])
+
+    except Exception as e:
+        app.logger.exception("Dashboard Error: %s", e)
+        return "Error loading dashboard"
+    finally:
+        conn.close()
+
+
+@app.route('/check_notifications')
+def check_notifications():
+    if 'user_id' not in session:
+        return jsonify({"count": 0})
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            rows = safe_fetchall(cursor, """
+                SELECT COUNT(*) as count
+                FROM notifications n JOIN contents c ON n.content_id = c.id
+                WHERE n.user_id = %s AND c.is_kids = 1
+            """, (session['user_id'],))
+        return jsonify({"count": rows[0]['count'] if rows else 0})
+    finally:
+        conn.close()
+
+
+# =========================================================
+# ROUTES: CONTENT / PLAYER
+# =========================================================
+@app.route('/content/<int:content_id>')
+@login_required
+def content_page(content_id):
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+        movie = cursor.fetchone()
+        if not movie:
+            return "Movie not found"
+
+        touch_continue_watching(cursor, session['user_id'], content_id)
+        conn.commit()
+
+        cursor.execute("SELECT * FROM contents WHERE genre LIKE %s AND id != %s LIMIT 10",
+                       ("%" + (movie.get('genre') or '') + "%", content_id))
+        similar_movies = cursor.fetchall()
+
+        return render_template("content.html", movie=movie, similar_movies=similar_movies)
+    except Exception as e:
+        print("Content Page Error:", e)
+        return "Error loading content page"
+    finally:
+        conn.close()
+
+
+CAST_SPEC = [
+    ('hero', 'Hero', 'hero_image'), ('hero2', 'Hero', 'hero2_image'),
+    ('hero3', 'Hero', 'hero3_image'),
+    ('heroine', 'Heroine', 'heroine_image'), ('heroine2', 'Heroine', 'heroine2_image'),
+    ('heroine3', 'Heroine', 'heroine3_image'),
+    ('comedian', 'Comedian', 'comedian_image'), ('comedian2', 'Comedian', 'comedian2_image'),
+    ('director', 'Director', 'director_image'), ('producer', 'Producer', 'producer_image'),
+]
+
+
+def poster_url(item):
+    name = (item.get("poster") or "").strip()
+    return url_for("static", filename=f"uploads/{name}") if name else None
+
+
+@app.route('/watch/<int:content_id>')
+@login_required
+def watch_content(content_id):
+    user_id = session['user_id']
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+            content = cursor.fetchone()
+            if not content:
+                return "Content not found"
+
+            cursor.execute("UPDATE contents SET views = COALESCE(views, 0) + 1 WHERE id=%s",
+                           (content_id,))
+            content["poster_path"] = poster_url(content)
+
+            cast = []
+            for name_key, role, image_key in CAST_SPEC:
+                if content.get(name_key):
+                    image = content.get(image_key)
+                    cast.append({
+                        "role": role,
+                        "name": content.get(name_key),
+                        "image": url_for("static", filename=f"uploads/{image}") if image else None,
+                    })
+
+            record_history(cursor, user_id, content_id)
+            saved_progress = touch_continue_watching(cursor, user_id, content_id) or 0
+
+            cursor.execute("""
+                SELECT r.*, u.username FROM reviews r
+                JOIN users u ON r.user_id = u.id
+                WHERE r.content_id=%s ORDER BY r.timestamp DESC
+            """, (content_id,))
+            reviews = cursor.fetchall()
+
+            current_genre = (content.get("genre") or "").strip()
+            current_language = (content.get("language") or "").strip()
+            current_story = (content.get("story") or "").strip()
+
+            recommended = fetch_recommendations(cursor, user_id, current_story,
+                                                current_id=content_id, limit=10)
+
+            if not recommended and current_genre:
+                cursor.execute("""
+                    SELECT * FROM contents
+                    WHERE id != %s AND genre LIKE %s AND language LIKE %s
+                    ORDER BY hearts DESC LIMIT 12
+                """, (content_id, f"%{current_genre}%", f"%{current_language}%"))
+                recommended = cursor.fetchall()
+
+            if not recommended and current_genre:
+                cursor.execute("""
+                    SELECT * FROM contents
+                    WHERE id != %s AND genre LIKE %s
+                    ORDER BY RAND() LIMIT 12
+                """, (content_id, f"%{current_genre}%"))
+                recommended = cursor.fetchall()
+
+            for item in recommended:
+                item["poster_path"] = poster_url(item)
+
+        conn.commit()
+        return render_template("watch.html", content=content, cast=cast, reviews=reviews,
+                               saved_progress=saved_progress, recommended=recommended)
+    except Exception as e:
+        app.logger.exception("WATCH PAGE ERROR: %s", e)
+        return "Something went wrong"
+    finally:
+        conn.close()
+
+
+@app.route('/play/<int:content_id>')
+@login_required
+def play_content(content_id):
+    user_id = session['user_id']
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+        movie = cursor.fetchone()
+        if not movie:
+            return "Content not found"
+
+        record_history(cursor, user_id, content_id)
+        touch_continue_watching(cursor, user_id, content_id)
+        conn.commit()
+
+        recommendations = fetch_recommendations(cursor, user_id, movie.get('story') or '',
+                                                current_id=content_id, limit=10)
+        return render_template("player.html", movie=movie, recommendations=recommendations)
+    except Exception as e:
+        print("Player Error:", e)
+        return "Error loading player"
+    finally:
+        conn.close()
+
+
+@app.route('/all_movies')
+@login_required
+def all_movies():
+    search = request.args.get('search', '').strip()
+    genre = request.args.get('genre', '').strip()
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        query = "SELECT * FROM contents WHERE (is_kids = 0 OR is_kids IS NULL)"
+        params = []
+        if search:
+            pattern = "%" + search.lower() + "%"
+            query += """
+                AND (LOWER(title) LIKE %s OR LOWER(hero) LIKE %s OR LOWER(heroine) LIKE %s
+                     OR LOWER(director) LIKE %s OR LOWER(language) LIKE %s OR LOWER(genre) LIKE %s)
+            """
+            params.extend([pattern] * 6)
+        if genre and genre.lower() != "all":
+            query += " AND LOWER(genre) LIKE %s"
+            params.append("%" + genre.lower() + "%")
+        query += " ORDER BY id DESC"
+        cursor.execute(query, params)
+        movies = cursor.fetchall()
+
+        cursor.execute("SELECT username, profile_image FROM users WHERE id=%s", (session['user_id'],))
+        user = cursor.fetchone()
+
+        return render_template("all_movies.html", movies=movies, user=user, search_value=search)
+    finally:
+        conn.close()
+
+
+@app.route('/movie_suggestions')
+def movie_suggestions():
+    keyword = request.args.get('q', '').strip()
+    if not keyword:
+        return jsonify([])
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        pattern = "%" + keyword.lower() + "%"
+        cursor.execute("""
+            SELECT title, hero, heroine, director, genre, language
+            FROM contents
+            WHERE content_type='movie'
+              AND (LOWER(title) LIKE %s OR LOWER(hero) LIKE %s OR LOWER(heroine) LIKE %s
+                   OR LOWER(director) LIKE %s OR LOWER(genre) LIKE %s OR LOWER(language) LIKE %s)
+            LIMIT 25
+        """, (pattern,) * 6)
+        suggestions = set()
+        for row in cursor.fetchall():
+            for field in ('title', 'hero', 'heroine', 'director', 'genre', 'language'):
+                if row.get(field):
+                    suggestions.add(row[field])
+
+        ranked = sorted(suggestions,
+                        key=lambda x: fuzz.partial_ratio(keyword.lower(), x.lower()),
+                        reverse=True)
+        return jsonify(ranked[:10])
+    finally:
+        conn.close()
+
+
+@app.route('/person/<name>')
+def person_movies(name):
+    conn = None
+    try:
+        conn = get_connection()
+        if conn is None:
+            return "Database connection failed", 500
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM contents
+                WHERE hero = %s OR hero2 = %s OR hero3 = %s
+                   OR heroine = %s OR heroine2 = %s OR heroine3 = %s
+                   OR director = %s OR producer = %s OR comedian = %s
+            """, (name,) * 9)
+            movies = cursor.fetchall()
+
+        person = {"name": name, "profile_image": name.lower().replace(" ", "_") + ".jpg"}
+        return render_template("person_movies.html", name=name, movies=movies, person=person)
+    except Exception:
+        app.logger.exception("Error loading movies for person: %s", name)
+        return "Unable to load movies right now. Please try again.", 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/all_series')
+@login_required
+def all_series():
+    user_id = session['user_id']
+    conn = get_connection()
+    if not conn:
+        return "Database connection failed"
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT n.*, c.thumbnail AS content_thumbnail
+            FROM notifications n JOIN contents c ON n.content_id = c.id
+            WHERE c.content_type = 'series' AND c.is_kids = 0
+            ORDER BY n.created_at DESC LIMIT 10
+        """)
+        notifications = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT c.*, cw.progress
+            FROM continue_watching cw JOIN contents c ON cw.content_id = c.id
+            WHERE cw.user_id = %s AND c.content_type = 'series' AND c.is_kids = 0
+            ORDER BY cw.last_watched DESC LIMIT 10
+        """, (user_id,))
+        continue_watching_series = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE content_type = 'series' AND is_kids = 0 AND created_at IS NOT NULL
+            ORDER BY created_at DESC, id DESC LIMIT 15
+        """)
+        recently_added_series = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE content_type = 'series' AND is_kids = 0
+            ORDER BY release_year DESC
+        """)
+        series_list = cursor.fetchall()
+
+        return render_template('all_series.html', notifications=notifications,
+                               continue_watching_series=continue_watching_series,
+                               recently_added_series=recently_added_series,
+                               series_list=series_list)
+    except Exception as e:
+        return str(e)
+    finally:
+        conn.close()
+
+
+@app.route('/series_play/<int:content_id>')
+@login_required
+def series_play(content_id):
+    conn = get_connection()
+    if not conn:
+        return "Database connection failed"
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contents WHERE id = %s AND content_type = 'series'",
+                       (content_id,))
+        series = cursor.fetchone()
+        if not series:
+            return "Series not found"
+
+        full_title = series['title'] or ''
+        base_title = full_title.split(":")[0].strip() if ":" in full_title else full_title.strip()
+
+        cursor.execute("""
+            SELECT * FROM contents
+            WHERE content_type = 'series' AND title LIKE %s AND is_kids = 0
+            ORDER BY id ASC
+        """, (f"{base_title}:%",))
+        episodes = cursor.fetchall()
+
+        return render_template('series_play.html', series=series, episodes=episodes,
+                               base_title=base_title)
+    except Exception as e:
+        return str(e)
+    finally:
+        conn.close()
+
+
+# =========================================================
+# ROUTES: SOCIAL
+# =========================================================
+def add_initial(row):
+    row['initial'] = (row.get('username') or '?')[0].upper()
+    return row
+
+
+@app.route('/social_hub')
+@login_required
+def social_hub():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, username, gender, profile_image FROM users WHERE id = %s",
+                           (session['user_id'],))
+            current_user = cursor.fetchone()
+            if not current_user:
+                session.clear()
+                return redirect(url_for('login'))
+            add_initial(current_user)
+
+            cursor.execute("SELECT id, username, age, fav_genre, gender, profile_image "
+                           "FROM users WHERE id != %s", (session['user_id'],))
+            users = [add_initial(u) for u in cursor.fetchall()]
+
+            cursor.execute("SELECT followed_id FROM social_graph WHERE follower_id=%s",
+                           (session['user_id'],))
+            following = [row['followed_id'] for row in cursor.fetchall()]
+
+            return render_template('social_hub.html', users=users, following=following,
+                                   current_user=current_user)
+    except Exception as e:
+        print("SOCIAL HUB ERROR:", e)
+        return "Something went wrong", 500
+    finally:
+        conn.close()
+
+
+@app.route('/socialhub_profile/<int:user_id>')
+@login_required
+def socialhub_profile(user_id):
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id, username, gender, profile_image FROM users WHERE id=%s",
+                       (session['user_id'],))
+        current_user = cursor.fetchone()
+        if not current_user:
+            session.clear()
+            return redirect(url_for('login'))
+        add_initial(current_user)
+
+        cursor.execute("SELECT id, username, age, fav_genre, gender, profile_image "
+                       "FROM users WHERE id=%s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return "User not found", 404
+        add_initial(user)
+
+        cursor.execute("""
+            SELECT c.id, c.title, c.genre, c.thumbnail, MAX(uh.watched_at) AS last_seen
+            FROM user_history uh JOIN contents c ON uh.content_id = c.id
+            WHERE uh.user_id=%s
+            GROUP BY c.id, c.title, c.genre, c.thumbnail
+            ORDER BY last_seen DESC LIMIT 5
+        """, (user_id,))
+        history_based = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT id, title, genre, thumbnail FROM contents
+            WHERE genre LIKE %s ORDER BY trending_rank DESC LIMIT 5
+        """, (f"%{user.get('fav_genre') or ''}%",))
+        genre_based = cursor.fetchall()
+
+        combined = {item['id']: item for item in history_based}
+        for item in genre_based:
+            combined.setdefault(item['id'], item)
+        recommended_contents = list(combined.values())
+
+        for item in recommended_contents:
+            thumb = item.get('thumbnail')
+            if thumb and not thumb.startswith(('http://', 'https://')):
+                item['thumbnail'] = url_for('static', filename=f'uploads/{thumb}')
+
+        cursor.execute("SELECT 1 FROM social_graph WHERE follower_id=%s AND followed_id=%s",
+                       (session['user_id'], user_id))
+        is_following = cursor.fetchone() is not None
+
+        cursor.execute("""
+            SELECT u.id, u.username, u.profile_image, u.gender
+            FROM social_graph sg JOIN users u ON sg.follower_id = u.id
+            WHERE sg.followed_id=%s
+        """, (user_id,))
+        followers = [add_initial(f) for f in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT u.id, u.username, u.profile_image, u.gender
+            FROM social_graph sg JOIN users u ON sg.followed_id = u.id
+            WHERE sg.follower_id=%s
+        """, (user_id,))
+        following = [add_initial(f) for f in cursor.fetchall()]
+
+        return render_template('socialhub_profile.html', user=user,
+                               recommended_contents=recommended_contents,
+                               is_following=is_following, followers=followers,
+                               following=following, current_user=current_user)
+    except Exception as e:
+        print("PROFILE ERROR:", e)
+        return "Something went wrong", 500
+    finally:
+        conn.close()
+
+
+@app.route('/toggle_follow/<int:user_id>', methods=['POST'])
+def toggle_follow(user_id):
+    if 'user_id' not in session:
+        return jsonify({"success": False, "message": "Not logged in"})
+
+    me = session['user_id']
+    if me == user_id:
+        return jsonify({"success": False, "message": "You cannot follow yourself"})
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1 FROM social_graph WHERE follower_id=%s AND followed_id=%s",
+                           (me, user_id))
+            if cursor.fetchone():
+                cursor.execute("DELETE FROM social_graph WHERE follower_id=%s AND followed_id=%s",
+                               (me, user_id))
+                following_status = False
+            else:
+                cursor.execute("INSERT INTO social_graph (follower_id, followed_id) VALUES (%s,%s)",
+                               (me, user_id))
+                following_status = True
+            conn.commit()
+        return jsonify({"success": True, "following": following_status, "user_id": user_id})
+    finally:
+        conn.close()
+
+
+@app.route('/api/follow/<int:target_id>')
+@login_required
+def api_follow(target_id):
+    if target_id == session['user_id']:
+        return redirect(url_for('social_hub'))
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM social_graph WHERE follower_id=%s AND followed_id=%s",
+                           (session['user_id'], target_id))
+            exists = cursor.fetchone()
+            if exists:
+                cursor.execute("DELETE FROM social_graph WHERE id=%s", (exists['id'],))
+                flash('Unfollowed user.', 'info')
+            else:
+                cursor.execute("INSERT INTO social_graph (follower_id, followed_id) VALUES (%s, %s)",
+                               (session['user_id'], target_id))
+                flash('Followed user!', 'success')
+        conn.commit()
+        return redirect(url_for('social_hub'))
+    finally:
+        conn.close()
+
+
+def format_chat_user(user):
+    if user.get('profile_image'):
+        user['profile_image'] = '/static/uploads/' + user['profile_image']
+        user['initial'] = None
+    else:
+        user['profile_image'] = None
+        user['initial'] = user['username'][0].upper()
+    return user
+
+
+@app.route('/chat/<int:user_id>')
+@login_required
+def chat(user_id):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, username, profile_image FROM users WHERE id=%s", (user_id,))
+            chat_user = cursor.fetchone()
+            if not chat_user:
+                return "User not found", 404
+            cursor.execute("SELECT id, username, profile_image FROM users WHERE id=%s",
+                           (session['user_id'],))
+            me = cursor.fetchone()
+            return render_template('chat.html', chat_user=format_chat_user(chat_user),
+                                   me=format_chat_user(me))
+    finally:
+        conn.close()
+
+
+@app.route('/fetch_messages/<int:user_id>')
+def fetch_messages(user_id):
+    if 'user_id' not in session:
+        return jsonify([])
+
+    me_id = session['user_id']
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT sender_id, receiver_id, message, timestamp
+                FROM chats
+                WHERE (sender_id=%s AND receiver_id=%s) OR (sender_id=%s AND receiver_id=%s)
+                ORDER BY timestamp ASC
+            """, (me_id, user_id, user_id, me_id))
+            messages = cursor.fetchall()
+
+            sender_ids = list({m['sender_id'] for m in messages})
+            users = {}
+            if sender_ids:
+                ph = ','.join(['%s'] * len(sender_ids))
+                cursor.execute(f"SELECT id, username, profile_image FROM users WHERE id IN ({ph})",
+                               tuple(sender_ids))
+                users = {u['id']: u for u in cursor.fetchall()}
+
+            for msg in messages:
+                sender = users.get(msg['sender_id'])
+                if sender:
+                    msg['username'] = sender['username']
+                    if sender.get('profile_image'):
+                        msg['profile_image'] = '/static/uploads/' + sender['profile_image']
+                        msg['initial'] = None
+                    else:
+                        msg['profile_image'] = None
+                        msg['initial'] = sender['username'][0].upper()
+                else:
+                    msg['username'], msg['profile_image'], msg['initial'] = "Unknown", None, "?"
+                msg['is_me'] = (msg['sender_id'] == me_id)
+
+            return jsonify(messages)
+    finally:
+        conn.close()
+
+
+@app.route('/send_message/<int:user_id>', methods=['POST'])
+def send_message(user_id):
+    if 'user_id' not in session:
+        return jsonify({"success": False})
+
+    msg = ((request.get_json(silent=True) or {}).get('message') or '').strip()
+    if not msg:
+        return jsonify({"success": False})
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("INSERT INTO chats (sender_id, receiver_id, message) VALUES (%s,%s,%s)",
+                           (session['user_id'], user_id, msg))
+        conn.commit()
+        return jsonify({"success": True})
+    finally:
+        conn.close()
+
+
+# =========================================================
+# ROUTES: RATINGS / REVIEWS / PROGRESS / HEARTS (JSON APIs)
+# =========================================================
+@app.route('/api/rate', methods=['POST'])
+def api_rate():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Login required'}), 401
+
+    data = request.get_json(silent=True) or {}
+    content_id = data.get('content_id')
+    try:
+        rating = float(data.get('rating'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Missing data'}), 400
+    if not content_id or not (0 < rating <= 5):
+        return jsonify({'error': 'Invalid data'}), 400
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM ratings WHERE user_id=%s AND content_id=%s",
+                           (session['user_id'], content_id))
+            if cursor.fetchone():
+                cursor.execute("UPDATE ratings SET rating=%s WHERE user_id=%s AND content_id=%s",
+                               (rating, session['user_id'], content_id))
+            else:
+                cursor.execute("INSERT INTO ratings (user_id, content_id, rating) VALUES (%s, %s, %s)",
+                               (session['user_id'], content_id, rating))
+        conn.commit()
+        ALSRecommender._cache.pop(session['user_id'], None)  # refresh recommendations
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/rating/get')
+def get_rating():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'rating': 0})
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT rating FROM ratings WHERE user_id=%s AND content_id=%s",
+                           (session['user_id'], request.args.get('content_id')))
+            result = cursor.fetchone()
+            return jsonify({'success': True, 'rating': result['rating'] if result else 0})
+    finally:
+        conn.close()
+
+
+@app.route('/api/review', methods=['POST'])
+@login_required
+def api_review():
+    content_id = request.form.get('content_id', type=int)
+    text = request.form.get('review_text', '').strip()
+    if not content_id or not text:
+        flash('Review text is required.', 'danger')
+        return redirect(request.referrer or url_for('user_dashboard'))
+
+    sentiment = TextBlob(text).sentiment.polarity  # -1 .. 1
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO reviews (user_id, content_id, review_text, sentiment_score) "
+                "VALUES (%s, %s, %s, %s)", (session['user_id'], content_id, text, sentiment))
+        conn.commit()
+        flash('Review posted!', 'success')
+        return redirect(url_for('watch_content', content_id=content_id))
+    finally:
+        conn.close()
+
+
+@app.route('/api/progress/get')
+def get_progress():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'progress': 0})
+    content_id = request.args.get('content_id')
+    if not content_id:
+        return jsonify({'success': False, 'progress': 0})
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT progress FROM continue_watching WHERE user_id=%s AND content_id=%s",
+                           (session['user_id'], content_id))
+            row = cursor.fetchone()
+        return jsonify({'success': True, 'progress': float(row['progress']) if row else 0})
+    finally:
+        conn.close()
+
+
+@app.route('/api/progress/update', methods=['POST'])
+def update_progress():
+    if 'user_id' not in session:
+        return jsonify({'success': False}), 401
+
+    data = request.get_json(silent=True) or {}
+    content_id = data.get('content_id')
+    try:
+        progress = float(data.get('progress'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False}), 400
+    if not content_id:
+        return jsonify({'success': False}), 400
+
+    progress = max(0, min(progress, 100))
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            if progress >= 95:   # finished -> remove from "continue watching"
+                cursor.execute("DELETE FROM continue_watching WHERE user_id=%s AND content_id=%s",
+                               (session['user_id'], content_id))
+            else:
+                touch_continue_watching(cursor, session['user_id'], content_id, progress)
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print("Progress Error:", e)
+        return jsonify({'success': False}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/ajax_toggle_heart', methods=['POST'])
+def ajax_toggle_heart():
+    if 'user_id' not in session:
+        return jsonify({'status': 'login_required'}), 401
+
+    content_id = (request.get_json(silent=True) or {}).get('content_id')
+    if not content_id:
+        return jsonify({'status': 'error', 'message': 'Content ID is required'}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        if conn is None:
+            return jsonify({'status': 'error', 'message': 'Database connection failed'}), 500
+
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM contents WHERE id=%s", (content_id,))
+            if not cursor.fetchone():
+                return jsonify({'status': 'error', 'message': 'Content not found'}), 404
+
+            cursor.execute("SELECT 1 FROM user_hearts WHERE user_id=%s AND content_id=%s",
+                           (session['user_id'], content_id))
+            if cursor.fetchone():
+                cursor.execute("DELETE FROM user_hearts WHERE user_id=%s AND content_id=%s",
+                               (session['user_id'], content_id))
+                cursor.execute("UPDATE contents SET hearts = GREATEST(COALESCE(hearts, 0) - 1, 0) "
+                               "WHERE id=%s", (content_id,))
+            else:
+                cursor.execute("INSERT INTO user_hearts (user_id, content_id) VALUES (%s, %s)",
+                               (session['user_id'], content_id))
+                cursor.execute("UPDATE contents SET hearts = COALESCE(hearts, 0) + 1 WHERE id=%s",
+                               (content_id,))
+            conn.commit()
+
+            cursor.execute("SELECT hearts FROM contents WHERE id=%s", (content_id,))
+            updated = cursor.fetchone()
+
+        return jsonify({'status': 'success', 'hearts': updated['hearts'] if updated else 0})
+    except Exception:
+        if conn:
+            conn.rollback()
+        app.logger.exception("Error toggling content heart")
+        return jsonify({'status': 'error',
+                        'message': 'Unable to update heart. Please try again.'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =========================================================
+# ROUTES: ADMIN ANALYTICS
+# =========================================================
+@app.route('/admin_dashboard_analysis')
+@admin_required
+def admin_dashboard_analysis():
+    conn = get_connection()
+    if not conn:
+        return "Database connection failed"
+    try:
+        cursor = conn.cursor()
+
+        def rows(sql):
+            cursor.execute(sql)
+            return cursor.fetchall() or []
+
+        def with_images(items, key):
+            for item in items:
+                item['image'] = (item.get(key) or '').lower().replace(" ", "_") + ".jpg"
+            return items
+
         cursor.execute("SELECT COUNT(*) AS total_movies FROM contents")
-        result = cursor.fetchone() or {}
-        total_movies = result.get('total_movies', 0)
+        total_movies = (cursor.fetchone() or {}).get('total_movies', 0)
 
-        # =========================================
-        # CONTENTS BY LANGUAGE
-        # =========================================
-        cursor.execute("""
-            SELECT language, COUNT(*) AS count
-            FROM contents
-            GROUP BY language
-            ORDER BY count DESC
-        """)
-        languages = cursor.fetchall() or []
-
-        # =========================================
-        # CONTENTS BY GENRE
-        # =========================================
-        cursor.execute("""
-            SELECT genre, COUNT(*) AS count
-            FROM contents
-            GROUP BY genre
-            ORDER BY count DESC
-        """)
-        genres = cursor.fetchall() or []
-
-        # =========================================
-        # HERO ANALYTICS
-        # =========================================
-        cursor.execute("""
-            SELECT hero, COUNT(*) AS count
-            FROM contents
-            WHERE hero IS NOT NULL AND hero != ''
-            GROUP BY hero
-            ORDER BY count DESC
-        """)
-        heroes = cursor.fetchall() or []
-
-        for hero in heroes:
-            hero['image'] = (hero.get('hero') or '').lower().replace(" ", "_") + ".jpg"
-
-        # =========================================
-        # HEROINE ANALYTICS
-        # =========================================
-        cursor.execute("""
-            SELECT heroine, COUNT(*) AS count
-            FROM contents
-            WHERE heroine IS NOT NULL AND heroine != ''
-            GROUP BY heroine
-            ORDER BY count DESC
-        """)
-        heroines = cursor.fetchall() or []
-
-        for heroine in heroines:
-            heroine['image'] = (heroine.get('heroine') or '').lower().replace(" ", "_") + ".jpg"
-
-        # =========================================
-        # DIRECTORS
-        # =========================================
-        cursor.execute("""
-            SELECT director, COUNT(*) AS count
-            FROM contents
-            WHERE director IS NOT NULL AND director != ''
-            GROUP BY director
-            ORDER BY count DESC
-        """)
-        directors = cursor.fetchall() or []
-
-        for director in directors:
-            director['image'] = (director.get('director') or '').lower().replace(" ", "_") + ".jpg"
-
-        # =========================================
-        # PRODUCERS
-        # =========================================
-        cursor.execute("""
-            SELECT producer, COUNT(*) AS count
-            FROM contents
-            WHERE producer IS NOT NULL AND producer != ''
-            GROUP BY producer
-            ORDER BY count DESC
-        """)
-        producers = cursor.fetchall() or []
-
-        for producer in producers:
-            producer['image'] = (producer.get('producer') or '').lower().replace(" ", "_") + ".jpg"
-
-        # =========================================
-        # MOST WATCHED
-        # =========================================
-        cursor.execute("""
+        languages = rows("SELECT language, COUNT(*) AS count FROM contents "
+                         "GROUP BY language ORDER BY count DESC")
+        genres = rows("SELECT genre, COUNT(*) AS count FROM contents "
+                      "GROUP BY genre ORDER BY count DESC")
+        heroes = with_images(rows(
+            "SELECT hero, COUNT(*) AS count FROM contents "
+            "WHERE hero IS NOT NULL AND hero != '' GROUP BY hero ORDER BY count DESC"), 'hero')
+        heroines = with_images(rows(
+            "SELECT heroine, COUNT(*) AS count FROM contents "
+            "WHERE heroine IS NOT NULL AND heroine != '' GROUP BY heroine ORDER BY count DESC"),
+            'heroine')
+        directors = with_images(rows(
+            "SELECT director, COUNT(*) AS count FROM contents "
+            "WHERE director IS NOT NULL AND director != '' GROUP BY director ORDER BY count DESC"),
+            'director')
+        producers = with_images(rows(
+            "SELECT producer, COUNT(*) AS count FROM contents "
+            "WHERE producer IS NOT NULL AND producer != '' GROUP BY producer ORDER BY count DESC"),
+            'producer')
+        most_watched = rows("""
             SELECT c.id, c.title, c.thumbnail, COUNT(*) AS views
-            FROM user_history uh
-            JOIN contents c ON uh.content_id = c.id
-            GROUP BY c.id
-            ORDER BY views DESC
-        """)
-        most_watched = cursor.fetchall() or []
-
-        # =========================================
-        # TRENDING
-        # =========================================
-        cursor.execute("""
-            SELECT id, title, thumbnail, hearts
-            FROM contents
-            ORDER BY hearts DESC
-        """)
-        trending = cursor.fetchall() or []
-
-        # =========================================
-        # TIMELINE
-        # =========================================
-        cursor.execute("""
-            SELECT DATE(watched_at) AS day, COUNT(*) AS views
-            FROM user_history
-            GROUP BY DATE(watched_at)
-            ORDER BY day ASC
-        """)
-        timeline = cursor.fetchall() or []
-
-        # =========================================
-        # USERS
-        # =========================================
-        cursor.execute("""
-            SELECT id, username, profile_image
-            FROM users
-            ORDER BY id DESC
-        """)
-        users = cursor.fetchall() or []
-
-        # =========================================
-        # TOP USERS
-        # =========================================
-        cursor.execute("""
+            FROM user_history uh JOIN contents c ON uh.content_id = c.id
+            GROUP BY c.id, c.title, c.thumbnail ORDER BY views DESC""")
+        trending = rows("SELECT id, title, thumbnail, hearts FROM contents ORDER BY hearts DESC")
+        timeline = rows("SELECT DATE(watched_at) AS day, COUNT(*) AS views FROM user_history "
+                        "GROUP BY DATE(watched_at) ORDER BY day ASC")
+        users = rows("SELECT id, username, profile_image FROM users ORDER BY id DESC")
+        top_users = rows("""
             SELECT u.id, u.username, COUNT(uh.id) AS count
-            FROM users u
-            LEFT JOIN user_history uh ON u.id = uh.user_id
-            GROUP BY u.id
-            ORDER BY count DESC
-        """)
-        top_users = cursor.fetchall() or []
-
-        # =========================================
-        # 🔥 LATEST RELEASES (NEW ADDITION)
-        # =========================================
-        cursor.execute("""
+            FROM users u LEFT JOIN user_history uh ON u.id = uh.user_id
+            GROUP BY u.id, u.username ORDER BY count DESC""")
+        posters = rows("""
             SELECT id, title, thumbnail, genre, language, release_year, hearts
-            FROM contents
-            ORDER BY id DESC
-            LIMIT 20
-        """)
-        posters = cursor.fetchall() or []
+            FROM contents ORDER BY id DESC LIMIT 20""")
 
-        # =========================================
-        # 🔥 LOAD MODEL METRICS (SAFE)
-        # =========================================
-        metrics_path = "data/model_metrics.json"
-
-        confusion_matrix = []
-        labels = []
-        accuracy = []
-        val_accuracy = []
-        loss = []
-        val_loss = []
-        epochs = []
-
-        if os.path.exists(metrics_path):
+        confusion_matrix, labels = [], []
+        accuracy, val_accuracy, loss, val_loss = [], [], [], []
+        if os.path.exists(METRICS_FILE):
             try:
-                with open(metrics_path, "r") as f:
+                with open(METRICS_FILE, "r") as f:
                     metrics = json.load(f)
-
                 confusion_matrix = metrics.get("confusion_matrix") or []
                 labels = metrics.get("labels") or []
                 accuracy = metrics.get("accuracy") or []
                 val_accuracy = metrics.get("val_accuracy") or []
                 loss = metrics.get("loss") or []
                 val_loss = metrics.get("val_loss") or []
-
-                epochs = list(range(1, len(accuracy) + 1))
-
             except Exception as e:
                 print("Metrics Load Error:", e)
+        epochs = list(range(1, len(accuracy) + 1))
 
-        # =========================================
-        # RENDER TEMPLATE
-        # =========================================
         return render_template(
             "admin_dashboard_analysis.html",
-
-            total_movies=total_movies,
-            languages=languages or [],
-            genres=genres or [],
-            heroes=heroes or [],
-            heroines=heroines or [],
-            directors=directors or [],
-            producers=producers or [],
-            most_watched=most_watched or [],
-            trending=trending or [],
-            timeline=timeline or [],
-            users=users or [],
-            top_users=top_users or [],
-            posters=posters or [],  # 🔥 IMPORTANT
-
-            # 🔥 AI DATA
-            confusion_matrix=confusion_matrix or [],
-            labels=labels or [],
-            epochs=epochs or [],
-            accuracy=accuracy or [],
-            val_accuracy=val_accuracy or [],
-            loss=loss or [],
-            val_loss=val_loss or []
-        )
-
+            total_movies=total_movies, languages=languages, genres=genres,
+            heroes=heroes, heroines=heroines, directors=directors, producers=producers,
+            most_watched=most_watched, trending=trending, timeline=timeline,
+            users=users, top_users=top_users, posters=posters,
+            confusion_matrix=confusion_matrix, labels=labels, epochs=epochs,
+            accuracy=accuracy, val_accuracy=val_accuracy, loss=loss, val_loss=val_loss)
     except Exception as e:
         print("Admin Dashboard Error:", e)
         return "Error loading dashboard"
-
     finally:
         conn.close()
+
 
 @app.route('/api/model-metrics')
+@admin_required
 def get_model_metrics():
     try:
-        with open('data/model_metrics.json', 'r') as f:
-            data = json.load(f)
-        return jsonify(data)
+        with open(METRICS_FILE, 'r') as f:
+            return jsonify(json.load(f))
     except Exception as e:
         return jsonify({"error": str(e)})
-# =====================================
-# PRODUCER ANALYSIS PAGE
-# =====================================
-@app.route('/admin_producer_analysis/<producer_name>')
-def admin_producer_analysis(producer_name):
 
+
+def render_person_analysis(role, name):
+    """Shared by producer / hero / heroine / director analysis pages.
+    `role` is always a hard-coded column name."""
     conn = get_connection()
-
     if not conn:
         return "Database connection failed"
-
     try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # PRODUCER MOVIES
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE producer=%s
-            ORDER BY release_year DESC
-        """, (producer_name,))
-        movies = cursor.fetchall()
-
-        # =====================================
-        # GENRE DISTRIBUTION
-        # =====================================
-        cursor.execute("""
-            SELECT genre, COUNT(*) AS count
-            FROM contents
-            WHERE producer=%s
-            GROUP BY genre
-        """, (producer_name,))
-        genres = cursor.fetchall()
-
-        # =====================================
-        # LANGUAGE DISTRIBUTION
-        # =====================================
-        cursor.execute("""
-            SELECT language, COUNT(*) AS count
-            FROM contents
-            WHERE producer=%s
-            GROUP BY language
-        """, (producer_name,))
-        languages = cursor.fetchall()
-
-        # =====================================
-        # PRODUCER IMAGE
-        # =====================================
-        producer_image = producer_name.lower().replace(" ", "_") + ".jpg"
-
-        return render_template(
-            "admin_producer_analysis.html",
-            producer=producer_name,
-            producer_image=producer_image,
-            movies=movies,
-            genres=genres,
-            languages=languages
-        )
-
-    except Exception as e:
-        print("Producer Analysis Error:", e)
-        return "Error loading producer page"
-
-    finally:
-        conn.close()
-@app.route('/admin_hero_analysis/<hero>')
-def admin_hero_analysis(hero):
-
-    conn = get_connection()
-
-    if not conn:
-        return "Database connection failed"
-
-    try:
-
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # HERO PROFILE IMAGE
-        # =====================================
-
-        hero_image = hero.lower().replace(" ", "_") + ".jpg"
-
-        # =====================================
-        # HERO MOVIES
-        # =====================================
-
-        cursor.execute("""
-            SELECT id, title, genre, language, thumbnail, release_year
-            FROM contents
-            WHERE hero = %s
-        """, (hero,))
-
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT * FROM contents WHERE {role} = %s ORDER BY release_year DESC",
+                       (name,))
         movies = cursor.fetchall() or []
-
-        # =====================================
-        # GENRE DISTRIBUTION
-        # =====================================
-
-        cursor.execute("""
-            SELECT genre, COUNT(*) AS count
-            FROM contents
-            WHERE hero = %s
-            GROUP BY genre
-        """, (hero,))
-
+        cursor.execute(f"SELECT genre, COUNT(*) AS count FROM contents "
+                       f"WHERE {role} = %s GROUP BY genre", (name,))
         genres = cursor.fetchall() or []
-
-        # =====================================
-        # LANGUAGE DISTRIBUTION
-        # =====================================
-
-        cursor.execute("""
-            SELECT language, COUNT(*) AS count
-            FROM contents
-            WHERE hero = %s
-            GROUP BY language
-        """, (hero,))
-
+        cursor.execute(f"SELECT language, COUNT(*) AS count FROM contents "
+                       f"WHERE {role} = %s GROUP BY language", (name,))
         languages = cursor.fetchall() or []
 
         return render_template(
-            "admin_hero_analysis.html",
-            hero=hero,
-            hero_image=hero_image,
-            movies=movies,
-            genres=genres,
-            languages=languages
-        )
-
+            f"admin_{role}_analysis.html",
+            **{role: name, f"{role}_image": name.lower().replace(" ", "_") + ".jpg"},
+            movies=movies, genres=genres, languages=languages)
     except Exception as e:
-
-        print("Hero analysis error:", e)
-        return "Hero analysis error"
-
+        print(f"{role} analysis error:", e)
+        return f"{role.capitalize()} analysis error"
     finally:
+        conn.close()
 
-        if conn:
-            conn.close()
+
+@app.route('/admin_producer_analysis/<producer_name>')
+@admin_required
+def admin_producer_analysis(producer_name):
+    return render_person_analysis('producer', producer_name)
+
+
+@app.route('/admin_hero_analysis/<hero>')
+@admin_required
+def admin_hero_analysis(hero):
+    return render_person_analysis('hero', hero)
+
 
 @app.route('/admin_heroine_analysis/<heroine>')
+@admin_required
 def admin_heroine_analysis(heroine):
+    return render_person_analysis('heroine', heroine)
 
-    conn = get_connection()
 
-    if not conn:
-        return "Database connection failed"
-
-    try:
-
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # HEROINE PROFILE IMAGE
-        # =====================================
-
-        heroine_image = heroine.lower().replace(" ", "_") + ".jpg"
-
-        # =====================================
-        # HEROINE MOVIES
-        # =====================================
-
-        cursor.execute("""
-            SELECT id, title, genre, language, thumbnail, release_year
-            FROM contents
-            WHERE heroine = %s
-        """, (heroine,))
-
-        movies = cursor.fetchall() or []
-
-        # =====================================
-        # GENRE DISTRIBUTION
-        # =====================================
-
-        cursor.execute("""
-            SELECT genre, COUNT(*) AS count
-            FROM contents
-            WHERE heroine = %s
-            GROUP BY genre
-        """, (heroine,))
-
-        genres = cursor.fetchall() or []
-
-        # =====================================
-        # LANGUAGE DISTRIBUTION
-        # =====================================
-
-        cursor.execute("""
-            SELECT language, COUNT(*) AS count
-            FROM contents
-            WHERE heroine = %s
-            GROUP BY language
-        """, (heroine,))
-
-        languages = cursor.fetchall() or []
-
-        return render_template(
-            "admin_heroine_analysis.html",
-            heroine=heroine,
-            heroine_image=heroine_image,
-            movies=movies,
-            genres=genres,
-            languages=languages
-        )
-
-    except Exception as e:
-
-        print("Heroine analysis error:", e)
-        return "Heroine analysis error"
-
-    finally:
-
-        if conn:
-            conn.close()
 @app.route('/admin_director_analysis/<director>')
+@admin_required
 def admin_director_analysis(director):
+    return render_person_analysis('director', director)
 
-    conn = get_connection()
-
-    if not conn:
-        return "Database connection failed"
-
-    try:
-
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # DIRECTOR PROFILE IMAGE
-        # =====================================
-
-        director_image = director.lower().replace(" ", "_") + ".jpg"
-
-        # =====================================
-        # DIRECTOR MOVIES
-        # =====================================
-
-        cursor.execute("""
-            SELECT id, title, genre, language, thumbnail, release_year
-            FROM contents
-            WHERE director = %s
-        """, (director,))
-
-        movies = cursor.fetchall() or []
-
-        # =====================================
-        # GENRE DISTRIBUTION
-        # =====================================
-
-        cursor.execute("""
-            SELECT genre, COUNT(*) AS count
-            FROM contents
-            WHERE director = %s
-            GROUP BY genre
-        """, (director,))
-
-        genres = cursor.fetchall() or []
-
-        # =====================================
-        # LANGUAGE DISTRIBUTION
-        # =====================================
-
-        cursor.execute("""
-            SELECT language, COUNT(*) AS count
-            FROM contents
-            WHERE director = %s
-            GROUP BY language
-        """, (director,))
-
-        languages = cursor.fetchall() or []
-
-        return render_template(
-            "admin_director_analysis.html",
-            director=director,
-            director_image=director_image,
-            movies=movies,
-            genres=genres,
-            languages=languages
-        )
-
-    except Exception as e:
-
-        print("Director analysis error:", e)
-        return "Director analysis error"
-
-    finally:
-
-        if conn:
-            conn.close()
-# ==============================
-# ADMIN USER ANALYTICS
-# ==============================
 
 @app.route('/admin_user_analysis/<int:user_id>')
+@admin_required
 def admin_user_analysis(user_id):
-
     conn = get_connection()
-
     if not conn:
         return "Database connection failed"
-
     try:
-
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =========================================
-        # USER INFO
-        # =========================================
-
-        cursor.execute("""
-            SELECT id, username, profile_image
-            FROM users
-            WHERE id = %s
-        """, (user_id,))
-
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, profile_image FROM users WHERE id = %s", (user_id,))
         user = cursor.fetchone()
+        if not user:
+            return "User not found", 404
 
-        # =========================================
-        # TOTAL VIEWS
-        # =========================================
-
-        cursor.execute("""
-            SELECT COUNT(*) AS total_views
-            FROM user_history
-            WHERE user_id = %s
-        """, (user_id,))
-
+        cursor.execute("SELECT COUNT(*) AS total_views FROM user_history WHERE user_id = %s",
+                       (user_id,))
         user['total_views'] = cursor.fetchone()['total_views']
 
-        # =========================================
-        # MOST WATCHED MOVIES
-        # =========================================
-
         cursor.execute("""
-            SELECT 
-                c.id,
-                c.title,
-                c.genre,
-                c.language,
-                c.thumbnail,
-                COUNT(*) AS views
-            FROM user_history uh
-            JOIN contents c ON uh.content_id = c.id
+            SELECT c.id, c.title, c.genre, c.language, c.thumbnail, COUNT(*) AS views
+            FROM user_history uh JOIN contents c ON uh.content_id = c.id
             WHERE uh.user_id = %s
-            GROUP BY c.id
-            ORDER BY views DESC
-            LIMIT 12
+            GROUP BY c.id, c.title, c.genre, c.language, c.thumbnail
+            ORDER BY views DESC LIMIT 12
         """, (user_id,))
-
         movies = cursor.fetchall() or []
 
-        # =========================================
-        # GENRE ANALYTICS
-        # =========================================
-
         cursor.execute("""
-            SELECT 
-                c.genre,
-                COUNT(*) AS count
-            FROM user_history uh
-            JOIN contents c ON uh.content_id = c.id
-            WHERE uh.user_id = %s
-            GROUP BY c.genre
+            SELECT c.genre, COUNT(*) AS count
+            FROM user_history uh JOIN contents c ON uh.content_id = c.id
+            WHERE uh.user_id = %s GROUP BY c.genre
         """, (user_id,))
-
         genres = cursor.fetchall() or []
 
-        # =========================================
-        # LANGUAGE ANALYTICS
-        # =========================================
-
         cursor.execute("""
-            SELECT 
-                c.language,
-                COUNT(*) AS count
-            FROM user_history uh
-            JOIN contents c ON uh.content_id = c.id
-            WHERE uh.user_id = %s
-            GROUP BY c.language
+            SELECT c.language, COUNT(*) AS count
+            FROM user_history uh JOIN contents c ON uh.content_id = c.id
+            WHERE uh.user_id = %s GROUP BY c.language
         """, (user_id,))
-
         languages = cursor.fetchall() or []
 
-        return render_template(
-            "admin_user_analysis.html",
-            user=user,
-            movies=movies,
-            genres=genres,
-            languages=languages
-        )
-
+        return render_template("admin_user_analysis.html", user=user, movies=movies,
+                               genres=genres, languages=languages)
     except Exception as e:
-
         print("Admin user analysis error:", e)
         return "Error loading user analysis"
-
     finally:
-
-        if conn:
-            conn.close()
-
-
-
-
-
-
-
-
-
-    
-@app.route('/delete_profile/<int:id>')
-def delete_profile(id):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    DELETE FROM userprofiles
-    WHERE id=%s
-    """,(id,))
-
-    conn.commit()
-
-    cursor.close()
-    conn.close()
-
-    return redirect(url_for('userprofiles'))
-
-@app.route('/edit_profile/<int:id>', methods=['POST'])
-def edit_profile(id):
-
-    name = request.form['name']
-    age = request.form['age']
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    UPDATE userprofiles
-    SET name=%s, age=%s
-    WHERE id=%s
-    """,(name,age,id))
-
-    conn.commit()
-
-    cursor.close()
-    conn.close()
-
-    return redirect(url_for('userprofiles'))
-
-@app.route('/all_series')
-def all_series():
-
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    user_id = session['user_id']
-
-    conn = get_connection()
-    if not conn:
-        return "Database connection failed"
-
-    try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # 🔔 SERIES NOTIFICATIONS ONLY
-        # =====================================
-        cursor.execute("""
-            SELECT n.*, c.thumbnail AS content_thumbnail
-            FROM notifications n
-            JOIN contents c ON n.content_id = c.id
-            WHERE c.content_type = 'series'
-              AND c.is_kids = 0
-            ORDER BY n.created_at DESC
-            LIMIT 10
-        """)
-        notifications = cursor.fetchall()
-
-        # =====================================
-        # 🔥 CONTINUE WATCHING (ONLY SERIES)
-        # =====================================
-        cursor.execute("""
-            SELECT c.*, cw.progress
-            FROM continue_watching cw
-            JOIN contents c ON cw.content_id = c.id
-            WHERE cw.user_id = %s
-              AND c.content_type = 'series'
-              AND c.is_kids = 0
-            ORDER BY cw.last_watched DESC
-            LIMIT 10
-        """, (user_id,))
-        continue_watching_series = cursor.fetchall()
-
-        # =====================================
-        # 🔥 RECENTLY ADDED SERIES
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type = 'series'
-              AND is_kids = 0
-              AND created_at IS NOT NULL
-            ORDER BY created_at DESC, id DESC
-            LIMIT 15
-        """)
-        recently_added_series = cursor.fetchall()
-
-        # =====================================
-        # 🎬 ALL SERIES (MAIN LIST)
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type = 'series'
-              AND is_kids = 0
-            ORDER BY release_year DESC
-        """)
-        series_list = cursor.fetchall()
-
-        return render_template(
-            'all_series.html',
-            notifications=notifications,   # ✅ added
-            continue_watching_series=continue_watching_series,
-            recently_added_series=recently_added_series,
-            series_list=series_list
-        )
-
-    except Exception as e:
-        return str(e)
-
-    finally:
-        cursor.close()
         conn.close()
-@app.route('/series_play/<int:content_id>')
-def series_play(content_id):
 
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
 
+def json_query(sql):
     conn = get_connection()
-    if not conn:
-        return "Database connection failed"
-
     try:
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        # =====================================
-        # FETCH PARTICULAR SERIES
-        # =====================================
-        cursor.execute("""
-            SELECT * FROM contents 
-            WHERE id = %s AND content_type = 'series'
-        """, (content_id,))
-
-        series = cursor.fetchone()
-
-        if not series:
-            return "Series not found"
-
-        # =====================================
-        # 🔥 EXTRACT BASE TITLE (before :)
-        # =====================================
-        full_title = series['title']
-
-        if ":" in full_title:
-            base_title = full_title.split(":")[0].strip()
-        else:
-            base_title = full_title.strip()
-
-        # =====================================
-        # 🎬 FETCH ALL EPISODES BASED ON TITLE
-        # =====================================
-        cursor.execute("""
-            SELECT *
-            FROM contents
-            WHERE content_type = 'series'
-              AND title LIKE %s
-              AND is_kids = 0
-            ORDER BY id ASC
-        """, (f"{base_title}:%",))
-
-        episodes = cursor.fetchall()
-
-        return render_template(
-            'series_play.html',
-            series=series,
-            episodes=episodes,
-            base_title=base_title
-        )
-
-    except Exception as e:
-        return str(e)
-
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            return cursor.fetchall()
     finally:
-        cursor.close()
         conn.close()
 
 
 @app.route('/api/user-growth')
+@admin_required
 def user_growth():
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-    cursor.execute("""
+    return jsonify(json_query("""
         SELECT DATE(created_at) as day, COUNT(*) as users
-        FROM users
-        GROUP BY DATE(created_at)
-        ORDER BY day ASC
-    """)
+        FROM users GROUP BY DATE(created_at) ORDER BY day ASC
+    """))
 
-    data = cursor.fetchall()
-    conn.close()
 
-    return jsonify(data)
 @app.route('/api/genre-trend')
+@admin_required
 def genre_trend():
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-    cursor.execute("""
+    return jsonify(json_query("""
         SELECT genre, DATE(created_at) as day, COUNT(*) as count
-        FROM contents
-        GROUP BY genre, day
-        ORDER BY day ASC
-    """)
+        FROM contents GROUP BY genre, DATE(created_at) ORDER BY day ASC
+    """))
 
-    data = cursor.fetchall()
-    return jsonify(data)
+
 @app.route('/api/movie-success')
+@admin_required
 def movie_success():
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-    cursor.execute("""
-        SELECT 
-            c.title,
-
-            COUNT(DISTINCT h.user_id) AS views,
-
-            COUNT(DISTINCT uh.user_id) AS hearts,
-
-            (COUNT(DISTINCT h.user_id) * 0.7 + 
-             COUNT(DISTINCT uh.user_id) * 1.3) AS score
-
+    return jsonify(json_query("""
+        SELECT c.title,
+               COUNT(DISTINCT h.user_id) AS views,
+               COUNT(DISTINCT uh.user_id) AS hearts,
+               (COUNT(DISTINCT h.user_id) * 0.7 + COUNT(DISTINCT uh.user_id) * 1.3) AS score
         FROM contents c
-
-        LEFT JOIN user_history h 
-            ON c.id = h.content_id
-
-        LEFT JOIN user_hearts uh 
-            ON c.id = uh.content_id
-
+        LEFT JOIN user_history h ON c.id = h.content_id
+        LEFT JOIN user_hearts uh ON c.id = uh.content_id
         GROUP BY c.id, c.title
+        ORDER BY score DESC LIMIT 10
+    """))
 
-        ORDER BY score DESC
-        LIMIT 10
-    """)
 
-    data = cursor.fetchall()
-    return jsonify(data)
 @app.route('/api/user-retention')
+@admin_required
 def user_retention():
-    conn = get_connection()
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-    cursor.execute("""
-        SELECT 
-            DATE(created_at) as day,
-            COUNT(*) as new_users
-        FROM users
-        GROUP BY day
-        ORDER BY day ASC
+    data = json_query("""
+        SELECT DATE(created_at) as day, COUNT(*) as new_users
+        FROM users GROUP BY DATE(created_at) ORDER BY day ASC
     """)
-
-    data = cursor.fetchall()
-
-    # returning users dummy logic (temporary)
-    result = []
-    for row in data:
-        result.append({
-            "day": row["day"],
-            "new_users": row["new_users"],
-            "returning_users": int(row["new_users"] * 0.6)
-        })
-
-    return jsonify(result)
+    # NOTE: returning_users is an estimate (60% of new users), not real tracking data.
+    return jsonify([{"day": r["day"], "new_users": r["new_users"],
+                     "returning_users": int(r["new_users"] * 0.6)} for r in data])
 
 
 if __name__ == "__main__":
     os.makedirs(DATA_DIR, exist_ok=True)
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", "5000")),
-        debug=os.environ.get("FLASK_DEBUG", "0") == "1",
-        use_reloader=False,
-    )
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")),
+            debug=os.environ.get("FLASK_DEBUG", "0") == "1", use_reloader=False)
