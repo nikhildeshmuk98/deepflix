@@ -2018,6 +2018,10 @@ def user_dashboard():
             recommendations = fetch_recommendations(
                 cursor, user_id, last.get('story') or '', current_id=last.get('id'))
 
+        # PyMySQL fetchall() returns a tuple; normalize recommendations
+        # to a list before appending the remaining popular content.
+        recommendations = list(recommendations or [])
+
         if len(recommendations) < 12:
             existing = [r['id'] for r in recommendations]
             fill_sql = "SELECT * FROM contents WHERE is_kids = 0"
