@@ -2,580 +2,559 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>DeepFlix · Cinematic Experience</title>
-    <!-- Tailwind + Font Awesome + Google Fonts -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0a0a0a">
+    <title>{{ content['title'] }} · DeepFlix</title>
+
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
     <style>
-        * { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        :root {
+            --bg: #0a0a0a;
+            --surface: #111114;
+            --surface-2: #17171c;
+            --line: rgba(255, 255, 255, 0.08);
+            --red: #ef4444;
+            --red-deep: #dc2626;
+            --text: #f5f5f5;
+            --muted: #9ca3af;
+            --nav-h: 64px;
+            --pad: clamp(16px, 4vw, 48px);
+        }
+
+        * { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; -webkit-tap-highlight-color: transparent; }
+        html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
         body {
-            background: #0a0a0a;
-            scroll-behavior: smooth;
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+            min-height: 100vh;
+            min-height: 100dvh;
+            padding-bottom: env(safe-area-inset-bottom);
         }
-        /* star rating */
-        .star-btn {
-            transition: color 0.2s ease, transform 0.1s;
-            cursor: pointer;
+        body::before {
+            content: "";
+            position: fixed; inset: 0;
+            background:
+                radial-gradient(60rem 30rem at 85% -5%, rgba(239, 68, 68, 0.12), transparent 60%),
+                radial-gradient(50rem 30rem at -10% 40%, rgba(239, 68, 68, 0.06), transparent 60%);
+            pointer-events: none; z-index: 0;
         }
-        .star-btn:hover, .star-btn.active {
-            color: #fbbf24 !important;
-            transform: scale(1.1);
-        }
-        /* review scrollbar & textarea focus */
-        .reviews-scroll::-webkit-scrollbar {
-            width: 6px;
-        }
-        .reviews-scroll::-webkit-scrollbar-track { background: #1f2937; }
-        .reviews-scroll::-webkit-scrollbar-thumb { background: #ef4444; border-radius: 10px; }
+        a, button { -webkit-appearance: none; }
+        :focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
 
-        /* review textarea - ultra visible while typing */
-        .review-textarea {
-            background: rgba(17, 24, 39, 0.95);
-            border: 2px solid #374151;
-            transition: all 0.2s ease;
-            color: white;
-            font-size: 1rem;
-            line-height: 1.5;
+        /* ---------- NAVBAR ---------- */
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+            height: calc(var(--nav-h) + env(safe-area-inset-top));
+            padding: env(safe-area-inset-top) var(--pad) 0;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            background: rgba(10, 10, 10, 0.78);
+            -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--line);
         }
-        .review-textarea:focus {
-            border-color: #ef4444;
-            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
-            background: #111827;
-            outline: none;
+        .nav-back {
+            display: inline-flex; align-items: center; gap: 10px;
+            color: rgba(255,255,255,.9); text-decoration: none; font-weight: 600;
+            min-height: 44px; transition: color .2s;
         }
-        .review-textarea::placeholder {
-            color: #9ca3af;
-            opacity: 0.8;
-            font-weight: 400;
+        .nav-back i { transition: transform .2s; }
+        .nav-back:hover { color: var(--red); }
+        .nav-back:hover i { transform: translateX(-4px); }
+        .nav-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .now-playing {
+            display: none; align-items: center; gap: 8px;
+            padding: 8px 16px; border-radius: 999px; font-size: .875rem; white-space: nowrap;
+            background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.35);
         }
-
-        /* recommendations carousel - crystal clear thumbnails */
-        .recommendations-container { position: relative; width: 100%; padding: 0 40px; }
-        .recommendations-carousel {
-            display: flex;
-            gap: 24px;
-            overflow-x: auto;
-            scroll-behavior: smooth;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-            padding: 15px 5px 25px;
+        .now-playing i { color: var(--red); }
+        .now-playing .label { color: #f87171; font-weight: 500; }
+        .icon-btn {
+            width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line);
+            background: rgba(255,255,255,.06); color: #fff; cursor: pointer;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: background .2s, border-color .2s, transform .15s;
         }
-        .recommendations-carousel::-webkit-scrollbar { display: none; }
-        .recommendation-card {
-            flex: 0 0 auto;
-            width: 200px;
-            border-radius: 1.2rem;
-            overflow: hidden;
-            cursor: pointer;
-            transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-            box-shadow: 0 12px 24px -10px rgba(0,0,0,0.6);
-            border: 1px solid rgba(239,68,68,0.4);
-            background: #0f0f12;
-        }
-        .recommendation-card:hover {
-            transform: translateY(-10px) scale(1.03);
-            box-shadow: 0 28px 32px -12px rgba(239,68,68,0.6);
-            border-color: rgba(239,68,68,0.9);
-        }
-        .poster-container {
-            position: relative;
-            width: 100%;
-            aspect-ratio: 2/3;
-            background: linear-gradient(145deg, #181825, #0c0c10);
-            overflow: hidden;
-        }
-        .poster-container img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.4, 1.1);
-            display: block;
-        }
-        .recommendation-card:hover .poster-container img { transform: scale(1.08); }
-        .poster-overlay {
-            position: absolute;
-            top:0; left:0; right:0; bottom:0;
-            background: radial-gradient(circle at 30% 40%, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.7) 90%);
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            z-index: 10;
-        }
-        .recommendation-card:hover .poster-overlay { opacity: 1; }
-        .play-button-center {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%) scale(0.8);
-            width: 64px; height: 64px;
-            background: #ef4444;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0;
-            transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
-            box-shadow: 0 0 30px rgba(239,68,68,0.8);
-            z-index: 20;
-        }
-        .recommendation-card:hover .play-button-center {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
-        }
-        .movie-info-hover {
-            position: absolute;
-            bottom: 0; left:0; right:0;
-            padding: 22px 15px 15px;
-            background: linear-gradient(to top, #000 15%, rgba(0,0,0,0.85) 60%, transparent);
-            transform: translateY(100%);
-            transition: transform 0.35s ease;
-            z-index: 15;
-        }
-        .recommendation-card:hover .movie-info-hover { transform: translateY(0); }
-        .genre-badge {
-            position: absolute;
-            top: 12px; right: 12px;
-            background: rgba(239,68,68,0.92);
-            color: white;
-            font-size: 0.7rem;
-            font-weight: 700;
-            padding: 5px 12px;
-            border-radius: 30px;
-            z-index: 25;
-            backdrop-filter: blur(5px);
-            text-transform: capitalize;
-            letter-spacing: 0.3px;
-        }
-        .carousel-arrow {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 48px; height: 48px;
-            background: rgba(20,20,30,0.9);
-            backdrop-filter: blur(8px);
-            border: 2px solid #ef4444;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 24px;
-            cursor: pointer;
-            transition: all 0.25s;
-            z-index: 35;
-        }
-        .carousel-arrow:hover {
-            background: #ef4444;
-            transform: translateY(-50%) scale(1.12);
-            border-color: white;
-        }
-        .carousel-arrow.disabled {
-            opacity: 0.3;
-            pointer-events: none;
-            border-color: #6b7280;
-        }
-        .carousel-arrow.left { left: -18px; }
-        .carousel-arrow.right { right: -18px; }
-
-        /* toast */
-        .toast-message {
-            animation: slideUp 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
-        }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        @keyframes fadeOut { to { opacity: 0; transform: translateY(10px); visibility: hidden; } }
-
-        /* cast section - elegant, no fallback icons */
-        .cast-grid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 2rem;
-            justify-content: flex-start;
-        }
-        .cast-item {
-            text-align: center;
-            width: 130px;
-            transition: transform 0.25s ease;
-            text-decoration: none;
-            color: inherit;
-        }
-        .cast-item:hover { transform: translateY(-6px); }
-        .cast-item .avatar {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            object-fit: cover;
-            margin: 0 auto 0.8rem;
-            border: 2px solid #ef4444;
-            box-shadow: 0 10px 20px -8px rgba(239,68,68,0.4);
-            background: #1e1e2e;
-        }
-        .cast-item h4 { font-size: 1.1rem; font-weight: 700; color: white; margin-bottom: 0.2rem; }
-        .role { font-size: 0.8rem; color: #ef4444; font-weight: 600; letter-spacing: 0.3px; }
-        
-        /* navbar animation */
-        .navbar { transition: opacity 0.3s ease; }
-        .navbar-hidden { opacity: 0; pointer-events: none; }
-        
-        /* download & action */
+        .icon-btn:hover { background: rgba(255,255,255,.12); }
+        .icon-btn:active { transform: scale(.94); }
         .download-btn {
-            background: linear-gradient(135deg, #10b981, #059669);
-            transition: all 0.2s ease;
+            background: linear-gradient(135deg, #10b981, #059669); border-color: transparent;
+            box-shadow: 0 6px 20px -6px rgba(16,185,129,.6);
         }
-        .download-btn:hover {
-            transform: scale(1.02);
-            box-shadow: 0 0 18px #10b981;
+        .download-btn:hover { background: linear-gradient(135deg, #34d399, #059669); }
+
+        /* ---------- PLAYER ---------- */
+        .player-section { position: relative; z-index: 1; padding-top: calc(var(--nav-h) + env(safe-area-inset-top)); background: #000; }
+        .player-stage {
+            position: relative; width: 100%;
+            aspect-ratio: 16 / 9;
+            max-height: calc(100vh - var(--nav-h) - 24px);
+            max-height: calc(100dvh - var(--nav-h) - 24px);
+            margin: 0 auto; background: #000;
         }
-        /* Clean poster missing background: no icons */
-        .empty-poster-fallback {
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(145deg, #1a1a24, #12121a);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        @supports not (aspect-ratio: 16 / 9) {
+            .player-stage { height: 0; padding-bottom: 56.25%; }
         }
-        .empty-poster-fallback span {
-            color: rgba(255,255,255,0.3);
-            font-size: 12px;
-            font-weight: 400;
-            letter-spacing: 0.5px;
+        .player-stage iframe, .player-stage #player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+        .player-glow {
+            position: absolute; left: 0; right: 0; bottom: -1px; height: 90px; pointer-events: none;
+            background: linear-gradient(to top, var(--bg), transparent);
         }
-        /* no broken image icons globally */
-        img {
-            display: block;
+        .player-fallback {
+            position: absolute; inset: 0; z-index: 5; display: none;
+            align-items: center; justify-content: center; padding: 20px;
+            background: radial-gradient(circle at 50% 40%, #1b1b22, #050505);
+        }
+        .player-fallback.show { display: flex; }
+        .fallback-card {
+            text-align: center; max-width: 440px; padding: clamp(20px, 4vw, 36px); border-radius: 24px;
+            background: rgba(255,255,255,.04); border: 1px solid var(--line);
+            -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+        }
+        .fallback-card i.big { font-size: clamp(2.5rem, 8vw, 4rem); color: #3f3f46; margin-bottom: 14px; }
+        .fallback-card p.player-message { color: #d1d5db; font-size: clamp(.95rem, 2.5vw, 1.1rem); }
+        .fallback-card p.sub { color: #6b7280; margin-top: 6px; font-size: .875rem; }
+        .youtube-fallback-link {
+            margin-top: 18px; display: inline-flex; align-items: center; gap: 8px;
+            padding: 12px 22px; border-radius: 999px; background: var(--red-deep); color: #fff;
+            font-weight: 600; text-decoration: none;
+        }
+        .youtube-fallback-link.hidden { display: none; }
+
+        /* ---------- LAYOUT ---------- */
+        .page { position: relative; z-index: 1; width: 100%; max-width: 1360px; margin: 0 auto; padding: clamp(20px, 3vw, 40px) var(--pad) 64px; }
+        .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(28px, 4vw, 48px); }
+        @media (min-width: 1024px) {
+            .layout { grid-template-columns: minmax(0, 1fr) 380px; align-items: start; }
+            .reviews-panel { position: sticky; top: calc(var(--nav-h) + 20px); }
+        }
+        @media (min-width: 1280px) { .layout { grid-template-columns: minmax(0, 1fr) 420px; } }
+        @media (min-width: 640px) { .now-playing { display: inline-flex; } }
+
+        /* ---------- TITLE BLOCK ---------- */
+        .movie-title {
+            font-size: clamp(2rem, 5.5vw, 3.75rem); font-weight: 900; line-height: 1.05; letter-spacing: -0.02em;
+            margin-bottom: 18px; overflow-wrap: anywhere;
+            background: linear-gradient(90deg, #ffffff 30%, #9ca3af);
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+        .chip {
+            display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px;
+            font-size: .8125rem; color: #d1d5db; background: rgba(255,255,255,.05); border: 1px solid var(--line);
+        }
+        .chip i { color: var(--muted); }
+        .chip.red { color: #f87171; background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.45); }
+        .chip.red i { color: #f87171; }
+        .story { color: #cbd5e1; font-size: clamp(1rem, 2.2vw, 1.125rem); line-height: 1.75; max-width: 68ch; margin-bottom: 36px; }
+
+        .section-title { display: flex; align-items: center; gap: 12px; font-size: clamp(1.35rem, 3vw, 1.75rem); font-weight: 800; margin-bottom: 20px; }
+        .section-title i { color: var(--red); }
+        .count-pill { font-size: .75rem; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: #1f2937; color: #d1d5db; }
+
+        /* ---------- CAST ---------- */
+        .cast-grid {
+            display: flex; gap: clamp(16px, 3vw, 28px);
+            overflow-x: auto; scroll-snap-type: x proximity;
+            margin: 0 calc(var(--pad) * -1); padding: 6px var(--pad) 16px;
+            scrollbar-width: none; -webkit-overflow-scrolling: touch;
+        }
+        .cast-grid::-webkit-scrollbar { display: none; }
+        @media (min-width: 1024px) {
+            .cast-grid { flex-wrap: wrap; overflow: visible; margin: 0; padding: 6px 0 0; }
+        }
+        .cast-item { flex: 0 0 auto; width: clamp(96px, 26vw, 128px); text-align: center; text-decoration: none; color: inherit; scroll-snap-align: start; transition: transform .25s; }
+        .cast-item:hover { transform: translateY(-5px); }
+        .avatar {
+            position: relative; width: clamp(84px, 22vw, 116px); height: clamp(84px, 22vw, 116px);
+            margin: 0 auto 12px; border-radius: 50%; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(145deg, #25252f, #14141a);
+            border: 2px solid var(--red); box-shadow: 0 12px 24px -10px rgba(239,68,68,.5);
+        }
+        .avatar span { font-size: clamp(1.6rem, 6vw, 2.2rem); font-weight: 800; color: rgba(239,68,68,.55); }
+        .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .cast-item h4 { font-size: .95rem; font-weight: 700; color: #fff; line-height: 1.25; overflow-wrap: anywhere; }
+        .cast-item .role { margin-top: 3px; font-size: .75rem; font-weight: 600; color: var(--red); }
+
+        /* ---------- ACTIONS ---------- */
+        .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px; margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line); }
+        .rate-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .rate-wrap .lbl { font-weight: 600; color: #e5e7eb; }
+        .stars { display: flex; gap: 2px; }
+        .star-btn {
+            width: 44px; height: 44px; font-size: 2rem; line-height: 1; color: #4b5563; background: none; border: 0; cursor: pointer;
+            transition: color .2s, transform .15s;
+        }
+        .star-btn.active { color: #fbbf24 !important; }
+        @media (hover: hover) {
+            .stars:hover .star-btn { color: #fbbf24; }
+            .stars .star-btn:hover ~ .star-btn { color: #4b5563; }
+        }
+        .star-btn:active { transform: scale(1.2); }
+        .share-btn {
+            display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 20px;
+            border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,255,.05);
+            color: #d1d5db; font-weight: 600; cursor: pointer; transition: all .2s;
+        }
+        .share-btn:hover { color: #fff; border-color: rgba(239,68,68,.6); background: rgba(239,68,68,.1); }
+
+        /* ---------- REVIEWS ---------- */
+        .reviews-panel {
+            padding: clamp(18px, 3vw, 28px); border-radius: 28px;
+            background: rgba(17,17,20,.8); border: 1px solid var(--line);
+            -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+            box-shadow: 0 30px 60px -30px rgba(0,0,0,.9);
+        }
+        .review-textarea {
+            width: 100%; display: block; padding: 14px 16px; border-radius: 18px; resize: none;
+            background: rgba(10,10,12,.95); border: 2px solid #2d2d36; color: #fff;
+            font-size: 16px; /* prevents iOS zoom on focus */ line-height: 1.5; transition: border-color .2s, box-shadow .2s;
+        }
+        .review-textarea:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 4px rgba(239,68,68,.22); }
+        .review-textarea::placeholder { color: #6b7280; }
+        .post-btn {
+            margin-top: 12px; width: 100%; min-height: 48px; border: 0; border-radius: 14px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            font-weight: 700; color: #fff; background: linear-gradient(90deg, var(--red-deep), var(--red));
+            box-shadow: 0 12px 24px -10px rgba(220,38,38,.7); transition: transform .15s, filter .2s;
+        }
+        .post-btn:hover { filter: brightness(1.08); }
+        .post-btn:active { transform: scale(.98); }
+        .reviews-list { margin-top: 22px; max-height: 22rem; overflow-y: auto; padding-right: 6px; -webkit-overflow-scrolling: touch; }
+        @media (min-width: 1024px) { .reviews-list { max-height: calc(100vh - 430px); min-height: 12rem; } }
+        .reviews-list::-webkit-scrollbar { width: 6px; }
+        .reviews-list::-webkit-scrollbar-track { background: #1f2937; border-radius: 10px; }
+        .reviews-list::-webkit-scrollbar-thumb { background: var(--red); border-radius: 10px; }
+        .review-card { padding: 14px 4px; border-bottom: 1px solid var(--line); }
+        .review-card:last-child { border-bottom: 0; }
+        .review-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .review-user { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .9rem; min-width: 0; }
+        .review-user i { color: var(--red); font-size: 1.15rem; }
+        .review-user span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .senti { font-size: .72rem; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+        .senti.pos { color: #4ade80; background: rgba(34,197,94,.14); }
+        .senti.neg { color: #f87171; background: rgba(239,68,68,.14); }
+        .senti.neu { color: #9ca3af; background: rgba(156,163,175,.14); }
+        .review-text { color: #e5e7eb; font-size: .92rem; line-height: 1.65; overflow-wrap: anywhere; }
+        .empty-reviews { text-align: center; color: #6b7280; padding: 36px 0; }
+        .empty-reviews i { font-size: 2.2rem; opacity: .35; margin-bottom: 10px; display: block; }
+
+        /* ---------- RECOMMENDATIONS ---------- */
+        .more { margin-top: clamp(40px, 6vw, 72px); padding-top: 28px; border-top: 1px solid var(--line); }
+        .carousel-wrap { position: relative; }
+        .carousel {
+            display: flex; gap: clamp(12px, 2vw, 22px); overflow-x: auto;
+            scroll-snap-type: x mandatory; scroll-behavior: smooth; -webkit-overflow-scrolling: touch;
+            margin: 0 calc(var(--pad) * -1); padding: 14px var(--pad) 28px; scroll-padding-left: var(--pad);
+            scrollbar-width: none;
+        }
+        .carousel::-webkit-scrollbar { display: none; }
+        .rec-card {
+            position: relative; flex: 0 0 auto; width: clamp(138px, 40vw, 210px); scroll-snap-align: start;
+            display: block; text-decoration: none; color: inherit; border-radius: 18px; overflow: hidden;
+            background: #0f0f12; border: 1px solid rgba(239,68,68,.35);
+            box-shadow: 0 14px 26px -12px rgba(0,0,0,.7);
+            transition: transform .35s cubic-bezier(.25,.46,.45,.94), box-shadow .35s, border-color .35s;
+        }
+        .poster { position: relative; width: 100%; aspect-ratio: 2 / 3; background: linear-gradient(145deg, #1a1a24, #0e0e14); overflow: hidden; }
+        @supports not (aspect-ratio: 2 / 3) { .poster { height: 0; padding-bottom: 150%; } }
+        .poster img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .5s; }
+        .poster-fallback {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 14px;
+            text-align: center; color: rgba(255,255,255,.4); font-size: .8rem; font-weight: 600;
+        }
+        .genre-badge {
+            position: absolute; top: 10px; right: 10px; z-index: 5; padding: 4px 10px; border-radius: 999px;
+            font-size: .68rem; font-weight: 700; color: #fff; background: rgba(239,68,68,.92);
+            -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
+        }
+        .poster-shade { position: absolute; inset: 0; z-index: 2; background: radial-gradient(circle at 30% 40%, rgba(0,0,0,.15), rgba(0,0,0,.75)); opacity: 0; transition: opacity .3s; }
+        .play-center {
+            position: absolute; top: 50%; left: 50%; z-index: 4; width: 56px; height: 56px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; background: var(--red);
+            transform: translate(-50%, -50%) scale(.8); opacity: 0; transition: all .35s cubic-bezier(.34,1.56,.64,1);
+            box-shadow: 0 0 30px rgba(239,68,68,.8);
+        }
+        .rec-info {
+            position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 26px 12px 12px;
+            background: linear-gradient(to top, #000 15%, rgba(0,0,0,.85) 60%, transparent);
+            transform: translateY(100%); transition: transform .35s;
+        }
+        .rec-title { font-weight: 700; font-size: .9rem; line-height: 1.25; }
+        .rec-year { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 999px; font-size: .7rem; background: rgba(239,68,68,.3); }
+        @media (hover: hover) {
+            .rec-card:hover { transform: translateY(-8px) scale(1.03); border-color: rgba(239,68,68,.95); box-shadow: 0 28px 34px -14px rgba(239,68,68,.55); }
+            .rec-card:hover .poster img { transform: scale(1.08); }
+            .rec-card:hover .poster-shade { opacity: 1; }
+            .rec-card:hover .play-center { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            .rec-card:hover .rec-info { transform: translateY(0); }
+        }
+        @media (hover: none) {
+            .rec-info { transform: none; }
+            .rec-card:active { transform: scale(.97); }
+        }
+        .arrow {
+            position: absolute; top: calc(50% - 14px); transform: translateY(-50%); z-index: 20;
+            width: 48px; height: 48px; border-radius: 50%; display: none; align-items: center; justify-content: center;
+            color: #fff; background: rgba(20,20,30,.92); border: 2px solid var(--red); cursor: pointer; transition: all .25s;
+            -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+        }
+        .arrow:hover { background: var(--red); border-color: #fff; }
+        .arrow.left { left: -22px; } .arrow.right { right: -22px; }
+        .arrow.disabled { opacity: .3; pointer-events: none; border-color: #6b7280; }
+        @media (hover: hover) and (min-width: 768px) { .arrow { display: flex; } }
+
+        /* ---------- SHARE MODAL ---------- */
+        .modal {
+            position: fixed; inset: 0; z-index: 100; display: none; align-items: flex-end; justify-content: center;
+            padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); background: rgba(0,0,0,.8);
+            -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+        }
+        .modal.open { display: flex; }
+        @media (min-width: 640px) { .modal { align-items: center; } }
+        .modal-box {
+            width: 100%; max-width: 440px; padding: 24px; border-radius: 24px; background: #121217;
+            border: 1px solid #2a2a33; box-shadow: 0 40px 80px -20px rgba(0,0,0,.9); animation: pop .25s ease;
+        }
+        @keyframes pop { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: none; } }
+        .modal-box h2 { display: flex; align-items: center; gap: 10px; font-size: 1.25rem; font-weight: 800; margin-bottom: 16px; }
+        .modal-box h2 i { color: var(--red); }
+        .copy-row { display: flex; gap: 8px; margin-bottom: 14px; }
+        .copy-row input { flex: 1; min-width: 0; padding: 12px; border-radius: 12px; background: #1b1b22; border: 1px solid #2d2d36; color: #d1d5db; font-size: 16px; }
+        .btn { min-height: 46px; padding: 0 18px; border: 0; border-radius: 12px; font-weight: 700; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: filter .2s; }
+        .btn:hover { filter: brightness(1.12); }
+        .btn.red { background: var(--red-deep); } .btn.green { background: #16a34a; } .btn.blue { background: #2563eb; }
+        .share-row { display: flex; gap: 10px; }
+        .share-row .btn { flex: 1; }
+        .close-link { margin-top: 16px; width: 100%; min-height: 44px; color: var(--muted); background: none; border: 0; cursor: pointer; font-weight: 500; }
+        .close-link:hover { color: #fff; }
+
+        /* ---------- TOAST ---------- */
+        .toast {
+            position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+            z-index: 120; max-width: calc(100vw - 32px); padding: 14px 22px; border-radius: 16px; color: #fff; font-weight: 600;
+            box-shadow: 0 20px 40px -10px rgba(0,0,0,.7); animation: toastIn .3s ease, toastOut .3s ease 2.7s forwards;
+        }
+        .toast.success { background: #16a34a; } .toast.error { background: var(--red-deep); }
+        @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        @keyframes toastOut { to { opacity: 0; transform: translate(-50%, 8px); } }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+        }
+        @media (max-width: 380px) {
+            .nav-back span { display: none; }
+            .star-btn { width: 40px; }
         }
     </style>
 </head>
-<body class="text-white antialiased">
+<body class="antialiased">
 
-    <!-- Auto-hide Navbar with dashboard link -->
-    <nav class="navbar fixed top-0 left-0 w-full z-50 p-5 flex justify-between items-center bg-gradient-to-b from-black via-black/80 to-transparent transition-opacity duration-300">
-        <a href="{{ url_for('user_dashboard') }}" class="text-white/90 hover:text-red-500 transition-all flex items-center gap-3 text-lg group">
-            <i class="fas fa-arrow-left group-hover:-translate-x-1 transition"></i> 
-            <span class="border-b border-transparent group-hover:border-red-500">Dashboard</span>
+{# ---------- cast card macro (removes the repeated blocks) ---------- #}
+{% macro cast_card(name, role, image) %}
+<a href="/person/{{ name }}" class="cast-item">
+    <div class="avatar">
+        <span>{{ name[:1]|upper }}</span>
+        {% if image %}
+        <img src="{{ url_for('static', filename='uploads/' + image.split('/')[-1]) }}" alt="{{ name }}" loading="lazy" onerror="this.remove()">
+        {% endif %}
+    </div>
+    <h4>{{ name }}</h4>
+    <div class="role">{{ role }}</div>
+</a>
+{% endmacro %}
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <a href="{{ url_for('user_dashboard') }}" class="nav-back" aria-label="Back to dashboard">
+            <i class="fas fa-arrow-left"></i><span>Dashboard</span>
         </a>
-        <div class="flex items-center gap-4">
+        <div class="nav-right">
             {% if content.genre %}
-            <div class="bg-black/40 backdrop-blur-md px-5 py-2 rounded-full border border-red-500/40 shadow-lg shadow-red-500/10">
-                <i class="fas fa-play-circle mr-2 text-red-500"></i>
-                <span class="text-red-400 font-medium">Now Playing:</span>
-                <span class="text-white font-semibold ml-1">{{ content.genre|title }}</span>
+            <div class="now-playing">
+                <i class="fas fa-play-circle"></i>
+                <span class="label">Now Playing:</span>
+                <strong>{{ content.genre|title }}</strong>
             </div>
             {% endif %}
-            <button onclick="triggerDownload()" class="download-btn text-white px-5 py-2 rounded-full font-bold flex items-center gap-2 shadow-xl transition-all">
-                <i class="fas fa-download"></i> 
-            </button>
+            <button onclick="openShareModal()" class="icon-btn" aria-label="Share"><i class="fas fa-share-alt"></i></button>
+            <button onclick="triggerDownload()" class="icon-btn download-btn" aria-label="Download movie info"><i class="fas fa-download"></i></button>
         </div>
     </nav>
 
-    <!-- Hero / YouTube Player -->
-    <div class="relative w-full" style="height: 70vh; min-height: 520px;">
-        <div id="player" class="w-full h-full"></div>
-        <div id="player-fallback" class="w-full h-full hidden items-center justify-center bg-gradient-to-b from-gray-900 to-black">
-            <div class="text-center p-8 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10">
-                <i class="fas fa-film text-7xl text-gray-700 mb-5"></i>
-                <p class="text-gray-300 text-xl">✨ No video available ✨</p>
-                <p class="text-gray-500 mt-2">But you can still explore & review</p>
+    <!-- PLAYER -->
+    <section class="player-section">
+        <div class="player-stage" id="player-stage">
+            <div id="player"></div>
+            <div id="player-fallback" class="player-fallback">
+                <div class="fallback-card">
+                    <i class="fas fa-film big"></i>
+                    <p class="player-message">No video available</p>
+                    <p class="sub">But you can still explore and review.</p>
+                    <a class="youtube-fallback-link hidden" target="_blank" rel="noopener"><i class="fab fa-youtube"></i> Open on YouTube</a>
+                </div>
             </div>
         </div>
-    </div>
+        <div class="player-glow"></div>
+    </section>
 
-    <!-- main details -->
-    <div class="container mx-auto px-4 md:px-6 py-10">
-        <div class="flex flex-col lg:flex-row gap-10">
-            <!-- left column -->
-            <div class="lg:w-2/3">
-                <h1 class="text-5xl md:text-6xl font-black mb-4 bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent leading-tight">
-                    {{ content['title'] }}
-                </h1>
-                <div class="flex flex-wrap items-center gap-3 text-sm text-gray-300 mb-6">
-                    <span class="bg-gray-800/90 px-4 py-1.5 rounded-full"><i class="far fa-calendar-alt mr-2"></i>{{ content['release_year'] }}</span>
-                    <span class="border border-gray-700/80 px-4 py-1.5 rounded-full"><i class="far fa-file-video mr-2"></i>{{ content['content_type'] }}</span>
-                    <span class="border border-gray-700/80 px-4 py-1.5 rounded-full"><i class="fas fa-globe mr-2"></i>{{ content['language'] }}</span>
+    <!-- MAIN -->
+    <main class="page">
+        <div class="layout">
+
+            <!-- LEFT -->
+            <div>
+                <h1 class="movie-title">{{ content['title'] }}</h1>
+
+                <div class="chips">
+                    <span class="chip"><i class="far fa-calendar-alt"></i>{{ content['release_year'] }}</span>
+                    <span class="chip"><i class="far fa-file-video"></i>{{ content['content_type'] }}</span>
+                    <span class="chip"><i class="fas fa-globe"></i>{{ content['language'] }}</span>
                     {% if content.genre %}
-                    <span class="border border-red-500/60 bg-red-500/10 text-red-400 px-4 py-1.5 rounded-full"><i class="fas fa-tag mr-2"></i>{{ content.genre|title }}</span>
+                    <span class="chip red"><i class="fas fa-tag"></i>{{ content.genre|title }}</span>
                     {% endif %}
                 </div>
-                <p class="text-lg text-gray-300 leading-relaxed mb-10 max-w-3xl">{{ content['story'] }}</p>
 
-                <!-- CAST SECTION: NO FALLBACK ICONS, only actual images when available -->
+                <p class="story">{{ content['story'] }}</p>
+
+                <!-- CAST & CREW -->
                 {% if content.hero or content.heroine or content.director or content.hero2 or content.hero3 or content.heroine2 or content.heroine3 or content.producer or content.comedian %}
-                <div class="cast-section mb-8">
-                    <h2 class="text-3xl font-bold mb-6 flex items-center gap-3"><i class="fas fa-star text-red-500"></i><span>Cast & Crew</span></h2>
+                <section>
+                    <h2 class="section-title"><i class="fas fa-star"></i><span>Cast &amp; Crew</span></h2>
                     <div class="cast-grid">
-                        {% if content.hero %}
-                        <a href="/person/{{ content.hero }}" class="cast-item">
-                            {% if content.hero_image %}
-                                {% set hero_img = content.hero_image.split('/')[-1] %}
-                                <img src="{{ url_for('static', filename='uploads/' + hero_img) }}" class="avatar" alt="{{ content.hero }}" onerror="this.style.opacity='0'; this.style.visibility='hidden';">
-                            {% else %}
-                                <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user" style="font-size: 3rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            {% endif %}
-                            <h4>{{ content.hero }}</h4><div class="role">Hero (Lead)</div>
-                        </a>
-                        {% endif %}
-                        {% if content.hero2 and content.hero2 != "None" %}
-                        <a href="/person/{{ content.hero2 }}" class="cast-item">
-                            {% if content.hero2_image %}
-                                {% set hero2_img = content.hero2_image.split('/')[-1] %}
-                                <img src="{{ url_for('static', filename='uploads/' + hero2_img) }}" class="avatar" alt="{{ content.hero2 }}" onerror="this.style.opacity='0'; this.style.visibility='hidden';">
-                            {% else %}
-                                <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user" style="font-size: 3rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            {% endif %}
-                            <h4>{{ content.hero2 }}</h4><div class="role">Supporting Hero</div>
-                        </a>
-                        {% endif %}
-                        {% if content.hero3 and content.hero3 != "None" %}
-                        <a href="/person/{{ content.hero3 }}" class="cast-item">
-                            {% if content.hero3_image %}
-                                {% set hero3_img = content.hero3_image.split('/')[-1] %}
-                                <img src="{{ url_for('static', filename='uploads/' + hero3_img) }}" class="avatar" alt="{{ content.hero3 }}" onerror="this.style.opacity='0'; this.style.visibility='hidden';">
-                            {% else %}
-                                <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user" style="font-size: 3rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            {% endif %}
-                            <h4>{{ content.hero3 }}</h4><div class="role">Character Hero</div>
-                        </a>
-                        {% endif %}
-                        {% if content.heroine %}
-                        <a href="/person/{{ content.heroine }}" class="cast-item">
-                            {% if content.heroine_image %}
-                                {% set heroine_img = content.heroine_image.split('/')[-1] %}
-                                <img src="{{ url_for('static', filename='uploads/' + heroine_img) }}" class="avatar" alt="{{ content.heroine }}" onerror="this.style.opacity='0'; this.style.visibility='hidden';">
-                            {% else %}
-                                <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user" style="font-size: 3rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            {% endif %}
-                            <h4>{{ content.heroine }}</h4><div class="role">Heroine (Lead)</div>
-                        </a>
-                        {% endif %}
-                        {% if content.heroine2 and content.heroine2 != "None" %}
-                        <a href="/person/{{ content.heroine2 }}" class="cast-item">
-                            {% if content.heroine2_image %}
-                                {% set heroine2_img = content.heroine2_image.split('/')[-1] %}
-                                <img src="{{ url_for('static', filename='uploads/' + heroine2_img) }}" class="avatar" alt="{{ content.heroine2 }}" onerror="this.style.opacity='0'; this.style.visibility='hidden';">
-                            {% else %}
-                                <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user" style="font-size: 3rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            {% endif %}
-                            <h4>{{ content.heroine2 }}</h4><div class="role">Supporting Heroine</div>
-                        </a>
-                        {% endif %}
-                        {% if content.heroine3 and content.heroine3 != "None" %}
-                        <a href="/person/{{ content.heroine3 }}" class="cast-item">
-                            <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user" style="font-size: 3rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            <h4>{{ content.heroine3 }}</h4><div class="role">Character Heroine</div>
-                        </a>
-                        {% endif %}
-                        {% if content.director %}
-                        <a href="/person/{{ content.director }}" class="cast-item">
-                            {% if content.director_image %}
-                                {% set dir_img = content.director_image.split('/')[-1] %}
-                                <img src="{{ url_for('static', filename='uploads/' + dir_img) }}" class="avatar" alt="{{ content.director }}" onerror="this.style.opacity='0'; this.style.visibility='hidden';">
-                            {% else %}
-                                <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-clapperboard" style="font-size: 2.5rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            {% endif %}
-                            <h4>{{ content.director }}</h4><div class="role">Director</div>
-                        </a>
-                        {% endif %}
-                        {% if content.producer %}
-                        <a href="/person/{{ content.producer }}" class="cast-item">
-                            <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-film" style="font-size: 2.5rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            <h4>{{ content.producer }}</h4><div class="role">Producer</div>
-                        </a>
-                        {% endif %}
-                        {% if content.comedian %}
-                        <a href="/person/{{ content.comedian }}" class="cast-item">
-                            <div class="avatar" style="background: #1e1e2e; display: flex; align-items: center; justify-content: center;"><i class="fas fa-laugh-beam" style="font-size: 2.5rem; color: #ef4444; opacity: 0.5;"></i></div>
-                            <h4>{{ content.comedian }}</h4><div class="role">Comedian</div>
-                        </a>
-                        {% endif %}
+                        {% if content.hero %}{{ cast_card(content.hero, 'Hero (Lead)', content.hero_image) }}{% endif %}
+                        {% if content.hero2 and content.hero2 != "None" %}{{ cast_card(content.hero2, 'Supporting Hero', content.hero2_image) }}{% endif %}
+                        {% if content.hero3 and content.hero3 != "None" %}{{ cast_card(content.hero3, 'Character Hero', content.hero3_image) }}{% endif %}
+                        {% if content.heroine %}{{ cast_card(content.heroine, 'Heroine (Lead)', content.heroine_image) }}{% endif %}
+                        {% if content.heroine2 and content.heroine2 != "None" %}{{ cast_card(content.heroine2, 'Supporting Heroine', content.heroine2_image) }}{% endif %}
+                        {% if content.heroine3 and content.heroine3 != "None" %}{{ cast_card(content.heroine3, 'Character Heroine', content.heroine3_image) }}{% endif %}
+                        {% if content.director %}{{ cast_card(content.director, 'Director', content.director_image) }}{% endif %}
+                        {% if content.producer %}{{ cast_card(content.producer, 'Producer', content.producer_image) }}{% endif %}
+                        {% if content.comedian %}{{ cast_card(content.comedian, 'Comedian', content.comedian_image) }}{% endif %}
                     </div>
-                </div>
+                </section>
                 {% endif %}
 
-                <!-- rating + share + download info row -->
-                <div class="flex flex-wrap items-center gap-8 border-t border-gray-800/70 pt-7">
-                    <div class="flex items-center">
-                        <span class="mr-4 font-medium text-gray-200">Rate this:</span>
-                        <div class="flex space-x-1.5" id="star-container">
+                <!-- RATE + SHARE -->
+                <div class="actions">
+                    <div class="rate-wrap">
+                        <span class="lbl">Rate this:</span>
+                        <div class="stars" id="star-container">
                             {% for i in range(1, 6) %}
-                            <button onclick="rateContent({{ content['id'] }}, {{ i }})" class="star-btn text-4xl text-gray-600 hover:text-yellow-400 focus:outline-none" data-rating="{{ i }}">★</button>
+                            <button type="button" onclick="rateContent({{ content['id'] }}, {{ i }})" class="star-btn" data-rating="{{ i }}" aria-label="Rate {{ i }} out of 5">★</button>
                             {% endfor %}
                         </div>
                     </div>
-                    <button onclick="openShareModal()" class="text-gray-400 hover:text-white transition-all flex items-center gap-3 group">
-                        <i class="fas fa-share-alt group-hover:rotate-12 transition"></i> <span>Share</span>
-                    </button>
+                    <button type="button" onclick="openShareModal()" class="share-btn"><i class="fas fa-share-alt"></i> Share</button>
                 </div>
             </div>
 
-            <!-- right: COMMUNITY REVIEWS - crystal clear typing -->
-            <div class="lg:w-1/3 bg-gray-900/70 backdrop-blur-md p-6 rounded-3xl border border-gray-800/80 shadow-2xl">
-                <h3 class="text-2xl font-bold mb-5 flex items-center gap-3">
-                    <i class="fas fa-comments text-red-500"></i> 
+            <!-- RIGHT: REVIEWS -->
+            <aside class="reviews-panel">
+                <h3 class="section-title" style="margin-bottom:18px;">
+                    <i class="fas fa-comments"></i>
                     <span>Community Reviews</span>
-                    <span class="text-sm bg-gray-800 px-3 py-1 rounded-full text-gray-300">{{ reviews|length if reviews else 0 }}</span>
+                    <span class="count-pill">{{ reviews|length if reviews else 0 }}</span>
                 </h3>
 
-                <!-- ADD REVIEW - ultra visible -->
-                <form action="{{ url_for('api_review') }}" method="POST" class="mb-7">
+                <form action="{{ url_for('api_review') }}" method="POST">
                     <input type="hidden" name="content_id" value="{{ content['id'] }}">
-                    <textarea name="review_text" rows="3" placeholder="Write your honest review... (clear, vibrant)" 
-                              class="review-textarea w-full p-4 rounded-2xl border-2 resize-none focus:ring-0"></textarea>
-                    <button type="submit" class="mt-4 w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold py-3 rounded-xl transition-all shadow-xl shadow-red-600/30 flex items-center justify-center gap-2">
-                        <i class="fas fa-paper-plane"></i> Post Review
-                    </button>
+                    <textarea name="review_text" rows="3" required placeholder="Write your honest review…" class="review-textarea"></textarea>
+                    <button type="submit" class="post-btn"><i class="fas fa-paper-plane"></i> Post review</button>
                 </form>
 
-                <!-- reviews list -->
-                <div class="space-y-5 max-h-96 overflow-y-auto pr-2 reviews-scroll">
+                <div class="reviews-list">
                     {% if reviews and reviews|length > 0 %}
                         {% for review in reviews %}
-                        <div class="border-b border-gray-800/70 pb-4 last:border-0 review-card p-3 -mx-2 rounded-xl">
-                            <div class="flex justify-between items-center mb-2">
-                                <span class="font-semibold text-sm flex items-center gap-2"><i class="fas fa-user-circle text-red-500 text-lg"></i> {{ review['username'] }}</span>
+                        <article class="review-card">
+                            <div class="review-head">
+                                <div class="review-user"><i class="fas fa-user-circle"></i><span>{{ review['username'] }}</span></div>
                                 {% if review['sentiment_score'] is defined %}
                                     {% if review['sentiment_score'] > 0.1 %}
-                                        <span class="text-green-400 text-xs bg-green-500/15 px-3 py-1 rounded-full"><i class="far fa-smile mr-1"></i>positive</span>
+                                        <span class="senti pos"><i class="far fa-smile"></i> positive</span>
                                     {% elif review['sentiment_score'] < -0.1 %}
-                                        <span class="text-red-400 text-xs bg-red-500/15 px-3 py-1 rounded-full"><i class="far fa-frown mr-1"></i>negative</span>
+                                        <span class="senti neg"><i class="far fa-frown"></i> negative</span>
                                     {% else %}
-                                        <span class="text-gray-400 text-xs bg-gray-500/15 px-3 py-1 rounded-full"><i class="far fa-meh mr-1"></i>neutral</span>
+                                        <span class="senti neu"><i class="far fa-meh"></i> neutral</span>
                                     {% endif %}
                                 {% endif %}
                             </div>
-                            <p class="text-gray-200 text-sm leading-relaxed">{{ review['review_text'] }}</p>
-                        </div>
+                            <p class="review-text">{{ review['review_text'] }}</p>
+                        </article>
                         {% endfor %}
                     {% else %}
-                        <div class="text-gray-500 text-center py-12"><i class="fas fa-pen-fancy text-4xl mb-3 opacity-30"></i><p>No reviews yet. <br> Be the first to share!</p></div>
+                        <div class="empty-reviews"><i class="fas fa-pen-fancy"></i><p>No reviews yet.<br>Be the first to share.</p></div>
                     {% endif %}
                 </div>
-            </div>
+            </aside>
         </div>
 
-<!-- More Like This Carousel -->
-{% if recommended and recommended|length > 0 %}
-<div class="mt-16 pt-6 border-t border-gray-800/70">
+        <!-- MORE LIKE THIS -->
+        {% if recommended and recommended|length > 0 %}
+        <section class="more">
+            <h3 class="section-title">
+                <i class="fas fa-thumbs-up"></i>
+                <span>More {{ content.genre|title if content.genre else 'Recommendations' }}</span>
+                <span class="count-pill">{{ recommended|length }}</span>
+            </h3>
 
-    <div class="section-header flex items-center justify-between mb-5">
-        <h3 class="text-3xl font-bold flex items-center gap-3">
-            <i class="fas fa-thumbs-up text-red-500"></i>
-            More {{ content.genre|title if content.genre else 'Recommendations' }}
-            <span class="text-sm bg-gray-800 px-3 py-1 rounded-full">
-                {{ recommended|length }}
-            </span>
-        </h3>
-    </div>
+            <div class="carousel-wrap">
+                <button type="button" class="arrow left" onclick="scrollCarousel('left')" aria-label="Scroll left"><i class="fas fa-chevron-left"></i></button>
 
-    <div class="recommendations-container">
+                <div class="carousel" id="recommendations-carousel">
+                    {% for item in recommended %}
+                    <a class="rec-card" href="{{ url_for('watch_content', content_id=item.id) }}">
+                        <div class="poster">
+                            <div class="poster-fallback"><span>{{ item.title }}</span></div>
 
-        <!-- LEFT ARROW -->
-        <div class="carousel-arrow left" onclick="scrollCarousel('left')">
-            <i class="fas fa-chevron-left"></i>
-        </div>
-
-        <!-- CAROUSEL -->
-        <div class="recommendations-carousel" id="recommendations-carousel">
-
-            {% for item in recommended %}
-            <div class="recommendation-card"
-                 onclick="window.location.href='{{ url_for('watch_content', content_id=item.id) }}'">
-
-                <div class="poster-container">
-
-                    <!-- GENRE BADGE -->
-                    {% if item.genre %}
-                    <div class="genre-badge">
-                        <i class="fas fa-film mr-1"></i>
-                        {{ item.genre|title }}
-                    </div>
-                    {% endif %}
-
-                    <!-- ✅ FIXED IMAGE LOGIC -->
-                    {% if item.thumbnail %}
-
-                        {% if item.thumbnail.startswith('data:image') %}
-                            <!-- BASE64 IMAGE -->
-                            <img src="{{ item.thumbnail }}"
-                                 alt="{{ item.title }}"
-                                 loading="lazy"
-                                 style="width:100%; height:100%; object-fit:cover;">
-
-                        {% elif item.thumbnail.startswith(('http://', 'https://')) %}
-                            <!-- ONLINE IMAGE -->
-                            <img src="{{ item.thumbnail }}"
-                                 alt="{{ item.title }}"
-                                 loading="lazy"
-                                 style="width:100%; height:100%; object-fit:cover;">
-
-                        {% else %}
-                            <!-- LOCAL UPLOADED IMAGE -->
-                            <img src="{{ url_for('static', filename='uploads/' + item.thumbnail) }}"
-                                 alt="{{ item.title }}"
-                                 loading="lazy"
-                                 style="width:100%; height:100%; object-fit:cover;"
-                                 onerror="this.style.display='none'; this.parentElement.querySelector('.empty-poster-fallback')?.classList.remove('hidden');">
-                        {% endif %}
-
-                    {% else %}
-                        <!-- FALLBACK -->
-                        <div class="empty-poster-fallback flex items-center justify-center w-full h-full">
-                            <span>✨ No poster</span>
-                        </div>
-                    {% endif %}
-
-                    <!-- OVERLAY -->
-                    <div class="poster-overlay"></div>
-
-                    <!-- PLAY BUTTON -->
-                    <div class="play-button-center">
-                        <i class="fas fa-play"></i>
-                    </div>
-
-                    <!-- HOVER INFO -->
-                    <div class="movie-info-hover">
-                        <div class="movie-title-hover font-bold text-white">
-                            {{ item.title }}
-                        </div>
-
-                        <div class="flex items-center gap-3 mt-1">
-                            {% if item.release_year %}
-                            <div class="movie-year-hover bg-red-500/30 px-2 py-0.5 rounded-full text-xs">
-                                {{ item.release_year }}
-                            </div>
+                            {% if item.thumbnail %}
+                                {% if item.thumbnail.startswith('data:image') or item.thumbnail.startswith(('http://', 'https://')) %}
+                                    <img src="{{ item.thumbnail }}" alt="{{ item.title }}" loading="lazy" onerror="this.remove()">
+                                {% else %}
+                                    <img src="{{ url_for('static', filename='uploads/' + item.thumbnail) }}" alt="{{ item.title }}" loading="lazy" onerror="this.remove()">
+                                {% endif %}
                             {% endif %}
+
+                            {% if item.genre %}<div class="genre-badge">{{ item.genre|title }}</div>{% endif %}
+                            <div class="poster-shade"></div>
+                            <div class="play-center"><i class="fas fa-play"></i></div>
+                            <div class="rec-info">
+                                <div class="rec-title">{{ item.title }}</div>
+                                {% if item.release_year %}<span class="rec-year">{{ item.release_year }}</span>{% endif %}
+                            </div>
                         </div>
-                    </div>
-
+                    </a>
+                    {% endfor %}
                 </div>
+
+                <button type="button" class="arrow right" onclick="scrollCarousel('right')" aria-label="Scroll right"><i class="fas fa-chevron-right"></i></button>
             </div>
-            {% endfor %}
-
-        </div>
-
-        <!-- RIGHT ARROW -->
-        <div class="carousel-arrow right" onclick="scrollCarousel('right')">
-            <i class="fas fa-chevron-right"></i>
-        </div>
-
-    </div>
-</div>
-{% endif %}
-    </div>
+        </section>
+        {% endif %}
+    </main>
 
     <!-- SHARE MODAL -->
-    <div id="shareModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
-        <div class="bg-gray-900 p-6 rounded-2xl w-96 border border-gray-700 shadow-2xl">
-            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-share-alt text-red-500"></i> Share movie</h2>
-            <div class="flex items-center gap-2 mb-4"><input id="shareLink" type="text" readonly class="w-full bg-gray-800 p-3 rounded-lg text-sm text-gray-300 border border-gray-700"><button onclick="copyLink()" class="bg-red-600 px-4 py-2 rounded-lg hover:bg-red-700">Copy</button></div>
-            <div class="flex justify-between gap-3"><button onclick="shareWhatsApp()" class="flex-1 bg-green-600 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"><i class="fab fa-whatsapp"></i> WhatsApp</button><button onclick="nativeShare()" class="flex-1 bg-blue-600 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"><i class="fas fa-mobile-alt"></i> Share</button></div>
-            <button onclick="closeShareModal()" class="mt-5 w-full text-gray-400 hover:text-white">Close</button>
+    <div id="shareModal" class="modal" onclick="if(event.target===this) closeShareModal()">
+        <div class="modal-box" role="dialog" aria-modal="true" aria-label="Share movie">
+            <h2><i class="fas fa-share-alt"></i> Share movie</h2>
+            <div class="copy-row">
+                <input id="shareLink" type="text" readonly>
+                <button type="button" onclick="copyLink()" class="btn red">Copy</button>
+            </div>
+            <div class="share-row">
+                <button type="button" onclick="shareWhatsApp()" class="btn green"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+                <button type="button" onclick="nativeShare()" class="btn blue"><i class="fas fa-mobile-alt"></i> Share</button>
+            </div>
+            <button type="button" onclick="closeShareModal()" class="close-link">Close</button>
         </div>
     </div>
 
-    <!-- YOUTUBE API + FULL JS LOGIC -->
+    <!-- YOUTUBE API + JS -->
     <script src="https://www.youtube.com/iframe_api"></script>
     <script>
-       
 const contentId = {{ content['id']|tojson }};
 const youtubeVideoId = {{ content['youtube_video_id']|default('', true)|tojson }};
 
@@ -585,27 +564,18 @@ let lastReportedTime = 0;
 let playerReady = false;
 
 function showFallback(message = 'This video cannot be played here.') {
-    const playerElement = document.getElementById('player');
     const fallback = document.getElementById('player-fallback');
+    if (!fallback) return;
 
-    if (playerElement) {
-        playerElement.classList.add('hidden');
-    }
+    fallback.classList.add('show');
 
-    if (fallback) {
-        fallback.classList.remove('hidden');
-        fallback.classList.add('flex');
+    const messageElement = fallback.querySelector('.player-message');
+    if (messageElement) messageElement.textContent = message;
 
-        const messageElement = fallback.querySelector('.player-message');
-        if (messageElement) {
-            messageElement.textContent = message;
-        }
-
-        const link = fallback.querySelector('.youtube-fallback-link');
-        if (link && /^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId)) {
-            link.href = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
-            link.classList.remove('hidden');
-        }
+    const link = fallback.querySelector('.youtube-fallback-link');
+    if (link && /^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId)) {
+        link.href = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
+        link.classList.remove('hidden');
     }
 }
 
@@ -643,35 +613,22 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady(event) {
     playerReady = true;
 
-    // Do not make video playback depend on the progress API.
     fetch(`/api/progress/get?content_id=${encodeURIComponent(contentId)}`)
         .then(response => {
             if (!response.ok) throw new Error('Progress request failed');
             return response.json();
         })
         .then(data => {
-            if (
-                data.success &&
-                Number(data.progress) > 0 &&
-                player &&
-                playerReady
-            ) {
+            if (data.success && Number(data.progress) > 0 && player && playerReady) {
                 const duration = player.getDuration();
-
                 if (duration > 0) {
-                    const seconds = duration * Number(data.progress) / 100;
-                    player.seekTo(seconds, true);
+                    player.seekTo(duration * Number(data.progress) / 100, true);
                 }
             }
         })
-        .catch(error => {
-            console.warn('Could not restore playback progress:', error);
-        });
+        .catch(error => console.warn('Could not restore playback progress:', error));
 
-    if (progressUpdateInterval) {
-        clearInterval(progressUpdateInterval);
-    }
-
+    if (progressUpdateInterval) clearInterval(progressUpdateInterval);
     progressUpdateInterval = setInterval(reportProgress, 15000);
 }
 
@@ -679,9 +636,8 @@ function onPlayerStateChange(event) {
     if (!window.YT || !YT.PlayerState) return;
 
     if (event.data === YT.PlayerState.PLAYING) {
-        document.getElementById('player-fallback')?.classList.add('hidden');
+        document.getElementById('player-fallback')?.classList.remove('show');
     }
-
     if (event.data === YT.PlayerState.ENDED) {
         reportProgress(100);
     }
@@ -699,10 +655,7 @@ function onPlayerError(event) {
         153: 'YouTube could not verify the playback request. Check browser privacy or referrer settings.'
     };
 
-    showFallback(
-        messages[event.data] ||
-        'YouTube could not play this video. Please try opening it on YouTube.'
-    );
+    showFallback(messages[event.data] || 'YouTube could not play this video. Please try opening it on YouTube.');
 }
 
 function reportProgress(forcePercent = null) {
@@ -713,46 +666,33 @@ function reportProgress(forcePercent = null) {
         if (!duration || duration <= 0) return;
 
         const currentTime = player.getCurrentTime();
-        let percent = forcePercent !== null
-            ? forcePercent
-            : (currentTime / duration) * 100;
-
+        let percent = forcePercent !== null ? forcePercent : (currentTime / duration) * 100;
         percent = Math.min(100, Math.max(0, percent));
 
-        if (
-            forcePercent === null &&
-            Math.abs(percent - lastReportedTime) < 2
-        ) {
-            return;
-        }
-
+        if (forcePercent === null && Math.abs(percent - lastReportedTime) < 2) return;
         lastReportedTime = percent;
 
         fetch('/api/progress/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                content_id: contentId,
-                progress: percent
-            })
-        }).catch(error => {
-            console.warn('Could not save playback progress:', error);
-        });
+            body: JSON.stringify({ content_id: contentId, progress: percent })
+        }).catch(error => console.warn('Could not save playback progress:', error));
     } catch (error) {
         console.warn('Playback progress unavailable:', error);
     }
+}
+
+function paintStars(rating) {
+    document.querySelectorAll('.star-btn').forEach((star, index) => {
+        star.classList.toggle('active', index < rating);
+    });
 }
 
 function loadUserRating() {
     fetch(`/api/rating/get?content_id=${encodeURIComponent(contentId)}`)
         .then(response => response.json())
         .then(data => {
-            if (data.success && Number(data.rating) > 0) {
-                document.querySelectorAll('.star-btn').forEach((star, index) => {
-                    star.classList.toggle('active', index < Number(data.rating));
-                    star.style.color = index < Number(data.rating) ? '#fbbf24' : '';
-                });
-            }
+            if (data.success && Number(data.rating) > 0) paintStars(Number(data.rating));
         })
         .catch(error => console.warn('Could not load rating:', error));
 }
@@ -766,12 +706,7 @@ function rateContent(cid, rating) {
         .then(response => response.json())
         .then(data => {
             if (!data.success) throw new Error('Rating was not saved');
-
-            document.querySelectorAll('.star-btn').forEach((star, index) => {
-                star.classList.toggle('active', index < rating);
-                star.style.color = index < rating ? '#fbbf24' : '';
-            });
-
+            paintStars(rating);
             showToast('Rating saved!');
         })
         .catch(error => {
@@ -783,70 +718,54 @@ function rateContent(cid, rating) {
 function scrollCarousel(direction) {
     const carousel = document.getElementById('recommendations-carousel');
     if (!carousel) return;
-
-    carousel.scrollBy({
-        left: direction === 'left' ? -460 : 460,
-        behavior: 'smooth'
-    });
+    const step = Math.max(carousel.clientWidth * 0.8, 240);
+    carousel.scrollBy({ left: direction === 'left' ? -step : step, behavior: 'smooth' });
 }
 
 function updateArrowStates() {
     const carousel = document.getElementById('recommendations-carousel');
     if (!carousel) return;
 
-    const left = document.querySelector('.carousel-arrow.left');
-    const right = document.querySelector('.carousel-arrow.right');
+    const left = document.querySelector('.arrow.left');
+    const right = document.querySelector('.arrow.right');
 
-    if (left) {
-        left.classList.toggle('disabled', carousel.scrollLeft <= 15);
-    }
-
-    if (right) {
-        right.classList.toggle(
-            'disabled',
-            carousel.scrollLeft >= carousel.scrollWidth - carousel.clientWidth - 15
-        );
-    }
+    if (left) left.classList.toggle('disabled', carousel.scrollLeft <= 15);
+    if (right) right.classList.toggle('disabled', carousel.scrollLeft >= carousel.scrollWidth - carousel.clientWidth - 15);
 }
 
 function showToast(message, type = 'success') {
     const toast = document.createElement('div');
-    toast.className = `fixed bottom-6 right-6 ${
-        type === 'success' ? 'bg-green-600' : 'bg-red-600'
-    } text-white px-6 py-4 rounded-2xl shadow-2xl z-50`;
-
+    toast.className = `toast ${type === 'success' ? 'success' : 'error'}`;
     toast.textContent = message;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
 }
 
 function openShareModal() {
-    const modal = document.getElementById('shareModal');
     document.getElementById('shareLink').value = window.location.href;
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    document.getElementById('shareModal').classList.add('open');
 }
 
 function closeShareModal() {
-    const modal = document.getElementById('shareModal');
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    document.getElementById('shareModal').classList.remove('open');
 }
 
 function copyLink() {
     const input = document.getElementById('shareLink');
     input.select();
+    input.setSelectionRange(0, 99999);
 
-    navigator.clipboard.writeText(input.value)
+    (navigator.clipboard
+        ? navigator.clipboard.writeText(input.value)
+        : Promise.reject())
+        .catch(() => document.execCommand('copy'))
         .then(() => showToast('Link copied!'))
         .catch(() => showToast('Could not copy link', 'error'));
 }
 
 function shareWhatsApp() {
     window.open(
-        `https://wa.me/?text=${encodeURIComponent(
-            'Check this movie on DeepFlix: ' + window.location.href
-        )}`,
+        `https://wa.me/?text=${encodeURIComponent('Check this movie on DeepFlix: ' + window.location.href)}`,
         '_blank',
         'noopener'
     );
@@ -887,17 +806,18 @@ function triggerDownload() {
     setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeShareModal(); });
+
 document.addEventListener('DOMContentLoaded', () => {
     loadUserRating();
 
     const carousel = document.getElementById('recommendations-carousel');
     if (carousel) {
-        carousel.addEventListener('scroll', updateArrowStates);
+        carousel.addEventListener('scroll', updateArrowStates, { passive: true });
         window.addEventListener('resize', updateArrowStates);
         updateArrowStates();
     }
 
-    // If the YouTube API never loads, show a useful error instead of a blank area.
     setTimeout(() => {
         if (!player && typeof YT === 'undefined') {
             showFallback('YouTube player could not load. Check your internet connection or browser settings.');
@@ -906,14 +826,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('beforeunload', () => reportProgress());
-
 window.addEventListener('pagehide', () => {
     if (progressUpdateInterval) {
         clearInterval(progressUpdateInterval);
         progressUpdateInterval = null;
     }
 });
-
     </script>
 </body>
 </html>
