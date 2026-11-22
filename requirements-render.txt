@@ -17,3 +17,6 @@ RapidFuzz==3.13.0
 matplotlib==3.9.4
 Pillow==11.3.0
 wordcloud==1.9.6
+
+python-dotenv
+google-auth==2.47.0
