@@ -1,6 +1,7 @@
 """DeepFlix - Flask OTT app with hybrid recommender (fixed & hardened)."""
 import os
-
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 # Must be set BEFORE tensorflow is imported (silences GPU/CUDA noise, saves startup time)
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
@@ -50,6 +51,9 @@ app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'static', 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.secret_key = os.getenv('SECRET_KEY', 'super_secret_hybrid_key')
+
+# Google Identity Services (set GOOGLE_CLIENT_ID in your environment/.env)
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '').strip()
 
 
 def allowed_file(filename):
@@ -137,6 +141,24 @@ def setup_database():
                 cursor.execute("SHOW COLUMNS FROM users LIKE %s", (column,))
                 if not cursor.fetchone():
                     cursor.execute(ddl)
+
+            # Idempotent Google sign-in columns; existing user data is preserved.
+            for column, ddl in (
+                ('email', "ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL"),
+                ('google_id', "ALTER TABLE users ADD COLUMN google_id VARCHAR(255) NULL"),
+                ('auth_provider', "ALTER TABLE users ADD COLUMN auth_provider VARCHAR(30) NOT NULL DEFAULT 'local'"),
+            ):
+                cursor.execute("SHOW COLUMNS FROM users LIKE %s", (column,))
+                if not cursor.fetchone():
+                    cursor.execute(ddl)
+
+            # Best-effort indexes; duplicate legacy values must not stop app startup.
+            try:
+                cursor.execute("SHOW INDEX FROM users WHERE Key_name='uq_users_google_id'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE users ADD UNIQUE KEY uq_users_google_id (google_id)")
+            except Exception as index_error:
+                print('Google ID index not added:', index_error)
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ratings (
@@ -1407,6 +1429,98 @@ def login():
             conn.close()
 
     return render_template("login.html")
+
+
+@app.route('/google-login', methods=['POST'])
+def google_login():
+    """Verify a Google Identity Services ID token and sign in/create the user."""
+    if not GOOGLE_CLIENT_ID:
+        return jsonify({'success': False, 'message': 'Google sign-in is not configured on the server.'}), 503
+
+    payload = request.get_json(silent=True) or {}
+    credential = (payload.get('credential') or '').strip()
+    if not credential:
+        return jsonify({'success': False, 'message': 'Google credential is missing.'}), 400
+
+    try:
+        # Import lazily so the rest of DeepFlix still starts if Google auth is unused.
+        from google.oauth2 import id_token
+        from google.auth.transport import requests as google_requests
+        claims = id_token.verify_oauth2_token(
+            credential, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+        # verify_oauth2_token validates signature, issuer, expiry and audience.
+        google_id = claims.get('sub')
+        email = (claims.get('email') or '').strip().lower()
+        email_verified = claims.get('email_verified') is True
+        display_name = (claims.get('name') or email.split('@')[0]).strip()[:100]
+        if not google_id or not email or not email_verified:
+            return jsonify({'success': False, 'message': 'Google account email is not verified.'}), 401
+    except ImportError:
+        app.logger.exception('Google authentication dependencies are missing')
+        return jsonify({'success': False, 'message': 'Server dependency missing: install google-auth.'}), 500
+    except Exception:
+        app.logger.exception('Google ID token verification failed')
+        return jsonify({'success': False, 'message': 'Google sign-in verification failed. Please try again.'}), 401
+
+    conn = get_connection()
+    if conn is None:
+        return jsonify({'success': False, 'message': 'Database connection failed.'}), 500
+
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM users WHERE google_id=%s LIMIT 1", (google_id,))
+            user = cursor.fetchone()
+
+            if not user:
+                # Link an existing account by its verified email instead of creating a duplicate.
+                cursor.execute("SELECT * FROM users WHERE LOWER(email)= %s LIMIT 1", (email,))
+                user = cursor.fetchone()
+
+            if user:
+                cursor.execute("UPDATE users SET google_id=%s, email=%s, auth_provider='google' WHERE id=%s",
+                               (google_id, email, user['id']))
+                user_id = user['id']
+                username = user.get('username') or display_name
+            else:
+                # Keep usernames unique even when two Google accounts share a display name.
+                base_username = re.sub(r'[^A-Za-z0-9_.-]+', '_', email.split('@')[0]).strip('_.-') or 'google_user'
+                username = base_username[:80]
+                suffix = 1
+                while True:
+                    cursor.execute("SELECT id FROM users WHERE username=%s LIMIT 1", (username,))
+                    if not cursor.fetchone():
+                        break
+                    suffix += 1
+                    username = f"{base_username[:70]}_{suffix}"
+
+                # The random unusable password keeps the existing NOT NULL schema compatible.
+                random_password = generate_password_hash(uuid.uuid4().hex + uuid.uuid4().hex)
+                cursor.execute("""
+                    INSERT INTO users
+                        (username, password, fav_genre, fav_language, age, gender, email, google_id, auth_provider)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'google')
+                """, (username, random_password, '', '', 25, 'Other', email, google_id))
+                user_id = cursor.lastrowid
+
+        conn.commit()
+        session.clear()
+        session['loggedin'] = True
+        session['user_id'] = user_id
+        session['username'] = username
+        session['user_type'] = 'user'
+        session['auth_provider'] = 'google'
+        return jsonify({'success': True, 'redirect_url': url_for('watch_based')})
+    except pymysql.err.IntegrityError:
+        conn.rollback()
+        app.logger.exception('Google account already linked or username conflicts')
+        return jsonify({'success': False, 'message': 'This Google account or username is already linked. Please contact support.'}), 409
+    except Exception:
+        conn.rollback()
+        app.logger.exception('Google login database operation failed')
+        return jsonify({'success': False, 'message': 'Unable to sign in with Google right now.'}), 500
+    finally:
+        conn.close()
 
 
 @app.route('/register', methods=['GET', 'POST'])
