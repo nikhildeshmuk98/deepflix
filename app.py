@@ -1,8 +1,11 @@
 """DeepFlix - Flask OTT app with hybrid recommender (fixed & hardened)."""
+
 import os
 from dotenv import load_dotenv
+
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
-# Must be set BEFORE tensorflow is imported (silences GPU/CUDA noise, saves startup time)
+
+# Must be set BEFORE tensorflow is imported
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
@@ -14,8 +17,10 @@ import re
 import subprocess
 import sys
 import threading
+import traceback
 import time
 import uuid
+
 from datetime import datetime
 from functools import wraps
 from urllib.parse import parse_qs, urlparse
@@ -23,6 +28,7 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 import pymysql
 import pymysql.cursors
+
 from flask import (
     Flask,
     abort,
@@ -35,12 +41,12 @@ from flask import (
     session,
     url_for,
 )
+
 from rapidfuzz import fuzz
 from textblob import TextBlob
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from wordcloud import WordCloud
-
 # =========================================================
 # CONFIGURATION
 # =========================================================
@@ -238,54 +244,227 @@ _EMB_LOCK = threading.Lock()
 _EMB_CACHE = {'key': None, 'ids': None, 'matrix': None}
 
 
+# ==========================================
+# NLP + CNN MODEL LOADING
+# ==========================================
+
 def text_model_ready():
-    return EMBEDDING_MODEL is not None and TOKENIZER is not None
+    """
+    Check whether the main model, tokenizer,
+    and CNN embedding model are all loaded.
+    """
+    return (
+        MODEL is not None
+        and TOKENIZER is not None
+        and EMBEDDING_MODEL is not None
+    )
 
 
 def load_nlp_model(force=False):
-    """Load TensorFlow model + tokenizer once. Safe to call from a thread."""
+    """
+    Load the trained TensorFlow CNN model,
+    tokenizer, and embedding extraction model.
+
+    Thread-safe model loading.
+    """
+
     global MODEL, TOKENIZER, EMBEDDING_MODEL, _NLP_FAILED
 
+    # --------------------------------------
+    # TEXT MODEL ENABLE CHECK
+    # --------------------------------------
+
     if not ENABLE_TEXT_MODEL:
+        print("⚠️ Text model is disabled.")
         return False
 
+    # --------------------------------------
+    # LOCK: PREVENT MULTIPLE MODEL LOADS
+    # --------------------------------------
+
     with _NLP_LOCK:
+
+        # ----------------------------------
+        # FORCE RELOAD
+        # ----------------------------------
+
         if force:
-            MODEL = TOKENIZER = EMBEDDING_MODEL = None
+
+            MODEL = None
+            TOKENIZER = None
+            EMBEDDING_MODEL = None
             _NLP_FAILED = False
+
             with _EMB_LOCK:
-                _EMB_CACHE.update(key=None, ids=None, matrix=None)
+                _EMB_CACHE.update(
+                    key=None,
+                    ids=None,
+                    matrix=None
+                )
+
+            print("🔄 NLP model reload requested.")
+
+        # ----------------------------------
+        # ALREADY LOADED
+        # ----------------------------------
 
         if text_model_ready():
+            print("✅ NLP model already loaded.")
             return True
+
+        # ----------------------------------
+        # PREVIOUS LOAD FAILURE
+        # ----------------------------------
+
         if _NLP_FAILED:
+            print("⚠️ Previous NLP model loading failed.")
             return False
-        if not os.path.isfile(MODEL_FILE) or not os.path.isfile(TOKENIZER_FILE):
-            print(f"⚠️ Model/tokenizer file missing in {DATA_DIR}")
+
+        # ----------------------------------
+        # CHECK MODEL FILES
+        # ----------------------------------
+
+        if not os.path.isfile(MODEL_FILE):
+            print(f"❌ Model file missing: {MODEL_FILE}")
             _NLP_FAILED = True
             return False
+
+        if not os.path.isfile(TOKENIZER_FILE):
+            print(f"❌ Tokenizer file missing: {TOKENIZER_FILE}")
+            _NLP_FAILED = True
+            return False
+
+        # ----------------------------------
+        # LOAD MODEL + TOKENIZER
+        # ----------------------------------
 
         try:
+
             import tensorflow as tf
+
             from tensorflow.keras.models import load_model
 
-            model = load_model(MODEL_FILE, compile=False)
-            with open(TOKENIZER_FILE, 'rb') as handle:
+            print("🔄 Loading CNN model...")
+
+            # Load trained model without compilation.
+            # This avoids unnecessary optimizer loading.
+            model = load_model(
+                MODEL_FILE,
+                compile=False
+            )
+
+            print("✅ CNN model loaded.")
+
+            # ----------------------------------
+            # LOAD TOKENIZER
+            # ----------------------------------
+
+            print("🔄 Loading tokenizer...")
+
+            with open(TOKENIZER_FILE, "rb") as handle:
+
                 tokenizer = pickle.load(handle)
 
-            embedding_layer = model.get_layer('embedding_layer')
-            embedding_model = tf.keras.Model(inputs=model.input, outputs=embedding_layer.output)
+            print("✅ Tokenizer loaded.")
 
-            MODEL, TOKENIZER, EMBEDDING_MODEL = model, tokenizer, embedding_model
-            print("✅ Model and tokenizer loaded successfully")
+            # ----------------------------------
+            # CHECK EMBEDDING LAYER
+            # ----------------------------------
+
+            try:
+
+                embedding_layer = model.get_layer(
+                    "embedding_layer"
+                )
+
+            except ValueError:
+
+                raise ValueError(
+                    "The trained model does not contain "
+                    "a layer named 'embedding_layer'. "
+                    "Check train_model.py architecture."
+                )
+
+            # ----------------------------------
+            # BUILD EMBEDDING EXTRACTION MODEL
+            # ----------------------------------
+
+            print("🔄 Creating CNN embedding model...")
+
+            embedding_model = tf.keras.Model(
+                inputs=model.inputs,
+                outputs=embedding_layer.output
+            )
+
+            # ----------------------------------
+            # VERIFY MODEL INPUT
+            # ----------------------------------
+
+            if model.inputs is None:
+                raise ValueError(
+                    "CNN model input is missing."
+                )
+
+            if embedding_model is None:
+                raise ValueError(
+                    "CNN embedding model creation failed."
+                )
+
+            # ----------------------------------
+            # SAVE GLOBAL REFERENCES
+            # ----------------------------------
+
+            MODEL = model
+            TOKENIZER = tokenizer
+            EMBEDDING_MODEL = embedding_model
+
+            _NLP_FAILED = False
+
+            # ----------------------------------
+            # RESET EMBEDDING CACHE
+            # ----------------------------------
+
+            with _EMB_LOCK:
+
+                _EMB_CACHE.update(
+                    key=None,
+                    ids=None,
+                    matrix=None
+                )
+
+            # ----------------------------------
+            # SUCCESS
+            # ----------------------------------
+
+            print(
+                "✅ CNN + NLP initialization "
+                "completed successfully."
+            )
+
+            print(
+                "✅ Main model, tokenizer, "
+                "and embedding model are ready."
+            )
+
             return True
+
+        # ----------------------------------
+        # ERROR HANDLING
+        # ----------------------------------
+
         except Exception as exc:
-            MODEL = TOKENIZER = EMBEDDING_MODEL = None
+
+            MODEL = None
+            TOKENIZER = None
+            EMBEDDING_MODEL = None
+
             _NLP_FAILED = True
-            print(f"❌ NLP model initialization failed: {exc}")
+
+            print(
+                f"❌ NLP model initialization failed: {exc}"
+            )
+
             return False
-
-
 def get_content_embeddings(descriptions, batch_size=32):
     """Return a 2-D array (n_texts, embedding_dim): mean of word embeddings per text."""
     if not text_model_ready():
@@ -1206,66 +1385,181 @@ def upload_csv():
         if conn:
             conn.close()
 
+# ==========================================
+# BACKGROUND MODEL TRAINING
+# ==========================================
+
+def run_training_background(script_path):
+
+    print("DeepFlixAI background training started.", flush=True)
+
+    try:
+
+        # Run training script without blocking the browser request
+        result = subprocess.run(
+            [sys.executable, script_path],
+            cwd=BASE_DIR,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            check=False
+        )
+
+        if result.returncode != 0:
+
+            print(
+                f"Training failed with exit code: {result.returncode}",
+                flush=True
+            )
+
+            return
+
+        # ----------------------------------
+        # READ REAL MODEL METRICS
+        # ----------------------------------
+
+        accuracy = None
+
+        try:
+
+            with open(METRICS_FILE, 'r', encoding='utf-8') as f:
+                metrics = json.load(f)
+
+            series = (
+                metrics.get('val_accuracy')
+                or metrics.get('accuracy')
+                or []
+            )
+
+            if series:
+
+                accuracy = float(series[-1])
+
+                if accuracy <= 1:
+                    accuracy *= 100
+
+                accuracy = round(accuracy, 2)
+
+        except Exception as e:
+
+            print(
+                f"Could not read training metrics: {e}",
+                flush=True
+            )
+
+        # ----------------------------------
+        # SAVE TRAINING STATUS
+        # ----------------------------------
+
+        conn = get_connection()
+
+        if not conn:
+
+            print(
+                "Training completed but database connection "
+                "failed while saving status.",
+                flush=True
+            )
+
+            return
+
+        try:
+
+            with conn.cursor() as cursor:
+
+                cursor.execute(
+                    """
+                    INSERT INTO model_status (trained_at, accuracy)
+                    VALUES (%s, %s)
+                    """,
+                    (datetime.now(), accuracy)
+                )
+
+            conn.commit()
+
+        finally:
+
+            conn.close()
+
+        # ----------------------------------
+        # RELOAD TRAINED NLP MODEL
+        # ----------------------------------
+
+        load_nlp_model(force=True)
+
+        print(
+            f"Training successfully completed. Accuracy: {accuracy}",
+            flush=True
+        )
+
+    except Exception as e:
+
+        print(
+            f"Background training error: {e}",
+            flush=True
+        )
+
+        traceback.print_exc()
+
+
+# ==========================================
+# ADMIN TRAIN MODEL
+# ==========================================
 
 @app.route('/admin/train_model', methods=['POST'])
 @admin_required
 def train_model():
-    conn = get_connection()
-    if not conn:
-        flash("Database connection error", 'danger')
+
+    script_path = os.path.join(
+        BASE_DIR,
+        'train_model.py'
+    )
+
+    if not os.path.isfile(script_path):
+
+        flash(
+            'Training script not found.',
+            'danger'
+        )
+
         return redirect(url_for('admin_dashboard'))
 
     try:
-        script_path = os.path.join(BASE_DIR, 'train_model.py')
-        if not os.path.isfile(script_path):
-            flash('❌ train_model.py not found.', 'danger')
-            return redirect(url_for('admin_dashboard'))
 
-        result = subprocess.run(
-            [sys.executable, script_path],
-            capture_output=True, text=True, cwd=BASE_DIR,
-            timeout=int(os.getenv('TRAIN_TIMEOUT', '1800')))
-        print("STDOUT:", result.stdout)
-        print("STDERR:", result.stderr)
+        # ----------------------------------
+        # START BACKGROUND TRAINING
+        # ----------------------------------
 
-        if result.returncode != 0:
-            flash('❌ Training failed! Check the server logs.', 'danger')
-            return redirect(url_for('admin_dashboard'))
+        training_thread = threading.Thread(
 
-        # Real accuracy from the metrics file written by train_model.py (no random numbers)
-        accuracy = None
-        try:
-            with open(METRICS_FILE, 'r') as f:
-                metrics = json.load(f)
-            series = metrics.get('val_accuracy') or metrics.get('accuracy') or []
-            if series:
-                accuracy = float(series[-1])
-                if accuracy <= 1:
-                    accuracy *= 100
-                accuracy = round(accuracy, 2)
-        except Exception as e:
-            print("Could not read metrics:", e)
+            target=run_training_background,
 
-        with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO model_status (trained_at, accuracy) VALUES (%s, %s)",
-                           (datetime.now(), accuracy))
-        conn.commit()
+            args=(script_path,),
 
-        threading.Thread(target=load_nlp_model, kwargs={'force': True}, daemon=True).start()
+            daemon=True
 
-        msg = f' Accuracy: {accuracy}%' if accuracy is not None else ''
-        flash(f'✅ Model trained successfully!{msg}', 'success')
+        )
 
-    except subprocess.TimeoutExpired:
-        flash('❌ Training timed out.', 'danger')
+        training_thread.start()
+
+        flash(
+            'Model training started in background. '
+            'Please check server logs for progress.',
+            'success'
+        )
+
     except Exception as e:
-        flash(f'❌ Error: {e}', 'danger')
-    finally:
-        conn.close()
+
+        print(
+            f"Could not start training: {e}",
+            flush=True
+        )
+
+        flash(
+            f'Unable to start training: {e}',
+            'danger'
+        )
 
     return redirect(url_for('admin_dashboard'))
-
-
 @app.route('/admin/analysis')
 @admin_required
 def admin_analysis():
@@ -1573,6 +1867,7 @@ def logout():
     return redirect(url_for('index'))
 
 
+
 @app.route('/watch_based')
 def watch_based():
     if 'loggedin' not in session:
@@ -1581,11 +1876,21 @@ def watch_based():
     conn = get_connection()
     if not conn:
         return "Database connection failed", 500
+
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, profile_image, gender FROM users WHERE id=%s",
-                       (session['user_id'],))
+        user_id = session['user_id']
+
+        # ==========================================
+        # USER INFORMATION
+        # ==========================================
+        cursor.execute(
+            "SELECT id, username, profile_image, gender "
+            "FROM users WHERE id=%s",
+            (user_id,)
+        )
         user = cursor.fetchone()
+
         if not user:
             session.clear()
             return redirect(url_for('login'))
@@ -1597,20 +1902,82 @@ def watch_based():
         else:
             user['display_image'] = 'm_profile.png'
 
-        cursor.execute("SELECT * FROM user_profiles WHERE user_id=%s", (session['user_id'],))
+        # ==========================================
+        # USER PROFILES
+        # ==========================================
+        cursor.execute(
+            "SELECT * FROM user_profiles WHERE user_id=%s",
+            (user_id,)
+        )
         profiles = cursor.fetchall()
 
-        cursor.execute("""
-            SELECT * FROM contents
-            WHERE deepflix_rank > 0
-            ORDER BY deepflix_rank ASC LIMIT 15
-        """)
-        deepflix_top = cursor.fetchall()
-        for movie in deepflix_top:
-            movie['display_image'] = movie.get('backdrop_url') or movie.get('thumbnail')
+        # ==========================================
+        # PERSONALIZED HYBRID RECOMMENDATIONS
+        # ==========================================
+        deepflix_top = []
 
-        return render_template("watch_based.html", user=user, profiles=profiles,
-                               deepflix_top=deepflix_top)
+        try:
+            cursor.execute("""
+                SELECT c.id, c.story
+                FROM user_history uh
+                JOIN contents c ON uh.content_id = c.id
+                WHERE uh.user_id = %s
+                ORDER BY uh.watched_at DESC
+                LIMIT 1
+            """, (user_id,))
+
+            last_watched = cursor.fetchone()
+
+            if last_watched:
+                deepflix_top = fetch_recommendations(
+                    cursor,
+                    user_id,
+                    last_watched.get('story') or '',
+                    current_id=last_watched.get('id'),
+                    limit=15
+                )
+
+        except Exception as rec_error:
+            print(
+                "Personalized recommendation error:",
+                rec_error
+            )
+            deepflix_top = []
+
+        # ==========================================
+        # FALLBACK: TOP RANKED CONTENT
+        # ==========================================
+        if not deepflix_top:
+            cursor.execute("""
+                SELECT *
+                FROM contents
+                WHERE deepflix_rank > 0
+                  AND (is_kids = 0 OR is_kids IS NULL)
+                ORDER BY deepflix_rank ASC
+                LIMIT 15
+            """)
+            deepflix_top = cursor.fetchall()
+
+        # ==========================================
+        # IMAGE PREPARATION
+        # ==========================================
+        for movie in deepflix_top:
+            movie['display_image'] = (
+                movie.get('backdrop_url')
+                or movie.get('thumbnail')
+            )
+
+        return render_template(
+            "watch_based.html",
+            user=user,
+            profiles=profiles,
+            deepflix_top=deepflix_top
+        )
+
+    except Exception as e:
+        print("Watch based page error:", e)
+        return "Unable to load page. Please try again.", 500
+
     finally:
         conn.close()
 
