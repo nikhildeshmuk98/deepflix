@@ -1411,7 +1411,7 @@ def login():
                 cursor.execute(f"SELECT * FROM {table} WHERE username=%s", (username,))
                 user = cursor.fetchone()
 
-            if user and check_password_hash(user['password'], password):
+            if user and verify_password_hash(user['password'], password):
                 session.clear()
                 session['loggedin'] = True
                 session['user_id'] = user['id']
@@ -1495,7 +1495,7 @@ def google_login():
                     username = f"{base_username[:70]}_{suffix}"
 
                 # The random unusable password keeps the existing NOT NULL schema compatible.
-                random_password = generate_password_hash(uuid.uuid4().hex + uuid.uuid4().hex)
+                random_password = generate_password_hash(uuid.uuid4().hex + uuid.uuid4().hex, method='pbkdf2:sha256')
                 cursor.execute("""
                     INSERT INTO users
                         (username, password, fav_genre, fav_language, age, gender, email, google_id, auth_provider)
@@ -1553,7 +1553,7 @@ def register():
                 cursor.execute(
                     "INSERT INTO users (username, password, fav_genre, fav_language, age, gender) "
                     "VALUES (%s, %s, %s, %s, %s, %s)",
-                    (username, generate_password_hash(password), fav_genre, fav_language, age, gender))
+                    (username, generate_password_hash(password, method='pbkdf2:sha256'), fav_genre, fav_language, age, gender))
             conn.commit()
             flash('Registration successful!', 'success')
             return redirect(url_for('login'))
@@ -1674,7 +1674,13 @@ def select_profile(profile):
         if conn:
             conn.close()
 
-
+def verify_password_hash(stored_hash, password):
+    try:
+        return check_password_hash(stored_hash, password)
+    except (ValueError, TypeError):
+        app.logger.exception("Password hash verification failed")
+        return False
+    
 @app.route('/add_profile', methods=['GET', 'POST'])
 @login_required
 def add_profile():
