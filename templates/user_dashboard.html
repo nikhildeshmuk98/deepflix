@@ -190,8 +190,15 @@ body::before{content:'';position:fixed;inset:0;z-index:9000;pointer-events:none;
 .copy{font-size:.72rem;color:rgba(240,237,230,.3);text-align:center}
 
 /* REVEAL */
-.reveal{opacity:0;transform:translateY(26px);transition:opacity .8s var(--ease),transform .8s var(--ease)}
-.reveal.visible{opacity:1;transform:none}
+.reveal{
+  opacity:1;
+  transform:none;
+  transition:opacity .8s var(--ease),transform .8s var(--ease);
+}
+.reveal.visible{
+  opacity:1;
+  transform:none;
+}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}.reveal{opacity:1;transform:none}}
 </style>
 </head>
