@@ -31,3 +31,6 @@ Thumbs.db
 
 # User-uploaded files
 static/uploads/
+
+# Local admin password reset utility
+reset_admin.py

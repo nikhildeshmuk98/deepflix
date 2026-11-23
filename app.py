@@ -87,8 +87,10 @@ DB_CONFIG = {
     'connect_timeout': 10,
 }
 
-DB_SSL_CA = os.getenv('DB_SSL_CA', os.path.join(BASE_DIR, 'certs', 'ca.pem'))
-if os.path.isfile(DB_SSL_CA):
+# Enable SSL only when explicitly configured
+DB_SSL_CA = os.getenv('DB_SSL_CA', '').strip()
+
+if DB_SSL_CA and os.path.isfile(DB_SSL_CA):
     DB_CONFIG['ssl'] = {'ca': DB_SSL_CA}
 
 

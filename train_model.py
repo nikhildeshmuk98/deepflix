@@ -1,237 +1,708 @@
 # train_model.py
-# This script is called by the Flask app to train the NLP model.
-# It reads data from the database, trains a CNN model, and saves it.
+# DeepFlixAI - CNN Multi-Label Genre Training
 
+import os
+import sys
+import json
+import pickle
+import traceback
+
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
+import numpy as np
 import pandas as pd
+import pymysql
 import pymysql.cursors
+import tensorflow as tf
+
+import matplotlib
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Embedding, Conv1D, GlobalMaxPooling1D, Dense, Dropout
-from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.callbacks import EarlyStopping
+
 from sklearn.preprocessing import MultiLabelBinarizer
-import pickle
-import os
-import numpy as np
-import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
-import json
 
-# --- Database Configuration ---
+
+# ==========================================
+# BASE PATHS
+# ==========================================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATA_DIR = os.path.join(BASE_DIR, "data")
+IMG_DIR = os.path.join(BASE_DIR, "static", "img")
+
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(IMG_DIR, exist_ok=True)
+
+
+# ==========================================
+# DATABASE CONFIGURATION
+# ==========================================
+
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '',
-    'db': 'ott_recommendation_db1',
-    'charset': 'utf8mb4',
-    'cursorclass': pymysql.cursors.DictCursor
+    "host": os.getenv("DB_HOST", "localhost"),
+    "user": os.getenv("DB_USER", "root"),
+    "password": os.getenv("DB_PASSWORD", ""),
+    "database": os.getenv("DB_NAME", "ott_recommendation_db1"),
+    "port": int(os.getenv("DB_PORT", "3306")),
+    "charset": "utf8mb4",
+    "cursorclass": pymysql.cursors.DictCursor,
+    "connect_timeout": 15,
+    "read_timeout": 60,
+    "write_timeout": 60
 }
 
-# --- Model Parameters ---
+# SSL support - same pattern as app.py
+# Enable SSL only when explicitly configured
+DB_SSL_CA = os.getenv("DB_SSL_CA", "").strip()
+
+if DB_SSL_CA and os.path.isfile(DB_SSL_CA):
+    DB_CONFIG["ssl"] = {"ca": DB_SSL_CA}
+
+
+# ==========================================
+# MODEL PARAMETERS
+# ==========================================
+
 VOCAB_SIZE = 10000
 MAX_SEQUENCE_LENGTH = 500
-EMBEDDING_DIM = 128
-FILTERS = 128
+EMBEDDING_DIM = 64
+FILTERS = 64
 KERNEL_SIZE = 5
-DROPOUT_RATE = 0.5
-EPOCHS = 20
-BATCH_SIZE = 32
+DROPOUT_RATE = 0.4
+
+EPOCHS = 10
+BATCH_SIZE = 8
+
+
+# ==========================================
+# DATABASE
+# ==========================================
 
 def get_connection():
-    """Establishes a new database connection."""
-    try:
-        connection = pymysql.connect(**DB_CONFIG)
-        return connection
-    except Exception as e:
-        print(f"Database connection failed: {e}")
-        return None
 
-def create_classification_model(vocab_size, max_sequence_length, embedding_dim, filters, kernel_size, dropout_rate, num_classes):
-    """Creates a 1D CNN classification model for text representation."""
+    print("Connecting to database...", flush=True)
+
+    try:
+        conn = pymysql.connect(**DB_CONFIG)
+
+        print("Database connection successful.", flush=True)
+
+        return conn
+
+    except Exception as e:
+
+        print(f"Database connection failed: {e}", flush=True)
+
+        raise
+
+
+# ==========================================
+# MODEL
+# ==========================================
+
+def create_classification_model(
+    vocab_size,
+    max_sequence_length,
+    embedding_dim,
+    filters,
+    kernel_size,
+    dropout_rate,
+    num_classes
+):
+
     model = Sequential([
-        Embedding(input_dim=vocab_size, output_dim=embedding_dim, input_length=max_sequence_length),
-        Conv1D(filters=filters, kernel_size=kernel_size, activation='relu'),
+        Embedding(
+            input_dim=vocab_size,
+            output_dim=embedding_dim
+        ),
+
+        Conv1D(
+            filters=filters,
+            kernel_size=kernel_size,
+            activation="relu"
+        ),
+
         GlobalMaxPooling1D(),
-        Dense(64, activation='relu'),
+
+        Dense(64, activation="relu"),
+
         Dropout(dropout_rate),
-        Dense(32, activation='relu', name='embedding_layer'),
-        Dense(num_classes, activation='softmax')
+
+        Dense(
+            32,
+            activation="relu",
+            name="embedding_layer"
+        ),
+
+        Dense(
+            num_classes,
+            activation="sigmoid"
+        )
     ])
-    
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    
+
+    model.compile(
+        optimizer="adam",
+        loss="binary_crossentropy",
+        metrics=["binary_accuracy"]
+    )
+
     return model
 
+
+# ==========================================
+# TRAINING & VALIDATION GRAPH
+# ==========================================
+
 def plot_history(history, filename):
-    """Plots training and validation loss and accuracy and saves the plot."""
-    plt.figure(figsize=(12, 5))
-    
-    # Plot Loss
-    plt.subplot(1, 2, 1)
-    plt.plot(history.history['loss'], label='Training Loss')
-    plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.title('Model Training Loss')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
+
+    plt.figure(figsize=(10, 5))
+
+    plt.plot(
+        history.history["loss"],
+        label="Training Loss"
+    )
+
+    if "val_loss" in history.history:
+
+        plt.plot(
+            history.history["val_loss"],
+            label="Validation Loss"
+        )
+
+    plt.title("Training Loss")
+
+    plt.xlabel("Epoch")
+
+    plt.ylabel("Loss")
+
     plt.legend()
-    
-    # Plot Accuracy
-    plt.subplot(1, 2, 2)
-    plt.plot(history.history['accuracy'], label='Training Accuracy')
-    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-    plt.title('Model Training Accuracy')
-    plt.ylabel('Accuracy')
-    plt.xlabel('Epoch')
-    plt.legend()
-    
+
     plt.tight_layout()
-    plt.savefig(filename)
+
+    plt.savefig(filename, dpi=120)
+
     plt.close()
-    print(f"Saved plot to {filename}")
 
-def plot_confusion_matrix(y_true, y_pred, filename, labels):
-    """Plots a confusion matrix and saves the plot."""
-    y_true_labels = [str(label) for label in y_true]
-    y_pred_labels = [str(label) for label in y_pred]
+    print(f"Training graph saved: {filename}", flush=True)
 
-    labels = sorted(list(set(y_true_labels) | set(y_pred_labels)))
-    cm = confusion_matrix(y_true_labels, y_pred_labels, labels=labels)
 
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
-    plt.title('Confusion Matrix')
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
+# ==========================================
+# CONFUSION MATRIX
+# ==========================================
+
+def save_confusion_matrix(y_true, y_pred, filename):
+
+    # Multi-label evaluation converted into a binary
+    # present/absent confusion matrix across all genres.
+
+    true_flat = y_true.flatten()
+
+    pred_flat = y_pred.flatten()
+
+    cm = confusion_matrix(
+        true_flat,
+        pred_flat,
+        labels=[0, 1]
+    )
+
+    plt.figure(figsize=(6, 5))
+
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=["Absent", "Present"],
+        yticklabels=["Absent", "Present"]
+    )
+
+    plt.title("Genre Prediction Confusion Matrix")
+
+    plt.xlabel("Predicted")
+
+    plt.ylabel("Actual")
+
     plt.tight_layout()
-    plt.savefig(filename)
-    plt.close()
-    print(f"Saved confusion matrix to {filename}")
 
-    return cm, labels  # 🔥 IMPORTANT: return cm for JSON saving
+    plt.savefig(filename, dpi=120)
+
+    plt.close()
+
+    print(f"Confusion matrix saved: {filename}", flush=True)
+
+    return cm
+
+
+# ==========================================
+# MAIN TRAINING
+# ==========================================
 
 def train_and_save_model():
-    """Fetches data, trains the model, and saves the model and tokenizer."""
-    print("Starting model training process...")
+
+    print("=" * 50, flush=True)
+
+    print("DEEPFLIX AI TRAINING STARTED", flush=True)
+
+    print("=" * 50, flush=True)
 
     conn = get_connection()
-    if not conn:
-        print("Model training aborted due to database connection failure.")
-        return
 
     try:
-        # --- 1. Fetch data from the database ---
+
+        # --------------------------------------
+        # 1. LOAD DATA
+        # --------------------------------------
+
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, story, genre FROM contents")
+
+            cursor.execute(
+                "SELECT id, story, genre FROM contents"
+            )
+
             contents = cursor.fetchall()
 
         if not contents:
-            print("No content found in the database. Cannot train model.")
-            return
+
+            raise ValueError(
+                "No content records found in contents table."
+            )
 
         df = pd.DataFrame(contents)
 
-        df['story'] = df['story'].fillna('')
-        df['genre'] = df['genre'].apply(lambda x: [g.strip() for g in str(x).split(',') if g.strip()])
-        
-        df = df[df['genre'].apply(len) > 0].reset_index(drop=True)
+        if "story" not in df.columns or "genre" not in df.columns:
 
-        if df.empty:
-            print("No valid content with genres found. Cannot train model.")
-            return
-            
-        print(f"Fetched and processed {len(df)} content items from the database.")
+            raise ValueError(
+                "Database must contain story and genre columns."
+            )
 
-        # --- 2. Preprocess ---
+        df["story"] = df["story"].fillna("").astype(str)
+
+        df["genre"] = df["genre"].fillna("").astype(str)
+
+        # --------------------------------------
+        # 2. CLEAN DATA
+        # --------------------------------------
+
+        df["genre"] = df["genre"].apply(
+            lambda x: [
+                g.strip()
+                for g in x.split(",")
+                if g.strip()
+            ]
+        )
+
+        df = df[
+            (df["story"].str.strip() != "") &
+            (df["genre"].apply(len) > 0)
+        ].reset_index(drop=True)
+
+        if len(df) < 2:
+
+            raise ValueError(
+                "At least 2 valid movies with story and genre are required."
+            )
+
+        print(
+            f"Valid training records: {len(df)}",
+            flush=True
+        )
+
+        # --------------------------------------
+        # 3. LABEL PROCESSING
+        # --------------------------------------
+
         mlb = MultiLabelBinarizer()
-        y_labels = mlb.fit_transform(df['genre'])
-        
-        tokenizer = Tokenizer(num_words=VOCAB_SIZE, oov_token="<unk>")
-        tokenizer.fit_on_texts(df['story'])
 
-        sequences = tokenizer.texts_to_sequences(df['story'])
-        padded_sequences = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
-        
-        class_labels = mlb.classes_
+        y_labels = mlb.fit_transform(df["genre"])
+
+        class_labels = list(mlb.classes_)
+
+        num_classes = len(class_labels)
+
+        if num_classes < 1:
+
+            raise ValueError(
+                "No genre labels available."
+            )
+
+        print(
+            f"Genres detected: {class_labels}",
+            flush=True
+        )
+
+        # --------------------------------------
+        # 4. TOKENIZATION
+        # --------------------------------------
+
+        tokenizer = Tokenizer(
+            num_words=VOCAB_SIZE,
+            oov_token="<unk>"
+        )
+
+        tokenizer.fit_on_texts(df["story"])
+
+        sequences = tokenizer.texts_to_sequences(
+            df["story"]
+        )
+
+        padded_sequences = pad_sequences(
+            sequences,
+            maxlen=MAX_SEQUENCE_LENGTH,
+            padding="pre",
+            truncating="pre"
+        )
+
+        X = np.asarray(
+            padded_sequences,
+            dtype=np.int32
+        )
+
+        y = np.asarray(
+            y_labels,
+            dtype=np.float32
+        )
+
+        # --------------------------------------
+        # 5. TRAIN / VALIDATION SPLIT
+        # --------------------------------------
+
+        validation_count = max(
+            1,
+            int(np.ceil(len(X) * 0.2))
+        )
+
+        validation_count = min(
+            validation_count,
+            len(X) - 1
+        )
 
         X_train, X_val, y_train, y_val = train_test_split(
-            padded_sequences, y_labels, test_size=0.2, random_state=42
+            X,
+            y,
+            test_size=validation_count,
+            random_state=42
         )
 
-        # --- 3. Model ---
-        print("Creating and training CNN classification model...")
+        print(
+            f"Training samples: {len(X_train)}",
+            flush=True
+        )
+
+        print(
+            f"Validation samples: {len(X_val)}",
+            flush=True
+        )
+
+        # --------------------------------------
+        # 6. BUILD MODEL
+        # --------------------------------------
+
+        tf.keras.backend.clear_session()
+
         model = create_classification_model(
-            VOCAB_SIZE, MAX_SEQUENCE_LENGTH, EMBEDDING_DIM,
-            FILTERS, KERNEL_SIZE, DROPOUT_RATE, len(class_labels)
+            VOCAB_SIZE,
+            MAX_SEQUENCE_LENGTH,
+            EMBEDDING_DIM,
+            FILTERS,
+            KERNEL_SIZE,
+            DROPOUT_RATE,
+            num_classes
         )
-        
+
+        model.summary()
+
+        # --------------------------------------
+        # 7. TRAIN
+        # --------------------------------------
+
+        callbacks = [
+
+            EarlyStopping(
+                monitor="val_loss",
+                patience=3,
+                restore_best_weights=True
+            )
+
+        ]
+
         history = model.fit(
-            X_train, y_train,
+
+            X_train,
+
+            y_train,
+
             epochs=EPOCHS,
+
             batch_size=BATCH_SIZE,
+
             verbose=1,
-            validation_data=(X_val, y_val)
+
+            validation_data=(X_val, y_val),
+
+            callbacks=callbacks
+
         )
 
-        print("Model training complete.")
-
-        # --- 4. Save ---
-        if not os.path.exists('data'):
-            os.makedirs('data')
-        
-        model.save('data/pretrained_model.keras')
-
-        with open('data/tokenizer.pkl', 'wb') as handle:
-            pickle.dump(tokenizer, handle)
-
-        with open('data/mlb.pkl', 'wb') as handle:
-            pickle.dump(mlb, handle)
-
-        # --- 5. Predictions ---
-        y_pred_probs = model.predict(X_val)
-        y_pred_labels_indices = np.argmax(y_pred_probs, axis=1)
-        y_true_labels_indices = np.argmax(y_val, axis=1)
-        
-        y_pred_labels = [class_labels[i] for i in y_pred_labels_indices]
-        y_true_labels = [class_labels[i] for i in y_true_labels_indices]
-
-        img_dir = 'static/img'
-        if not os.path.exists(img_dir):
-            os.makedirs(img_dir)
-
-        cm, cm_labels = plot_confusion_matrix(
-            y_true_labels,
-            y_pred_labels,
-            os.path.join(img_dir, 'confusion_matrix.png'),
-            list(class_labels)
+        print(
+            "Training completed.",
+            flush=True
         )
 
-        # ===============================
-        # 🔥 SAVE METRICS JSON (FINAL)
-        # ===============================
+        # --------------------------------------
+        # 8. PREDICTION
+        # --------------------------------------
+
+        y_pred_probs = model.predict(
+            X_val,
+            batch_size=BATCH_SIZE,
+            verbose=0
+        )
+
+        # Threshold for multi-label predictions
+        y_pred = (y_pred_probs >= 0.5).astype(int)
+
+        # --------------------------------------
+        # 9. SAVE MODEL
+        # --------------------------------------
+
+        model_path = os.path.join(
+            DATA_DIR,
+            "pretrained_model.keras"
+        )
+
+        temp_model_path = os.path.join(
+            DATA_DIR,
+            "pretrained_model_temp.keras"
+        )
+
+        model.save(temp_model_path)
+
+        os.replace(
+            temp_model_path,
+            model_path
+        )
+
+        print(
+            f"Model saved: {model_path}",
+            flush=True
+        )
+
+        # --------------------------------------
+        # 10. SAVE TOKENIZER
+        # --------------------------------------
+
+        tokenizer_path = os.path.join(
+            DATA_DIR,
+            "tokenizer.pkl"
+        )
+
+        temp_tokenizer_path = tokenizer_path + ".tmp"
+
+        with open(
+            temp_tokenizer_path,
+            "wb"
+        ) as handle:
+
+            pickle.dump(
+                tokenizer,
+                handle
+            )
+
+        os.replace(
+            temp_tokenizer_path,
+            tokenizer_path
+        )
+
+        # --------------------------------------
+        # 11. SAVE MLB
+        # --------------------------------------
+
+        mlb_path = os.path.join(
+            DATA_DIR,
+            "mlb.pkl"
+        )
+
+        temp_mlb_path = mlb_path + ".tmp"
+
+        with open(
+            temp_mlb_path,
+            "wb"
+        ) as handle:
+
+            pickle.dump(
+                mlb,
+                handle
+            )
+
+        os.replace(
+            temp_mlb_path,
+            mlb_path
+        )
+
+        # --------------------------------------
+        # 12. SAVE CONFUSION MATRIX
+        # --------------------------------------
+
+        cm_path = os.path.join(
+            IMG_DIR,
+            "confusion_matrix.png"
+        )
+
+        cm = save_confusion_matrix(
+            y_val.astype(int),
+            y_pred,
+            cm_path
+        )
+
+        # --------------------------------------
+        # 13. SAVE TRAINING GRAPH
+        # --------------------------------------
+
+        history_path = os.path.join(
+            IMG_DIR,
+            "accuracy_loss.png"
+        )
+
+        plot_history(
+            history,
+            history_path
+        )
+
+        # --------------------------------------
+        # 14. SAVE METRICS
+        # --------------------------------------
+
         metrics = {
+
             "confusion_matrix": cm.tolist(),
-            "labels": list(cm_labels),
-            "accuracy": history.history['accuracy'],
-            "val_accuracy": history.history['val_accuracy'],
-            "loss": history.history['loss'],
-            "val_loss": history.history['val_loss']
+
+            "labels": [
+                "Absent",
+                "Present"
+            ],
+
+            "genres": class_labels,
+
+            "accuracy": history.history.get(
+                "binary_accuracy",
+                []
+            ),
+
+            "val_accuracy": history.history.get(
+                "val_binary_accuracy",
+                []
+            ),
+
+            "loss": history.history.get(
+                "loss",
+                []
+            ),
+
+            "val_loss": history.history.get(
+                "val_loss",
+                []
+            ),
+
+            "total_samples": len(df),
+
+            "training_samples": len(X_train),
+
+            "validation_samples": len(X_val),
+
+            "epochs_completed": len(
+                history.history.get("loss", [])
+            )
+
         }
 
-        with open("data/model_metrics.json", "w") as f:
-            json.dump(metrics, f)
+        metrics_path = os.path.join(
+            DATA_DIR,
+            "model_metrics.json"
+        )
 
-        print("✅ Metrics JSON saved successfully")
-        print("Training process finished.")
+        temp_metrics_path = metrics_path + ".tmp"
+
+        with open(
+            temp_metrics_path,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                metrics,
+                f,
+                indent=4
+            )
+
+        os.replace(
+            temp_metrics_path,
+            metrics_path
+        )
+
+        # --------------------------------------
+        # 15. SUCCESS
+        # --------------------------------------
+
+        print("=" * 50, flush=True)
+
+        print(
+            "MODEL TRAINING SUCCESSFULLY COMPLETED",
+            flush=True
+        )
+
+        print("=" * 50, flush=True)
+
+        return True
 
     except Exception as e:
-        print(f"An error occurred during training: {e}")
+
+        print(
+            f"TRAINING ERROR: {e}",
+            flush=True
+        )
+
+        traceback.print_exc()
+
+        raise
 
     finally:
-        conn.close()
+
+        if conn:
+
+            conn.close()
+
+        tf.keras.backend.clear_session()
 
 
-if __name__ == '__main__':
-    train_and_save_model()
+# ==========================================
+# EXECUTION
+# ==========================================
+
+if __name__ == "__main__":
+
+    try:
+
+        train_and_save_model()
+
+        sys.exit(0)
+
+    except Exception:
+
+        print(
+            "Training process failed.",
+            flush=True
+        )
+
+        sys.exit(1)
