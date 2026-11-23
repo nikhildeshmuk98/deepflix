@@ -1,1803 +1,611 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>DeepFlix · Cinema Elevated</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --red: #E50914;
-            --red-dark: #9e0610;
-            --red-glow: rgba(229,9,20,0.38);
-            --red-muted: rgba(229,9,20,0.13);
-            --gold: #f5c842;
-            --ink: #080707;
-            --surface: rgba(255,255,255,0.04);
-            --border: rgba(255,255,255,0.07);
-            --off-white: #f0ede6;
-        }
-
-        * { margin:0; padding:0; box-sizing:border-box; }
-        html { scroll-behavior: smooth; }
-
-        body {
-            background: var(--ink);
-            color: var(--off-white);
-            font-family: 'DM Sans', system-ui, sans-serif;
-            overflow-x: hidden;
-        }
-
-        /* ── GRAIN ── */
-        body::before {
-            content: '';
-            position: fixed;
-            inset: 0;
-            z-index: 9000;
-            pointer-events: none;
-            opacity: 0.032;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-            background-size: 180px 180px;
-        }
-
-        /* ── SCROLLBARS ── */
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--red); border-radius: 99px; }
-
-        /* ══════════════════════════════════════
-           HERO BACKDROP
-        ══════════════════════════════════════ */
-        #heroBackdrop {
-            position: relative;
-            width: 100%;
-            min-height: 360px;
-            background: #0d0a0a;
-            background-size: cover;
-            background-position: center 20%;
-            isolation: isolate;
-            overflow: hidden;
-            transition: background-image 0.6s ease;
-        }
-        @media (min-width: 768px) { #heroBackdrop { min-height: 520px; } }
-        @media (min-width: 1280px) { #heroBackdrop { min-height: 580px; } }
-
-        /* layered vignettes */
-        #heroBackdrop::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            z-index: 1;
-            background:
-                linear-gradient(to right, rgba(8,7,7,0.92) 0%, rgba(8,7,7,0.0) 55%),
-                linear-gradient(to top, rgba(8,7,7,1) 0%, rgba(8,7,7,0.0) 45%),
-                radial-gradient(ellipse 80% 70% at 15% 30%, rgba(8,7,7,0.55) 0%, transparent 100%);
-            pointer-events: none;
-        }
-
-        /* top accent line */
-        #heroBackdrop::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 3px;
-            background: linear-gradient(to right, transparent 0%, var(--red) 30%, var(--gold) 70%, transparent 100%);
-            z-index: 20;
-        }
-
-        #heroBackdrop > * { position: relative; z-index: 10; }
-
-        /* slow ken-burns */
-        #heroBgLayer {
-            position: absolute;
-            inset: 0;
-            z-index: 0;
-            background-size: cover;
-            background-position: center 20%;
-            filter: brightness(0.42) saturate(1.08);
-            transform: scale(1.06);
-            transition: background-image 0.7s ease, transform 14s ease;
-        }
-        #heroBgLayer.zoomed { transform: scale(1.0); }
-
-        /* ══════════════════════════════════════
-           HEADER / NAV
-        ══════════════════════════════════════ */
-        .df-nav {
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            z-index: 500;
-            padding: 0.85rem 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-            flex-wrap: wrap;
-            background: linear-gradient(to bottom, rgba(8,7,7,0.82) 0%, transparent 100%);
-            backdrop-filter: blur(0px);
-            transition: background 0.3s, backdrop-filter 0.3s;
-        }
-
-        .df-nav.scrolled {
-            background: rgba(8,7,7,0.95);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid rgba(229,9,20,0.18);
-        }
-
-        .nav-left { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
-
-        .df-logo { height: 2.4rem; width: auto; transition: filter 0.2s; }
-        .df-logo:hover { filter: drop-shadow(0 0 8px var(--red)); }
-
-        .nav-link {
-            font-size: 0.82rem;
-            font-weight: 500;
-            color: rgba(240,237,230,0.72);
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-            transition: color 0.18s;
-            white-space: nowrap;
-        }
-        .nav-link:hover { color: var(--off-white); }
-        .nav-link.active {
-            color: var(--red);
-            border-bottom: 2px solid var(--red);
-            padding-bottom: 2px;
-        }
-
-        /* search */
-        .search-wrap {
-            position: relative;
-            flex: 1;
-            max-width: 480px;
-            min-width: 160px;
-        }
-        .search-wrap i {
-            position: absolute;
-            left: 0.9rem;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(240,237,230,0.45);
-            font-size: 0.8rem;
-            pointer-events: none;
-        }
-        .df-search {
-            width: 100%;
-            background: rgba(8,7,7,0.6);
-            border: 1px solid rgba(255,255,255,0.13);
-            border-radius: 999px;
-            padding: 0.5rem 1rem 0.5rem 2.3rem;
-            color: var(--off-white);
-            font-size: 0.82rem;
-            font-family: 'DM Sans', sans-serif;
-            transition: border-color 0.2s, background 0.2s;
-            outline: none;
-            backdrop-filter: blur(4px);
-        }
-        .df-search::placeholder { color: rgba(240,237,230,0.35); }
-        .df-search:focus {
-            border-color: var(--red);
-            background: rgba(8,7,7,0.8);
-        }
-
-        /* nav right */
-        .nav-right { display: flex; align-items: center; gap: 0.75rem; }
-
-        .notif-btn {
-            position: relative;
-            background: none;
-            border: none;
-            color: rgba(240,237,230,0.65);
-            font-size: 1.15rem;
-            cursor: pointer;
-            padding: 0.4rem;
-            transition: color 0.18s;
-        }
-        .notif-btn:hover { color: var(--off-white); }
-
-        .notif-badge {
-            position: absolute;
-            top: -2px; right: -4px;
-            background: var(--red);
-            color: white;
-            font-size: 0.6rem;
-            font-weight: 700;
-            min-width: 17px;
-            height: 17px;
-            border-radius: 99px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0 3px;
-        }
-
-        .notif-dropdown {
-            position: absolute;
-            top: calc(100% + 0.75rem);
-            right: 0;
-            width: 360px;
-            background: rgba(16,13,13,0.98);
-            border: 1px solid rgba(229,9,20,0.25);
-            border-radius: 16px;
-            box-shadow: 0 24px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04);
-            backdrop-filter: blur(16px);
-            overflow: hidden;
-            z-index: 600;
-        }
-
-        .notif-header {
-            padding: 0.85rem 1.1rem;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .notif-item {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.75rem 1.1rem;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-            text-decoration: none;
-            transition: background 0.18s;
-        }
-        .notif-item:hover { background: rgba(229,9,20,0.08); }
-        .notif-item.unread { background: rgba(255,255,255,0.03); }
-
-        /* profile pill */
-        .profile-pill {
-            display: flex;
-            align-items: center;
-            gap: 0.55rem;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 999px;
-            padding: 0.3rem 0.85rem 0.3rem 0.3rem;
-            transition: border-color 0.2s;
-        }
-        .profile-pill:hover { border-color: rgba(229,9,20,0.4); }
-
-        .profile-avatar {
-            width: 30px; height: 30px;
-            border-radius: 50%;
-            overflow: hidden;
-            background: rgba(229,9,20,0.2);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 0.85rem;
-            color: var(--red);
-            flex-shrink: 0;
-        }
-        .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
-
-        .logout-pill {
-            display: flex;
-            align-items: center;
-            gap: 0.45rem;
-            background: var(--red);
-            border-radius: 999px;
-            padding: 0.42rem 1rem;
-            font-size: 0.78rem;
-            font-weight: 600;
-            color: white;
-            text-decoration: none;
-            transition: background 0.2s, transform 0.18s;
-            white-space: nowrap;
-        }
-        .logout-pill:hover { background: var(--red-dark); transform: translateY(-1px); }
-
-        /* ══════════════════════════════════════
-           FEATURED HERO CONTENT (carousel)
-        ══════════════════════════════════════ */
-        .hero-content-area {
-            padding: 5.5rem 1.5rem 3rem;
-            max-width: 1280px;
-            margin: 0 auto;
-        }
-        @media (min-width: 768px) { .hero-content-area { padding: 6.5rem 2.5rem 3.5rem; } }
-
-        .hero-inner-grid {
-            display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 2rem;
-            align-items: end;
-        }
-        @media (max-width: 600px) { .hero-inner-grid { grid-template-columns: 1fr; } }
-
-        .featured-poster {
-            width: 130px;
-            border-radius: 14px;
-            box-shadow: 0 24px 48px rgba(0,0,0,0.8), 0 0 0 1px rgba(229,9,20,0.5);
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-        @media (min-width: 768px) { .featured-poster { width: 180px; } }
-        .featured-poster:hover {
-            transform: translateY(-6px) scale(1.02);
-            box-shadow: 0 32px 56px rgba(0,0,0,0.85), 0 0 0 2px var(--red);
-        }
-
-        .featured-meta { display: flex; flex-direction: column; gap: 0.75rem; }
-
-        .featured-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-
-        .f-chip {
-            font-size: 0.68rem;
-            font-weight: 600;
-            letter-spacing: 0.09em;
-            text-transform: uppercase;
-            padding: 0.2rem 0.65rem;
-            border-radius: 999px;
-        }
-        .f-chip.red { background: var(--red-muted); border: 1px solid rgba(229,9,20,0.4); color: #ff6b6b; }
-        .f-chip.gold { background: rgba(245,200,66,0.12); border: 1px solid rgba(245,200,66,0.35); color: var(--gold); }
-        .f-chip.white { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); color: rgba(240,237,230,0.7); }
-
-        .featured-title {
-            font-family: 'Playfair Display', serif;
-            font-weight: 900;
-            font-size: clamp(1.8rem, 4vw, 3.4rem);
-            line-height: 1.0;
-            color: white;
-            text-shadow: 0 3px 20px rgba(0,0,0,0.7);
-        }
-
-        .featured-story {
-            font-size: 0.88rem;
-            line-height: 1.72;
-            color: rgba(240,237,230,0.65);
-            font-weight: 300;
-            max-width: 520px;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-
-        .featured-cta { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-
-        .btn-play-hero {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.55rem;
-            background: var(--red);
-            color: white;
-            padding: 0.65rem 1.6rem;
-            border-radius: 999px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            letter-spacing: 0.03em;
-            text-decoration: none;
-            transition: background 0.2s, transform 0.18s, box-shadow 0.2s;
-            white-space: nowrap;
-        }
-        .btn-play-hero:hover {
-            background: var(--red-dark);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 22px var(--red-glow);
-        }
-
-        .btn-info {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.15);
-            color: var(--off-white);
-            padding: 0.62rem 1.4rem;
-            border-radius: 999px;
-            font-size: 0.83rem;
-            font-weight: 500;
-            text-decoration: none;
-            backdrop-filter: blur(4px);
-            transition: background 0.2s, border-color 0.2s, transform 0.18s;
-            white-space: nowrap;
-        }
-        .btn-info:hover {
-            background: rgba(255,255,255,0.17);
-            border-color: rgba(255,255,255,0.3);
-            transform: translateY(-2px);
-        }
-
-        /* carousel dots */
-        .carousel-dots { display: flex; gap: 6px; align-items: center; }
-        .cdot {
-            width: 8px; height: 8px;
-            border-radius: 99px;
-            background: rgba(255,255,255,0.35);
-            cursor: pointer;
-            transition: all 0.25s;
-            border: none;
-        }
-        .cdot.active { background: var(--red); width: 24px; }
-
-        /* ══════════════════════════════════════
-           SECTION HEADERS
-        ══════════════════════════════════════ */
-        .section-head {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 1.2rem;
-        }
-
-        .section-title {
-            font-family: 'Bebas Neue', sans-serif;
-            font-size: clamp(1.3rem, 2.5vw, 1.85rem);
-            letter-spacing: 0.08em;
-            color: var(--off-white);
-            line-height: 1;
-        }
-
-        .section-badge {
-            font-size: 0.65rem;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            padding: 0.22rem 0.65rem;
-            border-radius: 999px;
-        }
-        .badge-red { background: rgba(229,9,20,0.15); border: 1px solid rgba(229,9,20,0.35); color: #ff6666; }
-        .badge-green { background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.3); color: #34d399; }
-        .badge-gold { background: rgba(245,200,66,0.12); border: 1px solid rgba(245,200,66,0.3); color: var(--gold); }
-        .badge-purple { background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.3); color: #a78bfa; }
-
-        .section-divider {
-            flex: 1;
-            height: 1px;
-            background: linear-gradient(to right, rgba(229,9,20,0.35), transparent);
-        }
-
-        /* ══════════════════════════════════════
-           SCROLL ROWS (horizontal carousels)
-        ══════════════════════════════════════ */
-        .df-scroll {
-            display: flex;
-            overflow-x: auto;
-            gap: 0.9rem;
-            padding: 0.4rem 0 1.4rem;
-            scroll-behavior: smooth;
-            scrollbar-width: thin;
-            scrollbar-color: var(--red) transparent;
-        }
-        .df-scroll::-webkit-scrollbar { height: 4px; }
-
-        /* ── CARD BASE ── */
-        .df-card {
-            flex: 0 0 auto;
-            width: 148px;
-            border-radius: 12px;
-            overflow: hidden;
-            background: #0f0c0c;
-            border: 1px solid var(--border);
-            transition: transform 0.25s cubic-bezier(0.2,0.8,0.4,1.1), border-color 0.25s, box-shadow 0.25s;
-            position: relative;
-            cursor: pointer;
-        }
-        @media (min-width: 640px) { .df-card { width: 168px; } }
-        @media (min-width: 1024px) { .df-card { width: 190px; } }
-
-        .df-card:hover {
-            transform: translateY(-8px) scale(1.02);
-            border-color: var(--red);
-            box-shadow: 0 20px 36px -10px var(--red-glow), 0 0 0 1px var(--red);
-        }
-
-        .df-card img {
-            width: 100%;
-            aspect-ratio: 2/3;
-            object-fit: cover;
-            display: block;
-            transition: transform 0.3s;
-        }
-        .df-card:hover img { transform: scale(1.04); }
-
-        /* hover overlay */
-        .card-ov {
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(0deg, rgba(8,7,7,0.9) 0%, rgba(8,7,7,0.55) 50%, transparent 100%);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-end;
-            padding: 1rem 0.75rem;
-            gap: 0.35rem;
-            opacity: 0;
-            transition: opacity 0.22s;
-            pointer-events: none;
-        }
-        .df-card:hover .card-ov { opacity: 1; pointer-events: auto; }
-
-        .ov-play {
-            width: 42px; height: 42px;
-            border-radius: 50%;
-            background: var(--red);
-            display: flex; align-items: center; justify-content: center;
-            color: white;
-            font-size: 1rem;
-            box-shadow: 0 0 18px var(--red-glow);
-            margin-bottom: 0.25rem;
-            transition: transform 0.18s;
-        }
-        .ov-play:hover { transform: scale(1.1); }
-        .ov-title {
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: white;
-            text-align: center;
-            line-height: 1.2;
-        }
-        .ov-genre {
-            font-size: 0.68rem;
-            color: var(--gold);
-            background: rgba(0,0,0,0.5);
-            border-radius: 99px;
-            padding: 0.15rem 0.55rem;
-        }
-
-        /* mobile-visible bottom gradient title */
-        .card-bottom-title {
-            position: absolute;
-            bottom: 0; left: 0; right: 0;
-            background: linear-gradient(to top, rgba(8,7,7,0.88) 0%, transparent 100%);
-            padding: 1.5rem 0.6rem 0.5rem;
-        }
-        .card-bottom-title span {
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: rgba(240,237,230,0.85);
-            display: block;
-            line-height: 1.2;
-        }
-        @media (min-width: 640px) { .card-bottom-title { display: none; } }
-
-        /* ── HEART BUTTON ── */
-        .heart-btn {
-            position: absolute;
-            top: 7px; right: 7px;
-            background: rgba(8,7,7,0.72);
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 99px;
-            padding: 4px 9px;
-            font-size: 0.68rem;
-            display: flex; align-items: center; gap: 4px;
-            color: var(--off-white);
-            cursor: pointer;
-            z-index: 30;
-            opacity: 0;
-            transition: opacity 0.18s, background 0.18s;
-            backdrop-filter: blur(4px);
-        }
-        .df-card:hover .heart-btn { opacity: 1; }
-        .heart-btn.active { background: var(--red); border-color: var(--red); }
-        .heart-btn i { font-size: 0.7rem; }
-
-        /* ── RECENT BADGE ── */
-        .recent-badge {
-            position: absolute;
-            top: 7px; left: 7px;
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-            font-size: 0.58rem;
-            font-weight: 700;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            padding: 3px 8px;
-            border-radius: 99px;
-            z-index: 20;
-            display: flex; align-items: center; gap: 3px;
-        }
-
-        /* ── DEEPFLIX LOGO BADGE ── */
-        .df-logo-badge {
-            position: absolute;
-            bottom: 8px; left: 8px;
-            width: 32px; height: 32px;
-            background: rgba(8,7,7,0.7);
-            border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            z-index: 15;
-            backdrop-filter: blur(4px);
-            border: 1px solid rgba(229,9,20,0.35);
-        }
-
-        /* ── TRENDING RANK ── */
-        .trending-wrap {
-            flex: 0 0 auto;
-            width: 148px;
-            position: relative;
-            overflow: visible;
-        }
-        @media (min-width: 640px) { .trending-wrap { width: 168px; } }
-        @media (min-width: 1024px) { .trending-wrap { width: 190px; } }
-
-        .t-rank {
-            position: absolute;
-            left: -16px;
-            bottom: -18px;
-            font-family: 'Bebas Neue', sans-serif;
-            font-size: 5.5rem;
-            line-height: 0.75;
-            color: rgba(255,255,255,0.9);
-            text-shadow: 2px 3px 0px rgba(229,9,20,0.6), 4px 6px 12px rgba(0,0,0,0.8);
-            z-index: 30;
-            pointer-events: none;
-            letter-spacing: -2px;
-            transition: text-shadow 0.2s;
-        }
-        @media (min-width: 640px) { .t-rank { font-size: 6.2rem; left:-18px; bottom:-20px; } }
-        @media (min-width: 1024px) { .t-rank { font-size: 7rem; left:-22px; bottom:-22px; } }
-
-        .trending-wrap:hover .t-rank {
-            text-shadow: 2px 3px 0px var(--red), 4px 6px 20px var(--red-glow);
-        }
-
-        .trending-inner {
-            border-radius: 12px;
-            overflow: hidden;
-            background: #0f0c0c;
-            border: 1px solid var(--border);
-            transition: transform 0.25s cubic-bezier(0.2,0.8,0.4,1.1), border-color 0.25s, box-shadow 0.25s;
-            position: relative;
-        }
-        .trending-wrap:hover .trending-inner {
-            transform: translateY(-8px) scale(1.02);
-            border-color: var(--red);
-            box-shadow: 0 20px 36px -10px var(--red-glow), 0 0 0 1px var(--red);
-        }
-        .trending-inner img {
-            width: 100%;
-            aspect-ratio: 2/3;
-            object-fit: cover;
-            display: block;
-            transition: transform 0.3s;
-        }
-        .trending-wrap:hover .trending-inner img { transform: scale(1.04); }
-
-        .trending-ov {
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(0deg, rgba(8,7,7,0.9) 0%, rgba(8,7,7,0.5) 50%, transparent 100%);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-end;
-            padding: 1rem 0.75rem;
-            gap: 0.35rem;
-            opacity: 0;
-            transition: opacity 0.22s;
-        }
-        .trending-wrap:hover .trending-ov { opacity: 1; }
-
-        /* trending scroll with left padding for rank overflow */
-        .trending-scroll {
-            padding-left: 1.5rem;
-            padding-right: 1rem;
-        }
-
-        /* ── PROGRESS BAR ── */
-        .progress-bar {
-            position: absolute;
-            bottom: 0; left: 0; right: 0;
-            height: 3px;
-            background: rgba(255,255,255,0.12);
-        }
-        .progress-fill { height: 100%; background: var(--red); }
-
-        /* ══════════════════════════════════════
-           HYBRID GRID (Picks For You)
-        ══════════════════════════════════════ */
-        .hybrid-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0,1fr));
-            gap: 0.9rem;
-        }
-        @media (min-width: 480px) { .hybrid-grid { grid-template-columns: repeat(3, minmax(0,1fr)); } }
-        @media (min-width: 768px) { .hybrid-grid { grid-template-columns: repeat(4, minmax(0,1fr)); } }
-        @media (min-width: 1024px) { .hybrid-grid { grid-template-columns: repeat(6, minmax(0,1fr)); } }
-
-        .hybrid-card {
-            border-radius: 12px;
-            overflow: hidden;
-            background: #0f0c0c;
-            border: 1px solid var(--border);
-            position: relative;
-            transition: transform 0.25s cubic-bezier(0.2,0.8,0.4,1.1), border-color 0.25s, box-shadow 0.25s;
-        }
-        .hybrid-card:hover {
-            transform: translateY(-7px) scale(1.02);
-            border-color: var(--red);
-            box-shadow: 0 18px 32px -10px var(--red-glow);
-        }
-        .hybrid-card img {
-            width: 100%;
-            aspect-ratio: 2/3;
-            object-fit: cover;
-            display: block;
-            transition: transform 0.3s;
-        }
-        .hybrid-card:hover img { transform: scale(1.04); }
-
-        /* ══════════════════════════════════════
-           DISCOVER ALL GRID
-        ══════════════════════════════════════ */
-        .discover-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0,1fr));
-            gap: 0.9rem;
-        }
-        @media (min-width: 480px) { .discover-grid { grid-template-columns: repeat(3, minmax(0,1fr)); } }
-        @media (min-width: 640px) { .discover-grid { grid-template-columns: repeat(4, minmax(0,1fr)); } }
-        @media (min-width: 1024px) { .discover-grid { grid-template-columns: repeat(6, minmax(0,1fr)); } }
-
-        .discover-card {
-            position: relative;
-            border-radius: 12px;
-            overflow: hidden;
-            background: #0f0c0c;
-            border: 1px solid var(--border);
-            transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
-        }
-        .discover-card:hover {
-            transform: translateY(-6px) scale(1.02);
-            border-color: var(--red);
-            box-shadow: 0 16px 28px -8px var(--red-glow);
-        }
-        .discover-card img {
-            width: 100%;
-            aspect-ratio: 2/3;
-            object-fit: cover;
-            display: block;
-            transition: transform 0.3s;
-        }
-        .discover-card:hover img { transform: scale(1.04); }
-
-        .rating-pill {
-            position: absolute;
-            top: 7px; left: 7px;
-            background: rgba(8,7,7,0.75);
-            border: 1px solid rgba(245,200,66,0.3);
-            border-radius: 99px;
-            padding: 2px 8px;
-            font-size: 0.65rem;
-            color: var(--gold);
-            display: flex; align-items: center; gap: 3px;
-            backdrop-filter: blur(4px);
-            z-index: 10;
-        }
-
-        /* ══════════════════════════════════════
-           LANGUAGE CARDS
-        ══════════════════════════════════════ */
-        .lang-scroll {
-            display: flex;
-            overflow-x: auto;
-            gap: 0.85rem;
-            padding: 0.3rem 0 1.2rem;
-            scrollbar-width: thin;
-            scrollbar-color: var(--red) transparent;
-        }
-
-        .lang-card {
-            flex: 0 0 auto;
-            width: 180px;
-            border-radius: 14px;
-            overflow: hidden;
-            border: 1px solid var(--border);
-            background: #0f0c0c;
-            transition: transform 0.22s, border-color 0.22s, box-shadow 0.22s;
-            text-decoration: none;
-        }
-        .lang-card:hover {
-            transform: translateY(-5px) scale(1.02);
-            border-color: var(--red);
-            box-shadow: 0 14px 26px -8px var(--red-glow);
-        }
-        .lang-card-img {
-            width: 100%;
-            height: 110px;
-            object-fit: cover;
-            display: block;
-            transition: transform 0.28s;
-        }
-        .lang-card:hover .lang-card-img { transform: scale(1.05); }
-        .lang-card-label {
-            padding: 0.5rem 0.75rem;
-            background: rgba(8,7,7,0.85);
-            font-size: 0.82rem;
-            font-weight: 500;
-            color: var(--off-white);
-            display: block;
-            text-align: center;
-        }
-
-        /* ══════════════════════════════════════
-           GENRE CHIPS
-        ══════════════════════════════════════ */
-        .genre-scroll {
-            display: flex;
-            overflow-x: auto;
-            gap: 0.55rem;
-            padding: 0.3rem 0 1rem;
-            scrollbar-width: none;
-        }
-        .genre-scroll::-webkit-scrollbar { display: none; }
-
-        .genre-chip {
-            flex: 0 0 auto;
-            padding: 0.38rem 1rem;
-            border-radius: 999px;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.04);
-            color: rgba(240,237,230,0.65);
-            font-size: 0.78rem;
-            font-weight: 500;
-            white-space: nowrap;
-            text-decoration: none;
-            transition: background 0.18s, border-color 0.18s, color 0.18s;
-        }
-        .genre-chip:hover, .genre-chip.active {
-            background: var(--red);
-            border-color: var(--red);
-            color: white;
-        }
-
-        /* ══════════════════════════════════════
-           TOAST
-        ══════════════════════════════════════ */
-        .df-toast {
-            position: fixed;
-            bottom: 1.5rem;
-            right: 1.5rem;
-            background: rgba(16,13,13,0.97);
-            border: 1px solid rgba(229,9,20,0.35);
-            border-left: 4px solid var(--red);
-            border-radius: 12px;
-            padding: 0.85rem 1.2rem;
-            font-size: 0.83rem;
-            color: var(--off-white);
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            z-index: 9999;
-            transform: translateY(80px);
-            opacity: 0;
-            transition: transform 0.28s, opacity 0.28s;
-            pointer-events: none;
-            backdrop-filter: blur(12px);
-            box-shadow: 0 12px 32px rgba(0,0,0,0.5);
-        }
-        .df-toast.show { transform: translateY(0); opacity: 1; }
-
-        /* ══════════════════════════════════════
-           MAIN WRAPPER
-        ══════════════════════════════════════ */
-        .df-main {
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 2.5rem 1.5rem 4rem;
-        }
-        @media (min-width: 768px) { .df-main { padding: 3rem 2.5rem 5rem; } }
-
-        .df-section { margin-bottom: 3.5rem; }
-
-        /* ══════════════════════════════════════
-           EMPTY STATE
-        ══════════════════════════════════════ */
-        .empty-state {
-            background: rgba(255,255,255,0.025);
-            border: 1px dashed rgba(255,255,255,0.1);
-            border-radius: 16px;
-            padding: 3rem;
-            text-align: center;
-            color: rgba(240,237,230,0.35);
-        }
-        .empty-state i { font-size: 2.5rem; margin-bottom: 0.75rem; display: block; }
-
-        /* ══════════════════════════════════════
-           FOOTER
-        ══════════════════════════════════════ */
-        .df-footer {
-            border-top: 1px solid rgba(229,9,20,0.2);
-            padding: 2.5rem 1.5rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 1rem;
-        }
-        .footer-logo {
-            font-family: 'Bebas Neue', sans-serif;
-            font-size: 1.6rem;
-            letter-spacing: 0.2em;
-            color: var(--red);
-        }
-        .footer-socials { display: flex; gap: 0.9rem; }
-        .footer-socials a {
-            width: 36px; height: 36px;
-            border-radius: 50%;
-            border: 1px solid rgba(255,255,255,0.1);
-            display: flex; align-items: center; justify-content: center;
-            color: rgba(240,237,230,0.4);
-            font-size: 0.85rem;
-            text-decoration: none;
-            transition: border-color 0.18s, color 0.18s, transform 0.18s;
-        }
-        .footer-socials a:hover { border-color: var(--red); color: var(--red); transform: translateY(-2px); }
-        .footer-copy { font-size: 0.72rem; color: rgba(240,237,230,0.25); letter-spacing: 0.04em; text-align: center; }
-
-        /* ── SCROLL REVEAL ── */
-        .reveal {
-            opacity: 0;
-            transform: translateY(18px);
-            transition: opacity 0.5s ease, transform 0.5s ease;
-        }
-        .reveal.visible { opacity: 1; transform: none; }
-        .rd1 { transition-delay: 0.05s; }
-        .rd2 { transition-delay: 0.1s; }
-        .rd3 { transition-delay: 0.15s; }
-        .rd4 { transition-delay: 0.2s; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080707">
+<title>DeepFlix · Cinema Elevated</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --red:#E50914;--red-dark:#9e0610;--red-glow:rgba(229,9,20,.38);--red-muted:rgba(229,9,20,.13);
+  --gold:#f5c842;--ink:#080707;--card:#0f0c0c;--border:rgba(255,255,255,.07);--off:#f0ede6;
+  --ease:cubic-bezier(.22,1,.36,1);
+  --sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);
+  --pad:clamp(1rem,4vw,2.5rem);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+html.lenis,html.lenis body{height:auto}
+.lenis.lenis-smooth{scroll-behavior:auto!important}
+.lenis.lenis-stopped{overflow:hidden}
+body{background:var(--ink);color:var(--off);font-family:'DM Sans',system-ui,sans-serif;overflow-x:hidden;min-height:100dvh;padding-bottom:calc(4.2rem + var(--sab))}
+@media(min-width:768px){body{padding-bottom:0}}
+img{max-width:100%}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+body::before{content:'';position:fixed;inset:0;z-index:9000;pointer-events:none;opacity:.03;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");background-size:180px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--red);border-radius:99px}
+
+/* progress line */
+#scrollLine{position:fixed;top:0;left:0;height:2px;width:100%;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--red),var(--gold));z-index:700}
+
+/* NAV */
+.df-nav{position:fixed;top:0;left:0;right:0;z-index:600;padding:calc(.7rem + var(--sat)) var(--pad) .7rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;background:linear-gradient(to bottom,rgba(8,7,7,.85),transparent);transition:background .35s,backdrop-filter .35s}
+.df-nav.scrolled{background:rgba(8,7,7,.9);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border-bottom:1px solid rgba(229,9,20,.2)}
+.nav-left{display:flex;align-items:center;gap:1.4rem}
+.df-logo{height:2.1rem;width:auto;transition:filter .2s}
+@media(min-width:768px){.df-logo{height:2.4rem}}
+.df-logo:hover{filter:drop-shadow(0 0 8px var(--red))}
+.nav-link{font-size:.82rem;font-weight:500;color:rgba(240,237,230,.72);text-decoration:none;display:flex;align-items:center;gap:.4rem;transition:color .2s;white-space:nowrap}
+.nav-link:hover{color:var(--off)}
+.nav-link.active{color:var(--red);border-bottom:2px solid var(--red);padding-bottom:2px}
+.search-wrap{position:relative;flex:1 1 100%;order:3;min-width:0}
+@media(min-width:768px){.search-wrap{flex:1;order:0;max-width:460px}}
+.search-wrap i{position:absolute;left:.95rem;top:50%;transform:translateY(-50%);color:rgba(240,237,230,.45);font-size:.8rem;pointer-events:none}
+.df-search{width:100%;background:rgba(8,7,7,.62);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:.6rem 1rem .6rem 2.4rem;color:var(--off);font-size:16px;font-family:inherit;outline:none;transition:border-color .2s,background .2s,box-shadow .2s;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+@media(min-width:768px){.df-search{font-size:.82rem;padding:.5rem 1rem .5rem 2.3rem}}
+.df-search::placeholder{color:rgba(240,237,230,.35)}
+.df-search:focus{border-color:var(--red);background:rgba(8,7,7,.85);box-shadow:0 0 0 4px var(--red-muted)}
+.nav-right{display:flex;align-items:center;gap:.65rem}
+.notif-btn{position:relative;background:none;border:none;color:rgba(240,237,230,.7);font-size:1.15rem;cursor:pointer;padding:.5rem;min-width:44px;min-height:44px;transition:color .2s}
+.notif-btn:hover{color:var(--off)}
+.notif-badge{position:absolute;top:4px;right:2px;background:var(--red);color:#fff;font-size:.6rem;font-weight:700;min-width:17px;height:17px;border-radius:99px;display:flex;align-items:center;justify-content:center;padding:0 3px}
+.notif-dropdown{position:absolute;top:calc(100% + .6rem);right:0;width:min(360px,calc(100vw - 2rem));background:rgba(16,13,13,.98);border:1px solid rgba(229,9,20,.25);border-radius:16px;box-shadow:0 24px 48px rgba(0,0,0,.7);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);overflow:hidden;z-index:650}
+.notif-header{padding:.85rem 1.1rem;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between}
+.notif-item{display:flex;align-items:center;gap:.75rem;padding:.75rem 1.1rem;border-bottom:1px solid rgba(255,255,255,.04);text-decoration:none;transition:background .2s}
+.notif-item:hover{background:rgba(229,9,20,.08)}.notif-item.unread{background:rgba(255,255,255,.03)}
+.profile-pill{display:flex;align-items:center;gap:.55rem;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:.3rem;text-decoration:none;transition:border-color .2s}
+@media(min-width:768px){.profile-pill{padding:.3rem .85rem .3rem .3rem}}
+.profile-pill:hover{border-color:rgba(229,9,20,.45)}
+.profile-avatar{width:30px;height:30px;border-radius:50%;overflow:hidden;background:rgba(229,9,20,.2);display:flex;align-items:center;justify-content:center;color:var(--red);flex-shrink:0}
+.profile-avatar img{width:100%;height:100%;object-fit:cover}
+.logout-pill{display:flex;align-items:center;gap:.45rem;background:var(--red);border-radius:999px;padding:.5rem .8rem;font-size:.78rem;font-weight:600;color:#fff;text-decoration:none;transition:background .2s,transform .2s;white-space:nowrap}
+.logout-pill:hover{background:var(--red-dark);transform:translateY(-1px)}
+
+/* MOBILE TAB BAR */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:600;display:flex;justify-content:space-around;padding:.45rem .5rem calc(.45rem + var(--sab));background:rgba(12,9,9,.92);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border-top:1px solid rgba(229,9,20,.22)}
+@media(min-width:768px){.tabbar{display:none}}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:.35rem 0;font-size:.62rem;font-weight:500;color:rgba(240,237,230,.5);text-decoration:none;transition:color .2s}
+.tab i{font-size:1.05rem}.tab.active{color:var(--red)}
+
+/* HERO */
+#hero{position:relative;width:100%;min-height:clamp(440px,78svh,640px);background:#0d0a0a;isolation:isolate;overflow:hidden;display:flex;align-items:flex-end}
+#hero.short{min-height:260px}
+#hero::before{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(to right,rgba(8,7,7,.92),transparent 60%),linear-gradient(to top,var(--ink),transparent 50%),radial-gradient(ellipse 80% 70% at 15% 30%,rgba(8,7,7,.5),transparent)}
+@media(max-width:767px){#hero::before{background:linear-gradient(to top,var(--ink) 8%,rgba(8,7,7,.55) 60%,rgba(8,7,7,.35))}}
+#hero::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(to right,transparent,var(--red) 30%,var(--gold) 70%,transparent);z-index:20}
+#heroBg{position:absolute;inset:-4% 0;z-index:0;background-size:cover;background-position:center 20%;filter:brightness(.45) saturate(1.1);transform:scale(1.08);transition:opacity .9s ease,transform 14s ease;will-change:transform}
+#heroBg.zoomed{transform:scale(1)}
+.hero-area{position:relative;z-index:10;width:100%;max-width:1280px;margin:0 auto;padding:6.8rem var(--pad) 2.2rem}
+@media(min-width:768px){.hero-area{padding-top:6.5rem;padding-bottom:3.5rem}}
+.hero-grid{display:grid;grid-template-columns:auto 1fr;gap:1.2rem;align-items:end}
+@media(min-width:768px){.hero-grid{gap:2.2rem}}
+@media(max-width:479px){.hero-grid{grid-template-columns:1fr;gap:1rem}}
+.f-poster{width:110px;border-radius:14px;box-shadow:0 24px 48px rgba(0,0,0,.8),0 0 0 1px rgba(229,9,20,.5);transition:transform .5s var(--ease),box-shadow .3s;aspect-ratio:2/3;object-fit:cover;background:var(--card)}
+@media(min-width:480px){.f-poster{width:130px}}
+@media(min-width:768px){.f-poster{width:190px}}
+@media(max-width:479px){.f-poster{display:none}}
+.f-poster:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 32px 56px rgba(0,0,0,.85),0 0 0 2px var(--red)}
+.f-meta{display:flex;flex-direction:column;gap:.8rem;min-width:0}
+.f-chips{display:flex;gap:.45rem;flex-wrap:wrap}
+.f-chip{font-size:.68rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;padding:.22rem .7rem;border-radius:999px}
+.f-chip.red{background:var(--red-muted);border:1px solid rgba(229,9,20,.4);color:#ff6b6b}
+.f-chip.gold{background:rgba(245,200,66,.12);border:1px solid rgba(245,200,66,.35);color:var(--gold)}
+.f-chip.white{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);color:rgba(240,237,230,.75)}
+.f-title{font-family:'Playfair Display',serif;font-weight:900;font-size:clamp(2rem,6vw,3.6rem);line-height:1.02;color:#fff;text-shadow:0 3px 20px rgba(0,0,0,.7);overflow-wrap:anywhere}
+.f-story{font-size:.9rem;line-height:1.7;color:rgba(240,237,230,.68);font-weight:300;max-width:540px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.f-cta{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+.btn-play{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;background:var(--red);color:#fff;padding:.75rem 1.7rem;border-radius:999px;font-size:.88rem;font-weight:600;text-decoration:none;min-height:46px;transition:background .2s,transform .2s,box-shadow .2s}
+.btn-play:hover{background:var(--red-dark);transform:translateY(-2px);box-shadow:0 8px 22px var(--red-glow)}
+.btn-info{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);color:var(--off);padding:.72rem 1.4rem;border-radius:999px;font-size:.85rem;font-weight:500;text-decoration:none;min-height:46px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);transition:background .2s,transform .2s}
+.btn-info:hover{background:rgba(255,255,255,.18);transform:translateY(-2px)}
+.dots{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cdot{width:8px;height:8px;border-radius:99px;background:rgba(255,255,255,.35);cursor:pointer;transition:all .3s;border:none;padding:0}
+.cdot.active{background:var(--red);width:26px}
+
+/* SECTIONS */
+.df-main{max-width:1280px;margin:0 auto;padding:2rem var(--pad) 3rem}
+.df-section{margin-bottom:clamp(2.2rem,5vw,3.5rem)}
+.section-head{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem;flex-wrap:wrap}
+.section-title{font-family:'Bebas Neue',sans-serif;font-size:clamp(1.5rem,3vw,1.9rem);letter-spacing:.08em;line-height:1}
+.section-badge{font-size:.62rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:.22rem .65rem;border-radius:999px}
+.badge-red{background:rgba(229,9,20,.15);border:1px solid rgba(229,9,20,.35);color:#ff6666}
+.badge-green{background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);color:#34d399}
+.badge-gold{background:rgba(245,200,66,.12);border:1px solid rgba(245,200,66,.3);color:var(--gold)}
+.badge-purple{background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.3);color:#a78bfa}
+.section-divider{flex:1;min-width:30px;height:1px;background:linear-gradient(to right,rgba(229,9,20,.35),transparent)}
+
+/* ROWS */
+.row{display:flex;overflow-x:auto;gap:.8rem;padding:.4rem var(--pad) 1.6rem;margin:0 calc(var(--pad) * -1);scroll-snap-type:x proximity;scroll-padding-left:var(--pad);-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+@media(min-width:1024px){.row{scrollbar-width:thin;scrollbar-color:var(--red) transparent}.row::-webkit-scrollbar{display:block;height:4px}}
+.row.ranked{padding-left:calc(var(--pad) + 1.2rem)}
+.card{position:relative;flex:0 0 auto;width:clamp(130px,38vw,190px);scroll-snap-align:start;border-radius:12px;background:var(--card);border:1px solid var(--border);transition:transform .45s var(--ease),border-color .3s,box-shadow .3s}
+.grid .card{width:auto}
+.card .clip{position:relative;border-radius:11px;overflow:hidden}
+.card .clip>a{display:block}
+.card img.poster{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#1a1212;transition:transform .6s var(--ease)}
+@media(hover:hover){
+  .card:hover{transform:translateY(-8px) scale(1.025);border-color:var(--red);box-shadow:0 20px 36px -10px var(--red-glow),0 0 0 1px var(--red);z-index:5}
+  .card:hover img.poster{transform:scale(1.06)}
+  .card:hover .ov,.card:hover .heart{opacity:1}
+}
+.ov{position:absolute;inset:0;background:linear-gradient(0deg,rgba(8,7,7,.92),rgba(8,7,7,.5) 55%,transparent);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:1rem .75rem;gap:.35rem;opacity:0;transition:opacity .3s;pointer-events:none}
+@media(hover:none){.ov{display:none}}
+.ov-play{width:42px;height:42px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 18px var(--red-glow);margin-bottom:.2rem}
+.ov-title{font-size:.8rem;font-weight:600;color:#fff;text-align:center;line-height:1.2}
+.ov-sub{font-size:.68rem;color:var(--gold);background:rgba(0,0,0,.5);border-radius:99px;padding:.15rem .55rem}
+.btm{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(8,7,7,.9),transparent);padding:1.8rem .6rem .5rem;pointer-events:none}
+.btm span{font-size:.74rem;font-weight:600;color:rgba(240,237,230,.9);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.2}
+@media(hover:hover) and (min-width:640px){.btm{display:none}}
+.heart{position:absolute;top:7px;right:7px;background:rgba(8,7,7,.75);border:1px solid rgba(255,255,255,.14);border-radius:99px;padding:5px 10px;font-size:.68rem;display:flex;align-items:center;gap:4px;color:var(--off);cursor:pointer;z-index:30;opacity:0;transition:opacity .2s,background .2s,transform .2s;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+@media(hover:none){.heart{opacity:1}}
+.heart:active{transform:scale(.9)}
+.heart.active{background:var(--red);border-color:var(--red);opacity:1}
+.badge-new{position:absolute;top:7px;left:7px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:.58rem;font-weight:700;letter-spacing:.06em;padding:3px 8px;border-radius:99px;z-index:20;display:flex;align-items:center;gap:3px}
+.rating-pill{position:absolute;top:7px;left:7px;background:rgba(8,7,7,.78);border:1px solid rgba(245,200,66,.3);border-radius:99px;padding:2px 8px;font-size:.65rem;color:var(--gold);display:flex;align-items:center;gap:3px;z-index:10}
+.logo-badge{position:absolute;bottom:8px;left:8px;width:30px;height:30px;background:rgba(8,7,7,.7);border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:15;border:1px solid rgba(229,9,20,.35)}
+.progress{position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(255,255,255,.14);z-index:12}
+.progress i{display:block;height:100%;background:var(--red)}
+.rank{position:absolute;left:-.9rem;bottom:-1rem;font-family:'Bebas Neue',sans-serif;font-size:5.2rem;line-height:.75;color:rgba(255,255,255,.92);text-shadow:2px 3px 0 rgba(229,9,20,.65),4px 6px 12px rgba(0,0,0,.8);z-index:30;pointer-events:none;letter-spacing:-2px}
+@media(min-width:1024px){.rank{font-size:7rem;left:-1.4rem;bottom:-1.4rem}}
+.card.has-rank{overflow:visible}
+
+/* GRIDS */
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
+@media(min-width:480px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:768px){.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:.9rem}}
+@media(min-width:1024px){.grid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+
+/* LANGUAGE + GENRE */
+.lang{flex:0 0 auto;width:150px;scroll-snap-align:start;border-radius:14px;overflow:hidden;border:1px solid var(--border);background:var(--card);text-decoration:none;transition:transform .35s var(--ease),border-color .25s,box-shadow .25s}
+@media(min-width:768px){.lang{width:180px}}
+@media(hover:hover){.lang:hover{transform:translateY(-5px);border-color:var(--red);box-shadow:0 14px 26px -8px var(--red-glow)}.lang:hover img{transform:scale(1.07)}}
+.lang div{overflow:hidden;height:100px}
+@media(min-width:768px){.lang div{height:110px}}
+.lang img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s var(--ease)}
+.lang span{padding:.55rem .75rem;background:rgba(8,7,7,.85);font-size:.82rem;font-weight:500;color:var(--off);display:block;text-align:center}
+.chips{display:flex;overflow-x:auto;gap:.5rem;padding:.3rem var(--pad) 1rem;margin:0 calc(var(--pad) * -1);scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;padding:.5rem 1.05rem;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:rgba(240,237,230,.7);font-size:.8rem;font-weight:500;white-space:nowrap;text-decoration:none;min-height:38px;display:flex;align-items:center;transition:background .2s,border-color .2s,color .2s}
+.chip:hover,.chip.active{background:var(--red);border-color:var(--red);color:#fff}
+.empty{background:rgba(255,255,255,.025);border:1px dashed rgba(255,255,255,.1);border-radius:16px;padding:2.5rem 1.5rem;text-align:center;color:rgba(240,237,230,.4);font-size:.9rem}
+.empty i{font-size:2.2rem;margin-bottom:.7rem;display:block}
+
+/* TOAST + FOOTER */
+.toast{position:fixed;left:50%;bottom:calc(5.2rem + var(--sab));transform:translate(-50%,80px);max-width:calc(100vw - 2rem);background:rgba(16,13,13,.97);border:1px solid rgba(229,9,20,.35);border-left:4px solid var(--red);border-radius:12px;padding:.85rem 1.2rem;font-size:.83rem;display:flex;align-items:center;gap:.6rem;z-index:9999;opacity:0;transition:transform .4s var(--ease),opacity .3s;pointer-events:none;box-shadow:0 12px 32px rgba(0,0,0,.5)}
+@media(min-width:768px){.toast{left:auto;right:1.5rem;bottom:1.5rem;transform:translateY(80px)}}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+@media(min-width:768px){.toast.show{transform:translateY(0)}}
+.df-footer{border-top:1px solid rgba(229,9,20,.2);padding:2.5rem 1.5rem;display:flex;flex-direction:column;align-items:center;gap:1rem}
+.f-logo{font-family:'Bebas Neue',sans-serif;font-size:1.7rem;letter-spacing:.2em;color:var(--red)}
+.socials{display:flex;gap:.9rem}
+.socials a{width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:rgba(240,237,230,.45);text-decoration:none;transition:all .25s}
+.socials a:hover{border-color:var(--red);color:var(--red);transform:translateY(-2px)}
+.copy{font-size:.72rem;color:rgba(240,237,230,.3);text-align:center}
+
+/* REVEAL */
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .8s var(--ease),transform .8s var(--ease)}
+.reveal.visible{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}.reveal{opacity:1;transform:none}}
+</style>
 </head>
 <body>
 
-<!-- TOAST -->
-<div class="df-toast" id="toast">
-    <i class="fas fa-heart" style="color:var(--red);"></i>
-    <span id="toast-msg"></span>
+{# ── reusable poster card ── #}
+{% macro poster(item, sub='', badge='', rank=0, heart=true, progress=false, logo=false, rating=false, thumb_key='thumbnail') %}
+{% set img = item[thumb_key] or item.thumbnail or 'default.jpg' %}
+<div class="card {% if rank %}has-rank{% endif %}">
+  {% if rank %}<div class="rank">{{ rank }}</div>{% endif %}
+  <div class="clip">
+    <a href="{{ url_for('watch_content', content_id=item.id) }}" aria-label="{{ item.title }}">
+      <img class="poster" loading="lazy" decoding="async" src="{{ url_for('static', filename='uploads/' + img) }}" alt="{{ item.title }}" onerror="this.onerror=null;this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
+      {% if badge == 'new' %}<div class="badge-new"><i class="fas fa-bolt" style="font-size:.6rem"></i> NEW</div>{% endif %}
+      {% if rating %}<div class="rating-pill">{% if item.rating %}<i class="fas fa-star" style="font-size:.6rem"></i> {{ item.rating }}{% else %}<i class="far fa-clock" style="font-size:.6rem"></i> new{% endif %}</div>{% endif %}
+      {% if logo %}<div class="logo-badge"><img src="{{ url_for('static', filename='img/d.png') }}" style="width:20px;height:20px;object-fit:contain" alt="D" onerror="this.onerror=null;this.src='https://placehold.co/36x36/0f0c0c/E50914?text=D'"></div>{% endif %}
+      {% if progress %}<div class="progress"><i style="width:{{ item.progress|default(0) }}%"></i></div>{% endif %}
+      <div class="ov"><div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:.85rem"></i></div><div class="ov-title">{{ item.title }}</div>{% if sub %}<div class="ov-sub">{{ sub }}</div>{% endif %}</div>
+      <div class="btm"><span>{{ item.title }}</span></div>
+    </a>
+    {% if heart %}
+    <button type="button" class="heart {% if item.user_hearted %}active{% endif %}" data-content-id="{{ item.id }}" aria-label="Like {{ item.title }}" onclick="event.preventDefault();toggleHeart({{ item.id }},this)">
+      <i class="{% if item.user_hearted %}fas{% else %}far{% endif %} fa-heart"></i><span class="heart-count">{{ item.hearts or 0 }}</span>
+    </button>
+    {% endif %}
+  </div>
 </div>
+{% endmacro %}
+
+<div class="toast" id="toast" role="status" aria-live="polite"><i class="fas fa-heart" style="color:var(--red)"></i><span id="toast-msg"></span></div>
+<div id="scrollLine"></div>
 
 {% set search_query = request.args.get('search', '') %}
+{% set show_hero = (not search_query) and recommendations and recommendations|length > 0 %}
 
-<!-- ══════════════════════════════════════════
-     HERO BACKDROP
-══════════════════════════════════════════ -->
-<div id="heroBackdrop">
-    <div id="heroBgLayer"></div>
+<!-- ═════════ HERO ═════════ -->
+<div id="hero" class="{% if not show_hero %}short{% endif %}">
+  <div id="heroBg"></div>
 
-    <!-- NAV -->
-    <nav class="df-nav" id="dfNav">
-        <div class="nav-left">
-            <a href="{{ url_for('user_dashboard') }}">
-                <img src="{{ url_for('static', filename='img/logo.png') }}"
-                     class="df-logo"
-                     alt="DeepFlix"
-                     onerror="this.src='https://placehold.co/130x42/080707/E50914?text=DEEPFLIX'">
-            </a>
-            <a href="{{ url_for('user_dashboard') }}" class="nav-link hidden sm:flex"><i class="fas fa-home"></i><span>Home</span></a>
-            <a href="{{ url_for('all_movies') }}" class="nav-link hidden sm:flex"><i class="fas fa-film"></i><span>Movies</span></a>
-            <a href="{{ url_for('all_series') }}" class="nav-link active hidden sm:flex"><i class="fas fa-tv"></i><span>Series</span></a>
-        
-            
-            <a href="{{ url_for('social_hub') }}" class="nav-link hidden md:flex"><i class="fas fa-users"></i><span>Social</span></a>
-        </div>
-
-        <form method="GET" action="{{ url_for('user_dashboard') }}" class="search-wrap">
-            <i class="fas fa-search"></i>
-            <input type="text" name="search" value="{{ request.args.get('search','') }}"
-                   placeholder="Search by title, genre, hero, director…"
-                   class="df-search">
-        </form>
-
-        <div class="nav-right">
-            <!-- Notifications -->
-            <div style="position:relative;">
-                <button class="notif-btn" id="notifToggle">
-                    <i class="fas fa-bell"></i>
-                    <span id="notifBadge" class="notif-badge {% if not notifications or notifications|length == 0 %}hidden{% endif %}">
-                        {{ notifications|length if notifications else 0 }}
-                    </span>
-                </button>
-
-                <div class="notif-dropdown hidden" id="notifDrop" style="position:absolute;top:calc(100% + 0.75rem);right:0;">
-                    <div class="notif-header">
-                        <span style="font-size:0.85rem;font-weight:600;color:var(--off-white);display:flex;align-items:center;gap:0.5rem;">
-                            <i class="fas fa-bell" style="color:var(--red);"></i> Notifications
-                        </span>
-                        {% if notifications %}
-                        <button onclick="markAllRead()" style="font-size:0.75rem;color:rgba(240,237,230,0.45);background:none;border:none;cursor:pointer;">Mark all read</button>
-                        {% endif %}
-                    </div>
-                    <div style="max-height:360px;overflow-y:auto;">
-                        {% if notifications and notifications|length > 0 %}
-                            {% for n in notifications %}
-                            <a href="{% if n.content_id %}{{ url_for('watch_content', content_id=n.content_id) }}{% else %}#{% endif %}"
-                               class="notif-item {% if not n.read %}unread{% endif %}"
-                               data-id="{{ n.id }}">
-                                <div style="width:44px;height:62px;border-radius:8px;overflow:hidden;background:#1a1212;flex-shrink:0;">
-                                    {% if n.content_thumbnail %}
-                                    <img src="{{ url_for('static', filename='uploads/' + n.content_thumbnail) }}"
-                                         style="width:100%;height:100%;object-fit:cover;">
-                                    {% else %}
-                                    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(240,237,230,0.2);">
-                                        <i class="fas fa-film" style="font-size:1rem;"></i>
-                                    </div>
-                                    {% endif %}
-                                </div>
-                                <div style="flex:1;min-width:0;">
-                                    <div style="font-size:0.8rem;font-weight:600;color:var(--off-white);">{{ n.title }}</div>
-                                    <div style="font-size:0.72rem;color:rgba(240,237,230,0.45);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{{ n.message }}</div>
-                                    <div style="font-size:0.65rem;color:rgba(240,237,230,0.25);margin-top:2px;"><i class="far fa-clock"></i> {{ n.created_at }}</div>
-                                </div>
-                                <i class="fas fa-play-circle" style="color:var(--red);font-size:0.9rem;flex-shrink:0;"></i>
-                            </a>
-                            {% endfor %}
-                        {% else %}
-                        <div style="padding:3rem;text-align:center;color:rgba(240,237,230,0.25);">
-                            <i class="far fa-bell-slash" style="font-size:2rem;margin-bottom:0.5rem;display:block;"></i>
-                            <span style="font-size:0.82rem;">No notifications yet</span>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Profile -->
-            <a href="{{ url_for('profile') }}" class="profile-pill" style="text-decoration:none;">
-                <div class="profile-avatar">
-                    {% if session.get('profile_type') == 'extra' and session.get('profile_gender')|lower == 'female' %}
-                        <img src="{{ url_for('static', filename='img/female_icon.png') }}">
-                    {% elif session.get('profile_type') == 'extra' %}
-                        <img src="{{ url_for('static', filename='img/male_icon.png') }}">
-                    {% elif user and user.profile_image %}
-                        <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}">
-                    {% else %}
-                        <i class="fas fa-user" style="font-size:0.8rem;"></i>
-                    {% endif %}
-                </div>
-                <span style="font-size:0.78rem;font-weight:500;color:var(--off-white);" class="hidden md:inline">
-                    {{ session.get('profile_name', session.get('username','Profile')) }}
-                </span>
-            </a>
-
-            <a href="{{ url_for('logout') }}" class="logout-pill">
-                <i class="fas fa-sign-out-alt" style="font-size:0.78rem;"></i>
-                <span class="hidden sm:inline">Logout</span>
-            </a>
-        </div>
-    </nav>
-
-    <!-- HERO FEATURED CAROUSEL -->
-    {% if not search_query and recommendations and recommendations|length > 0 %}
-    <div class="hero-content-area">
-        <div class="hero-inner-grid">
-            <!-- poster -->
-            <a id="featuredLink" href="#" style="display:block;">
-                <img id="featuredPoster"
-                     src="https://placehold.co/360x540/0f0c0c/E50914?text=DeepFlix"
-                     alt="Featured"
-                     class="featured-poster">
-            </a>
-
-            <!-- meta -->
-            <div class="featured-meta">
-                <div class="featured-chips">
-                    <span class="f-chip red" id="fGenre">Cinema</span>
-                    <span class="f-chip gold" id="fYear">2025</span>
-                    <span class="f-chip white" id="fLang">Multi</span>
-                </div>
-
-                <h1 class="featured-title" id="fTitle">DeepFlix</h1>
-
-                <p class="featured-story" id="fStory">Experience cinema like never before.</p>
-
-                <div class="featured-cta">
-                    <a href="#" class="btn-play-hero" id="fPlayBtn">
-                        <i class="fas fa-play" style="font-size:0.75rem;"></i> Play Now
-                    </a>
-                    <a href="#" class="btn-info" id="fInfoBtn">
-                        <i class="fas fa-info-circle" style="font-size:0.78rem;"></i> More Info
-                    </a>
-                </div>
-
-                <div class="carousel-dots" id="carouselDots"></div>
-            </div>
-        </div>
+  <nav class="df-nav" id="dfNav">
+    <div class="nav-left">
+      <a href="{{ url_for('user_dashboard') }}" aria-label="DeepFlix home">
+        <img src="{{ url_for('static', filename='img/logo.png') }}" class="df-logo" alt="DeepFlix" onerror="this.onerror=null;this.src='https://placehold.co/130x42/080707/E50914?text=DEEPFLIX'">
+      </a>
+      <a href="{{ url_for('user_dashboard') }}" class="nav-link hidden md:flex"><i class="fas fa-home"></i><span>Home</span></a>
+      <a href="{{ url_for('all_movies') }}" class="nav-link hidden md:flex"><i class="fas fa-film"></i><span>Movies</span></a>
+      <a href="{{ url_for('all_series') }}" class="nav-link active hidden md:flex"><i class="fas fa-tv"></i><span>Series</span></a>
+      <a href="{{ url_for('social_hub') }}" class="nav-link hidden md:flex"><i class="fas fa-users"></i><span>Social</span></a>
     </div>
-    {% endif %}
-</div>
-<!-- /heroBackdrop -->
 
-<!-- ══════════════════════════════════════════
-     MAIN CONTENT
-══════════════════════════════════════════ -->
-<main class="df-main">
-    {% if not search_query %}
-
-    <!-- ─── HYBRID PICKS FOR YOU ──────────────────────────── -->
-    {% if recommendations %}
-    <section class="df-section reveal rd1">
-        <div class="section-head">
-            <i class="fas fa-magic" style="color:var(--red);font-size:1.1rem;"></i>
-            <h2 class="section-title">Picks For You</h2>
-            <span class="section-badge badge-purple">AI curated</span>
-            <div class="section-divider"></div>
-        </div>
-
-        <div class="hybrid-grid">
-            {% for content in recommendations[:12] %}
-            <div class="hybrid-card" style="position:relative;">
-                <a href="{{ url_for('watch_content', content_id=content['id']) }}" style="display:block;text-decoration:none;">
-                    <img src="{{ url_for('static', filename='uploads/' + content.thumbnail) if content.thumbnail else '' }}"
-                         alt="{{ content.title }}"
-                         onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                    <div class="card-ov">
-                        <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                        <div class="ov-title">{{ content.title }}</div>
-                        <div class="ov-genre">{{ content.genre }}</div>
-                    </div>
-                </a>
-                <button onclick="event.preventDefault(); toggleHeart({{ content['id'] }}, this)"
-                        class="heart-btn"
-                        data-content-id="{{ content['id'] }}">
-                    <i class="far fa-heart"></i>
-                    <span class="heart-count">{{ content.hearts|default(0) }}</span>
-                </button>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-
-    <!-- ─── RECENTLY ADDED ────────────────────────────────── -->
-    {% if recently_added and recently_added|length > 0 %}
-    <section class="df-section reveal rd2">
-        <div class="section-head">
-            <i class="fas fa-bolt" style="color:#34d399;font-size:1rem;"></i>
-            <h2 class="section-title">Recently Added</h2>
-            <span class="section-badge badge-green">fresh &amp; new</span>
-            <div class="section-divider"></div>
-        </div>
-
-        <div class="df-scroll">
-            {% for item in recently_added %}
-            <div class="df-card" style="position:relative;">
-                <a href="{{ url_for('watch_content', content_id=item.id) }}" style="display:block;text-decoration:none;">
-                    <img src="{{ url_for('static', filename='uploads/' + (item.thumbnail or 'default.jpg')) }}"
-                         alt="{{ item.title }}"
-                         onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                    <div class="recent-badge"><i class="fas fa-bolt" style="font-size:0.6rem;"></i> NEW</div>
-                    <div class="card-ov">
-                        <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                        <div class="ov-title">{{ item.title }}</div>
-                        {% if item.release_year %}<div class="ov-genre">{{ item.release_year }}</div>{% endif %}
-                    </div>
-                    <div class="card-bottom-title"><span>{{ item.title }}</span></div>
-                </a>
-                <button onclick="event.preventDefault(); toggleHeart({{ item.id }}, this)"
-                        class="heart-btn {% if item.user_hearted %}active{% endif %}"
-                        data-content-id="{{ item.id }}">
-                    <i class="{% if item.user_hearted %}fas{% else %}far{% endif %} fa-heart"></i>
-                    <span class="heart-count">{{ item.hearts or 0 }}</span>
-                </button>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-
-    <!-- ─── DEEPFLIX TOP 15 ───────────────────────────────── -->
-    {% if deepflix_top %}
-    <section class="df-section reveal rd1">
-        <div class="section-head">
-            <i class="fas fa-crown" style="color:var(--gold);font-size:1rem;"></i>
-            <h2 class="section-title">DeepFlix Top 15</h2>
-            <span class="section-badge badge-gold">editor's pick</span>
-            <div class="section-divider"></div>
-        </div>
-
-        <div class="df-scroll">
-            {% for movie in deepflix_top %}
-            <div class="df-card" style="position:relative;">
-                <a href="{{ url_for('watch_content', content_id=movie['id']) }}" style="display:block;text-decoration:none;">
-                    <img src="{{ url_for('static', filename='uploads/' + movie['thumbnail']) }}"
-                         alt="{{ movie['title'] }}"
-                         onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                    <div class="df-logo-badge">
-                        <img src="{{ url_for('static', filename='img/d.png') }}"
-                             style="width:22px;height:22px;object-fit:contain;"
-                             alt="D"
-                             onerror="this.src='https://placehold.co/36x36/0f0c0c/E50914?text=D'">
-                    </div>
-                    <div class="card-ov">
-                        <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                        <div class="ov-title">{{ movie.title }}</div>
-                    </div>
-                    <div class="card-bottom-title"><span>{{ movie.title }}</span></div>
-                </a>
-                <button onclick="event.preventDefault(); toggleHeart({{ movie['id'] }}, this)"
-                        class="heart-btn {% if movie.get('user_hearted', False) %}active{% endif %}"
-                        data-content-id="{{ movie['id'] }}">
-                    <i class="{% if movie.get('user_hearted', False) %}fas{% else %}far{% endif %} fa-heart"></i>
-                    <span class="heart-count">{{ movie.get('hearts', 0) }}</span>
-                </button>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-
-    <!-- ─── TRENDING MOVIES ───────────────────────────────── -->
-    <section class="df-section reveal rd2">
-        <div class="section-head">
-            <i class="fas fa-fire" style="color:var(--red);font-size:1rem;"></i>
-            <h2 class="section-title">Trending Movies</h2>
-            <span class="section-badge badge-red">hot</span>
-            <div class="section-divider"></div>
-        </div>
-
-        {% if trending_movies and trending_movies|length > 0 %}
-        <div class="df-scroll trending-scroll">
-            {% for movie in trending_movies %}
-            <div class="trending-wrap">
-                <div class="t-rank">{{ loop.index }}</div>
-                <div class="trending-inner">
-                    <a href="{{ url_for('watch_content', content_id=movie.id) }}" style="display:block;text-decoration:none;position:relative;">
-                        <img src="{{ url_for('static', filename='uploads/' + (movie.thumbnail or 'default.jpg')) }}"
-                             alt="{{ movie.title }}"
-                             style="aspect-ratio:2/3;object-fit:cover;width:100%;display:block;"
-                             onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                        <div class="trending-ov">
-                            <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                            <div class="ov-title">{{ movie.title }}</div>
-                            {% if movie.release_year %}<div class="ov-genre">{{ movie.release_year }}</div>{% endif %}
-                        </div>
-                        <div class="card-bottom-title"><span>{{ movie.title }}</span></div>
-                    </a>
-                    <button onclick="event.preventDefault(); toggleHeart({{ movie.id }}, this)"
-                            class="heart-btn {% if movie.user_hearted %}active{% endif %}"
-                            data-content-id="{{ movie.id }}">
-                        <i class="{% if movie.user_hearted %}fas{% else %}far{% endif %} fa-heart"></i>
-                        <span class="heart-count">{{ movie.hearts or 0 }}</span>
-                    </button>
+    <div class="nav-right" style="order:2">
+      <div style="position:relative">
+        <button class="notif-btn" id="notifToggle" aria-label="Notifications"><i class="fas fa-bell"></i>
+          <span id="notifBadge" class="notif-badge {% if not notifications or notifications|length == 0 %}hidden{% endif %}">{{ notifications|length if notifications else 0 }}</span>
+        </button>
+        <div class="notif-dropdown hidden" id="notifDrop">
+          <div class="notif-header">
+            <span style="font-size:.85rem;font-weight:600;display:flex;align-items:center;gap:.5rem"><i class="fas fa-bell" style="color:var(--red)"></i> Notifications</span>
+            {% if notifications %}<button onclick="markAllRead()" style="font-size:.75rem;color:rgba(240,237,230,.5);background:none;border:none;cursor:pointer">Mark all read</button>{% endif %}
+          </div>
+          <div style="max-height:min(360px,60vh);overflow-y:auto">
+            {% if notifications and notifications|length > 0 %}
+              {% for n in notifications %}
+              <a href="{% if n.content_id %}{{ url_for('watch_content', content_id=n.content_id) }}{% else %}#{% endif %}" class="notif-item {% if not n.read %}unread{% endif %}" data-id="{{ n.id }}">
+                <div style="width:44px;height:62px;border-radius:8px;overflow:hidden;background:#1a1212;flex-shrink:0">
+                  {% if n.content_thumbnail %}<img src="{{ url_for('static', filename='uploads/' + n.content_thumbnail) }}" style="width:100%;height:100%;object-fit:cover" alt="">
+                  {% else %}<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(240,237,230,.2)"><i class="fas fa-film"></i></div>{% endif %}
                 </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state"><i class="fas fa-film"></i>No trending movies available.</div>
-        {% endif %}
-    </section>
-
-    <!-- ─── TRENDING SERIES ───────────────────────────────── -->
-    <section class="df-section reveal rd3">
-        <div class="section-head">
-            <i class="fas fa-tv" style="color:#a78bfa;font-size:1rem;"></i>
-            <h2 class="section-title">Trending Series</h2>
-            <span class="section-badge badge-purple">binge-worthy</span>
-            <div class="section-divider"></div>
-        </div>
-
-        {% if trending_series %}
-        <div class="df-scroll trending-scroll">
-            {% for series in trending_series %}
-            <div class="trending-wrap">
-                <div class="t-rank">{{ loop.index }}</div>
-                <div class="trending-inner">
-                    <a href="{{ url_for('watch_content', content_id=series['id']) }}" style="display:block;text-decoration:none;position:relative;">
-                        <img src="{{ url_for('static', filename='uploads/' + series['thumbnail']) }}"
-                             alt="{{ series['title'] }}"
-                             style="aspect-ratio:2/3;object-fit:cover;width:100%;display:block;"
-                             onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                        <div class="trending-ov">
-                            <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                            <div class="ov-title">{{ series['title'] }}</div>
-                        </div>
-                        <div class="card-bottom-title"><span>{{ series['title'] }}</span></div>
-                    </a>
-                    <button onclick="event.preventDefault(); toggleHeart({{ series['id'] }}, this)"
-                            class="heart-btn {% if series.get('user_hearted', False) %}active{% endif %}"
-                            data-content-id="{{ series['id'] }}">
-                        <i class="{% if series.get('user_hearted', False) %}fas{% else %}far{% endif %} fa-heart"></i>
-                        <span class="heart-count">{{ series.get('hearts', 0) }}</span>
-                    </button>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:.8rem;font-weight:600">{{ n.title }}</div>
+                  <div style="font-size:.72rem;color:rgba(240,237,230,.5);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">{{ n.message }}</div>
+                  <div style="font-size:.65rem;color:rgba(240,237,230,.3);margin-top:2px"><i class="far fa-clock"></i> {{ n.created_at }}</div>
                 </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state"><i class="fas fa-tv"></i>No trending series available.</div>
-        {% endif %}
-    </section>
-
-    <!-- ─── CONTINUE WATCHING ─────────────────────────────── -->
-    <section class="df-section reveal rd2">
-        <div class="section-head">
-            <i class="fas fa-play-circle" style="color:var(--red);font-size:1rem;"></i>
-            <h2 class="section-title">Continue Watching</h2>
-            <div class="section-divider"></div>
-        </div>
-
-        {% if continue_watching and continue_watching|length > 0 %}
-        <div class="df-scroll">
-            {% for movie in continue_watching %}
-            <div class="df-card" style="position:relative;">
-                <a href="{{ url_for('watch_content', content_id=movie.id) }}" style="display:block;text-decoration:none;">
-                    {% set poster_url = movie.image if movie.image else (movie.thumbnail if movie.thumbnail else '') %}
-                    <img src="{{ url_for('static', filename='uploads/' + poster_url) if poster_url else 'https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix' }}"
-                         alt="{{ movie.title }}"
-                         onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width:{{ movie.progress|default(0) }}%;"></div>
-                    </div>
-                    <div class="card-ov">
-                        <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                        <div class="ov-title">{{ movie.title }}</div>
-                    </div>
-                    <div class="card-bottom-title"><span>{{ movie.title }}</span></div>
-                </a>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state"><i class="fas fa-history"></i>Nothing in progress. Start watching to see it here.</div>
-        {% endif %}
-    </section>
-
-    <!-- ─── KOREAN BLOCKBUSTERS ───────────────────────────── -->
-    {% if korean_blockbusters %}
-    <section class="df-section reveal rd3">
-        <div class="section-head">
-            <span style="font-size:1.1rem;">🇰🇷</span>
-            <h2 class="section-title">Korean Blockbusters</h2>
-            <div class="section-divider"></div>
-        </div>
-
-        <div class="df-scroll">
-            {% for content in korean_blockbusters %}
-            <div class="df-card" style="position:relative;">
-                <a href="{{ url_for('watch_content', content_id=content.id) }}" style="display:block;text-decoration:none;">
-                    <img src="{{ url_for('static', filename='uploads/' + content.thumbnail) }}"
-                         alt="{{ content.title }}"
-                         onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                    <div class="card-ov">
-                        <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                        <div class="ov-title">{{ content.title }}</div>
-                        {% if content.genre %}<div class="ov-genre">{{ content.genre }}</div>{% endif %}
-                    </div>
-                    <div class="card-bottom-title"><span>{{ content.title }}</span></div>
-                </a>
-                <button onclick="event.preventDefault(); toggleHeart({{ content.id }}, this)"
-                        class="heart-btn {% if content.user_hearted %}active{% endif %}"
-                        data-content-id="{{ content.id }}">
-                    <i class="{% if content.user_hearted %}fas{% else %}far{% endif %} fa-heart"></i>
-                    <span class="heart-count">{{ content.hearts|default(0) }}</span>
-                </button>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-
-    <!-- ─── 90's MOVIES ───────────────────────────────────── -->
-    {% if movies_90s %}
-    <section class="df-section reveal rd1">
-        <div class="section-head">
-            <i class="fas fa-film" style="color:var(--gold);font-size:1rem;"></i>
-            <h2 class="section-title">90's Classics</h2>
-            <span class="section-badge badge-gold">nostalgia</span>
-            <div class="section-divider"></div>
-        </div>
-
-        <div class="df-scroll">
-            {% for movie in movies_90s %}
-            <div class="df-card" style="position:relative;">
-                <a href="{{ url_for('watch_content', content_id=movie.id) }}" style="display:block;text-decoration:none;">
-                    <img src="{{ url_for('static', filename='uploads/' + movie.thumbnail) }}"
-                         alt="{{ movie.title }}"
-                         style="aspect-ratio:2/3;object-fit:cover;width:100%;display:block;"
-                         onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                    <div class="card-ov">
-                        <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                        <div class="ov-title">{{ movie.title }}</div>
-                        {% if movie.release_year %}<div class="ov-genre">{{ movie.release_year }}</div>{% endif %}
-                    </div>
-                    <div class="card-bottom-title"><span>{{ movie.title }}</span></div>
-                </a>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-
-    <!-- ─── CRIME DRAMA ───────────────────────────────────── -->
-    <section class="df-section reveal rd2">
-        <div class="section-head">
-            <i class="fas fa-gavel" style="color:var(--red);font-size:1rem;"></i>
-            <h2 class="section-title">Crime Drama</h2>
-            <span class="section-badge badge-red">dark &amp; gripping</span>
-            <div class="section-divider"></div>
-        </div>
-
-        {% if crime_drama_movies %}
-        <div class="df-scroll">
-            {% for movie in crime_drama_movies %}
-            <div class="df-card" style="position:relative;">
-                <a href="{{ url_for('watch_content', content_id=movie.id) }}" style="display:block;text-decoration:none;">
-                    <img src="{{ url_for('static', filename='uploads/' + movie.thumbnail) }}"
-                         alt="{{ movie.title }}"
-                         style="aspect-ratio:2/3;object-fit:cover;width:100%;display:block;"
-                         onerror="this.src='https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix'">
-                    <div class="card-ov">
-                        <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                        <div class="ov-title">{{ movie.title }}</div>
-                        {% if movie.genre %}<div class="ov-genre">{{ movie.genre }}</div>{% endif %}
-                    </div>
-                    <div class="card-bottom-title"><span>{{ movie.title }}</span></div>
-                </a>
-                <button onclick="event.preventDefault(); toggleHeart({{ movie.id }}, this)"
-                        class="heart-btn {% if movie.user_hearted %}active{% endif %}"
-                        data-content-id="{{ movie.id }}">
-                    <i class="{% if movie.user_hearted %}fas{% else %}far{% endif %} fa-heart"></i>
-                    <span class="heart-count">{{ movie.hearts|default(0) }}</span>
-                </button>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state"><i class="fas fa-film"></i>No Crime Drama movies available.</div>
-        {% endif %}
-    </section>
-
-    <!-- ─── BROWSE BY LANGUAGE ────────────────────────────── -->
-    <section class="df-section reveal rd3">
-        <div class="section-head">
-            <i class="fas fa-language" style="color:var(--red);font-size:1rem;"></i>
-            <h2 class="section-title">Browse by Language</h2>
-            <div class="section-divider"></div>
-        </div>
-
-        <div class="lang-scroll">
-            {% set languages = [
-                {'name':'Telugu','image':'telugu (3).png'},
-                {'name':'Hindi','image':'hindhi (2).png'},
-                {'name':'English','image':'english (3).png'},
-                {'name':'Tamil','image':'tamil (3).png'},
-                {'name':'Malayalam','image':'malayalam (3).png'},
-                {'name':'Kannada','image':'kannada.png'},
-                {'name':'Punjabi','image':'punjabi (2).png'},
-                {'name':'Korean','image':'Korean.png'}
-            ] %}
-            {% for lang in languages %}
-            <a href="{{ url_for('user_dashboard', search=request.args.get('search', ''), language=lang.name, genre=request.args.get('genre', '')) }}"
-               class="lang-card">
-                <div style="overflow:hidden;height:110px;">
-                    <img src="{{ url_for('static', filename='uploads/' + lang.image) }}"
-                         alt="{{ lang.name }}"
-                         class="lang-card-img"
-                         onerror="this.src='https://placehold.co/360x220/0f0c0c/E50914?text={{ lang.name }}'">
-                </div>
-                <span class="lang-card-label">{{ lang.name }}</span>
-            </a>
-            {% endfor %}
-        </div>
-    </section>
-
-    <!-- ─── BROWSE BY GENRE ───────────────────────────────── -->
-    <section class="df-section reveal rd2">
-        <div class="section-head">
-            <i class="fas fa-tags" style="color:var(--red);font-size:1rem;"></i>
-            <h2 class="section-title">Browse by Genre</h2>
-            <div class="section-divider"></div>
-        </div>
-
-        <div class="genre-scroll">
-            <a href="{{ url_for('user_dashboard', search=request.args.get('search', ''), language=request.args.get('language', '')) }}"
-               class="genre-chip {% if not request.args.get('genre') %}active{% endif %}">
-                <i class="fas fa-th-large" style="margin-right:4px;font-size:0.72rem;"></i> All
-            </a>
-            {% set genres = ['Action','Social','Mass','Revenge','Comedy','Drama','Historical','Zombie','Political','Horror','Sci-Fi','Romance','Thriller','Religious','Documentary','Animation','History','Mythology','Fantasy','Adventure','Crime','Mystery','Biography','War','Sports','Family','Musical','Western','Superhero','Psychological','Dark Comedy','Satire','Disaster','Epic','Suspense','Teen','Survival','Martial Arts','Noir','Period Drama','Experimental','Crime Drama'] %}
-            {% for genre in genres %}
-            <a href="{{ url_for('user_dashboard', search=request.args.get('search', ''), genre=genre, language=request.args.get('language', '')) }}"
-               class="genre-chip {% if request.args.get('genre') == genre %}active{% endif %}">
-                {% if request.args.get('genre') == genre %}<i class="fas fa-check" style="margin-right:4px;font-size:0.72rem;"></i>{% endif %}{{ genre }}
-            </a>
-            {% endfor %}
-        </div>
-    </section>
-
-    {% endif %}{# /not search_query #}
-
-    <!-- ─── DISCOVER ALL ──────────────────────────────────── -->
-    <section class="df-section reveal rd1">
-        <div class="section-head">
-            <i class="fas fa-compass" style="color:var(--red);font-size:1rem;"></i>
-            <h2 class="section-title">
-                {% if request.args.get('genre') and request.args.get('language') %}
-                    {{ request.args.get('genre') }} · {{ request.args.get('language') }}
-                {% elif request.args.get('genre') %}
-                    {{ request.args.get('genre') }} Movies
-                {% elif request.args.get('language') %}
-                    {{ request.args.get('language') }} Movies
-                {% else %}
-                    Discover All
-                {% endif %}
-            </h2>
-            {% if request.args.get('genre') or request.args.get('language') %}
-            <a href="{{ url_for('user_dashboard', search=request.args.get('search', '')) }}"
-               style="font-size:0.75rem;color:rgba(229,9,20,0.75);text-decoration:none;display:flex;align-items:center;gap:4px;transition:color 0.18s;margin-left:auto;"
-               onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='rgba(229,9,20,0.75)'">
-                <i class="fas fa-times-circle"></i> Clear filters
-            </a>
+                <i class="fas fa-play-circle" style="color:var(--red);flex-shrink:0"></i>
+              </a>
+              {% endfor %}
             {% else %}
-            <div class="section-divider"></div>
+              <div style="padding:2.5rem;text-align:center;color:rgba(240,237,230,.3)"><i class="far fa-bell-slash" style="font-size:2rem;margin-bottom:.5rem;display:block"></i><span style="font-size:.82rem">No notifications yet</span></div>
             {% endif %}
+          </div>
         </div>
+      </div>
 
-        {% if all_contents %}
-        <div class="discover-grid">
-            {% for content in all_contents %}
-            <a href="{{ url_for('watch_content', content_id=content['id']) }}"
-               class="discover-card"
-               style="text-decoration:none;">
-                <div style="position:relative;overflow:hidden;">
-                    {% if content.rating %}
-                    <div class="rating-pill">
-                        <i class="fas fa-star" style="font-size:0.6rem;color:var(--gold);"></i>
-                        {{ content.rating }}
-                    </div>
-                    {% else %}
-                    <div class="rating-pill">
-                        <i class="far fa-clock" style="font-size:0.6rem;"></i> new
-                    </div>
-                    {% endif %}
-
-                    {% if content.thumbnail %}
-                    <img src="{{ url_for('static', filename='uploads/' + content.thumbnail) }}"
-                         alt="{{ content.title }}"
-                         onerror="this.style.display='none'">
-                    {% else %}
-                    <div style="width:100%;aspect-ratio:2/3;background:#0f0c0c;display:flex;align-items:center;justify-content:center;color:rgba(240,237,230,0.1);">
-                        <i class="fas fa-film" style="font-size:2rem;"></i>
-                    </div>
-                    {% endif %}
-
-                    <div class="card-ov">
-                        <div class="ov-play"><i class="fas fa-play" style="padding-left:2px;font-size:0.85rem;"></i></div>
-                        <div class="ov-title">{{ content.title }}</div>
-                        <div class="ov-genre">{{ content.genre }}{% if content.year %} · {{ content.year }}{% endif %}</div>
-                    </div>
-                    <div class="card-bottom-title"><span>{{ content.title }}</span></div>
-                </div>
-            </a>
-            {% endfor %}
+      <a href="{{ url_for('profile') }}" class="profile-pill">
+        <div class="profile-avatar">
+          {% if session.get('profile_type') == 'extra' and session.get('profile_gender')|lower == 'female' %}<img src="{{ url_for('static', filename='img/female_icon.png') }}" alt="">
+          {% elif session.get('profile_type') == 'extra' %}<img src="{{ url_for('static', filename='img/male_icon.png') }}" alt="">
+          {% elif user and user.profile_image %}<img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" alt="">
+          {% else %}<i class="fas fa-user" style="font-size:.8rem"></i>{% endif %}
         </div>
-        {% else %}
-        <div class="empty-state">
-            <i class="fas fa-film"></i>
-            No content available in this category.
-            <br><br>
-            <a href="{{ url_for('user_dashboard') }}" style="color:var(--red);font-size:0.82rem;">View all →</a>
-        </div>
-        {% endif %}
-    </section>
+        <span style="font-size:.78rem;font-weight:500" class="hidden md:inline">{{ session.get('profile_name', session.get('username','Profile')) }}</span>
+      </a>
+      <a href="{{ url_for('logout') }}" class="logout-pill" aria-label="Logout"><i class="fas fa-sign-out-alt" style="font-size:.78rem"></i><span class="hidden sm:inline">Logout</span></a>
+    </div>
 
+    <form method="GET" action="{{ url_for('user_dashboard') }}" class="search-wrap" role="search">
+      <i class="fas fa-search"></i>
+      <input type="search" name="search" value="{{ request.args.get('search','') }}" placeholder="Search title, genre, hero, director…" class="df-search" enterkeyhint="search" autocomplete="off">
+    </form>
+  </nav>
+
+  {% if show_hero %}
+  <div class="hero-area">
+    <div class="hero-grid">
+      <a id="featuredLink" href="#" style="display:block"><img id="featuredPoster" src="https://placehold.co/360x540/0f0c0c/E50914?text=DeepFlix" alt="Featured" class="f-poster"></a>
+      <div class="f-meta">
+        <div class="f-chips"><span class="f-chip red" id="fGenre">Cinema</span><span class="f-chip gold" id="fYear">2025</span><span class="f-chip white" id="fLang">Multi</span></div>
+        <h1 class="f-title" id="fTitle">DeepFlix</h1>
+        <p class="f-story" id="fStory">Experience cinema like never before.</p>
+        <div class="f-cta">
+          <a href="#" class="btn-play" id="fPlayBtn"><i class="fas fa-play" style="font-size:.75rem"></i> Play Now</a>
+          <a href="#" class="btn-info" id="fInfoBtn"><i class="fas fa-info-circle" style="font-size:.78rem"></i> More Info</a>
+        </div>
+        <div class="dots" id="carouselDots"></div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ═════════ MAIN ═════════ -->
+<main class="df-main">
+{% if not search_query %}
+
+  {% if recommendations %}
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-magic" style="color:var(--red)"></i><h2 class="section-title">Picks For You</h2><span class="section-badge badge-purple">AI curated</span><div class="section-divider"></div></div>
+    <div class="grid">{% for c in recommendations[:12] %}{{ poster(c, sub=c.genre) }}{% endfor %}</div>
+  </section>
+  {% endif %}
+
+  {% if recently_added and recently_added|length > 0 %}
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-bolt" style="color:#34d399"></i><h2 class="section-title">Recently Added</h2><span class="section-badge badge-green">fresh &amp; new</span><div class="section-divider"></div></div>
+    <div class="row">{% for i in recently_added %}{{ poster(i, sub=i.release_year, badge='new') }}{% endfor %}</div>
+  </section>
+  {% endif %}
+
+  {% if deepflix_top %}
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-crown" style="color:var(--gold)"></i><h2 class="section-title">DeepFlix Top 15</h2><span class="section-badge badge-gold">editor's pick</span><div class="section-divider"></div></div>
+    <div class="row">{% for m in deepflix_top %}{{ poster(m, logo=true) }}{% endfor %}</div>
+  </section>
+  {% endif %}
+
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-fire" style="color:var(--red)"></i><h2 class="section-title">Trending Movies</h2><span class="section-badge badge-red">hot</span><div class="section-divider"></div></div>
+    {% if trending_movies and trending_movies|length > 0 %}
+    <div class="row ranked">{% for m in trending_movies %}{{ poster(m, sub=m.release_year, rank=loop.index) }}{% endfor %}</div>
+    {% else %}<div class="empty"><i class="fas fa-film"></i>No trending movies available.</div>{% endif %}
+  </section>
+
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-tv" style="color:#a78bfa"></i><h2 class="section-title">Trending Series</h2><span class="section-badge badge-purple">binge-worthy</span><div class="section-divider"></div></div>
+    {% if trending_series %}
+    <div class="row ranked">{% for s in trending_series %}{{ poster(s, rank=loop.index) }}{% endfor %}</div>
+    {% else %}<div class="empty"><i class="fas fa-tv"></i>No trending series available.</div>{% endif %}
+  </section>
+
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-play-circle" style="color:var(--red)"></i><h2 class="section-title">Continue Watching</h2><div class="section-divider"></div></div>
+    {% if continue_watching and continue_watching|length > 0 %}
+    <div class="row">{% for m in continue_watching %}{{ poster(m, heart=false, progress=true, thumb_key='image') }}{% endfor %}</div>
+    {% else %}<div class="empty"><i class="fas fa-history"></i>Nothing in progress. Start watching to see it here.</div>{% endif %}
+  </section>
+
+  {% if korean_blockbusters %}
+  <section class="df-section reveal">
+    <div class="section-head"><span style="font-size:1.1rem">🇰🇷</span><h2 class="section-title">Korean Blockbusters</h2><div class="section-divider"></div></div>
+    <div class="row">{% for c in korean_blockbusters %}{{ poster(c, sub=c.genre) }}{% endfor %}</div>
+  </section>
+  {% endif %}
+
+  {% if movies_90s %}
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-film" style="color:var(--gold)"></i><h2 class="section-title">90's Classics</h2><span class="section-badge badge-gold">nostalgia</span><div class="section-divider"></div></div>
+    <div class="row">{% for m in movies_90s %}{{ poster(m, sub=m.release_year, heart=false) }}{% endfor %}</div>
+  </section>
+  {% endif %}
+
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-gavel" style="color:var(--red)"></i><h2 class="section-title">Crime Drama</h2><span class="section-badge badge-red">dark &amp; gripping</span><div class="section-divider"></div></div>
+    {% if crime_drama_movies %}
+    <div class="row">{% for m in crime_drama_movies %}{{ poster(m, sub=m.genre) }}{% endfor %}</div>
+    {% else %}<div class="empty"><i class="fas fa-film"></i>No Crime Drama movies available.</div>{% endif %}
+  </section>
+
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-language" style="color:var(--red)"></i><h2 class="section-title">Browse by Language</h2><div class="section-divider"></div></div>
+    <div class="row">
+      {% set languages = [
+        {'name':'Telugu','image':'telugu (3).png'},{'name':'Hindi','image':'hindhi (2).png'},
+        {'name':'English','image':'english (3).png'},{'name':'Tamil','image':'tamil (3).png'},
+        {'name':'Malayalam','image':'malayalam (3).png'},{'name':'Kannada','image':'kannada.png'},
+        {'name':'Punjabi','image':'punjabi (2).png'},{'name':'Korean','image':'Korean.png'}] %}
+      {% for lang in languages %}
+      <a href="{{ url_for('user_dashboard', search=request.args.get('search', ''), language=lang.name, genre=request.args.get('genre', '')) }}" class="lang">
+        <div><img loading="lazy" src="{{ url_for('static', filename='uploads/' + lang.image) }}" alt="{{ lang.name }}" onerror="this.onerror=null;this.src='https://placehold.co/360x220/0f0c0c/E50914?text={{ lang.name }}'"></div>
+        <span>{{ lang.name }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="df-section reveal">
+    <div class="section-head"><i class="fas fa-tags" style="color:var(--red)"></i><h2 class="section-title">Browse by Genre</h2><div class="section-divider"></div></div>
+    <div class="chips">
+      <a href="{{ url_for('user_dashboard', search=request.args.get('search', ''), language=request.args.get('language', '')) }}" class="chip {% if not request.args.get('genre') %}active{% endif %}"><i class="fas fa-th-large" style="margin-right:5px;font-size:.72rem"></i> All</a>
+      {% set genres = ['Action','Social','Mass','Revenge','Comedy','Drama','Historical','Zombie','Political','Horror','Sci-Fi','Romance','Thriller','Religious','Documentary','Animation','History','Mythology','Fantasy','Adventure','Crime','Mystery','Biography','War','Sports','Family','Musical','Western','Superhero','Psychological','Dark Comedy','Satire','Disaster','Epic','Suspense','Teen','Survival','Martial Arts','Noir','Period Drama','Experimental','Crime Drama'] %}
+      {% for genre in genres %}
+      <a href="{{ url_for('user_dashboard', search=request.args.get('search', ''), genre=genre, language=request.args.get('language', '')) }}" class="chip {% if request.args.get('genre') == genre %}active{% endif %}">{% if request.args.get('genre') == genre %}<i class="fas fa-check" style="margin-right:5px;font-size:.72rem"></i>{% endif %}{{ genre }}</a>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}{# /not search_query #}
+
+  <section class="df-section reveal" id="discover">
+    <div class="section-head">
+      <i class="fas fa-compass" style="color:var(--red)"></i>
+      <h2 class="section-title">
+        {% if request.args.get('genre') and request.args.get('language') %}{{ request.args.get('genre') }} · {{ request.args.get('language') }}
+        {% elif request.args.get('genre') %}{{ request.args.get('genre') }} Movies
+        {% elif request.args.get('language') %}{{ request.args.get('language') }} Movies
+        {% else %}Discover All{% endif %}
+      </h2>
+      {% if request.args.get('genre') or request.args.get('language') %}
+      <a href="{{ url_for('user_dashboard', search=request.args.get('search', '')) }}" style="font-size:.78rem;color:rgba(229,9,20,.85);text-decoration:none;display:flex;align-items:center;gap:4px;margin-left:auto"><i class="fas fa-times-circle"></i> Clear filters</a>
+      {% else %}<div class="section-divider"></div>{% endif %}
+    </div>
+    {% if all_contents %}
+    <div class="grid">
+      {% for c in all_contents %}{{ poster(c, sub=(c.genre ~ (' · ' ~ c.year if c.year else '')), heart=false, rating=true) }}{% endfor %}
+    </div>
+    {% else %}
+    <div class="empty"><i class="fas fa-film"></i>No content available in this category.<br><br><a href="{{ url_for('user_dashboard') }}" style="color:var(--red);font-size:.85rem">View all</a></div>
+    {% endif %}
+  </section>
 </main>
 
-<!-- FOOTER -->
 <footer class="df-footer">
-    <div class="footer-logo">DEEPFLIX</div>
-    <div class="footer-socials">
-        <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
-        <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
-        <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
-        <a href="#" aria-label="YouTube"><i class="fab fa-youtube"></i></a>
-    </div>
-    <p class="footer-copy">© 2025 DeepFlix — your cinema, elevated</p>
+  <div class="f-logo">DEEPFLIX</div>
+  <div class="socials">
+    <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
+    <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+    <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
+    <a href="#" aria-label="YouTube"><i class="fab fa-youtube"></i></a>
+  </div>
+  <p class="copy">© 2025 DeepFlix — your cinema, elevated</p>
 </footer>
+
+<!-- MOBILE TAB BAR -->
+<nav class="tabbar" aria-label="Main">
+  <a href="{{ url_for('user_dashboard') }}" class="tab"><i class="fas fa-home"></i>Home</a>
+  <a href="{{ url_for('all_movies') }}" class="tab"><i class="fas fa-film"></i>Movies</a>
+  <a href="{{ url_for('all_series') }}" class="tab active"><i class="fas fa-tv"></i>Series</a>
+  <a href="{{ url_for('social_hub') }}" class="tab"><i class="fas fa-users"></i>Social</a>
+  <a href="{{ url_for('profile') }}" class="tab"><i class="fas fa-user"></i>Profile</a>
+</nav>
 
 <audio id="notifSound"><source src="{{ url_for('static', filename='sounds/notification.mp3') }}" type="audio/mpeg"></audio>
 
+<script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
 <script>
 (function () {
-    /* ── TOAST ── */
-    function showToast(msg) {
-        var t = document.getElementById('toast');
-        document.getElementById('toast-msg').innerText = msg;
-        t.classList.add('show');
-        clearTimeout(t._timer);
-        t._timer = setTimeout(function () { t.classList.remove('show'); }, 3000);
-    }
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    /* ── HEART ── */
-    window.toggleHeart = function (contentId, btn) {
-        fetch('/ajax_toggle_heart', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content_id: contentId })
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data.status === 'login_required') { showToast('Please login to like!'); return; }
-            if (data.status === 'success') {
-                var icon = btn.querySelector('i');
-                var cnt = btn.querySelector('.heart-count');
-                if (data.liked) {
-                    icon.classList.replace('far', 'fas');
-                    btn.classList.add('active');
-                    showToast('❤️ Added to likes');
-                } else {
-                    icon.classList.replace('fas', 'far');
-                    btn.classList.remove('active');
-                    showToast('💔 Removed from likes');
-                }
-                cnt.textContent = data.hearts;
-            }
-        }).catch(function () { showToast('Network error'); });
-    };
+  /* ── LUXURY SMOOTH SCROLL (Lenis) ── */
+  var lenis = null, line = document.getElementById('scrollLine'), nav = document.getElementById('dfNav'), bg = document.getElementById('heroBg');
+  function onScrollY(y) {
+    nav.classList.toggle('scrolled', y > 60);
+    var max = document.documentElement.scrollHeight - window.innerHeight;
+    line.style.transform = 'scaleX(' + (max > 0 ? Math.min(y / max, 1) : 0) + ')';
+    if (bg && y < window.innerHeight && !reduce) bg.style.marginTop = (y * 0.18) + 'px'; /* parallax */
+  }
+  if (window.Lenis && !reduce) {
+    lenis = new Lenis({ duration: 1.25, easing: function (t) { return Math.min(1, 1.001 - Math.pow(2, -10 * t)); }, smoothWheel: true, smoothTouch: false });
+    lenis.on('scroll', function (e) { onScrollY(e.scroll); });
+    (function raf(t) { lenis.raf(t); requestAnimationFrame(raf); })(0);
+  } else {
+    window.addEventListener('scroll', function () { onScrollY(window.scrollY); }, { passive: true });
+  }
 
-    /* ── MARK NOTIFS ── */
-    window.markAllRead = function () {
-        fetch('/mark_notifications_read', { method: 'POST' }).then(function () {
-            document.getElementById('notifBadge')?.classList.add('hidden');
-            showToast('All marked as read');
-        });
-    };
+  /* ── TOAST ── */
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    document.getElementById('toast-msg').innerText = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.classList.remove('show'); }, 3000);
+  }
 
-    /* ── NOTIFICATIONS DROPDOWN ── */
-    var notifBtn = document.getElementById('notifToggle');
-    var notifDrop = document.getElementById('notifDrop');
-    if (notifBtn && notifDrop) {
-        notifBtn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            notifDrop.classList.toggle('hidden');
-        });
-        document.addEventListener('click', function () { notifDrop.classList.add('hidden'); });
-    }
-
-    /* ── NOTIFICATION POLLING ── */
-    var lastNotifCount = {{ notifications|length if notifications else 0 }};
-    function checkNotifications() {
-        fetch('/check_notifications').then(function (r) { return r.json(); }).then(function (d) {
-            if (d.count > lastNotifCount) {
-                var badge = document.getElementById('notifBadge');
-                badge.innerText = d.count;
-                badge.classList.remove('hidden');
-                try { document.getElementById('notifSound').play(); } catch (e) {}
-            }
-            lastNotifCount = d.count;
-        }).catch(function () {});
-    }
-    setInterval(checkNotifications, 10000);
-
-    /* ── NAV SCROLL STATE ── */
-    var nav = document.getElementById('dfNav');
-    function onScroll() {
-        if (window.scrollY > 60) nav.classList.add('scrolled');
-        else nav.classList.remove('scrolled');
-    }
-    window.addEventListener('scroll', onScroll, { passive: true });
-
-    /* ── SCROLL REVEAL ── */
-    var revEls = document.querySelectorAll('.reveal');
-    var io = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) {
-            if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); }
-        });
-    }, { threshold: 0.06 });
-    revEls.forEach(function (el) { io.observe(el); });
-    setTimeout(function () {
-        revEls.forEach(function (el) {
-            var r = el.getBoundingClientRect();
-            if (r.top < window.innerHeight) el.classList.add('visible');
-        });
-    }, 80);
-
-    /* ── HERO BACKDROP KEN-BURNS ── */
-    var bgLayer = document.getElementById('heroBgLayer');
-    if (bgLayer) {
-        setTimeout(function () { bgLayer.classList.add('zoomed'); }, 100);
-    }
-
-    /* ── FEATURED CAROUSEL ── */
-    {% if not search_query and recommendations and recommendations|length > 0 %}
-    var featItems = {{ recommendations|tojson|safe }};
-    var autoIdx = 0;
-    var autoTimer = null;
-    var backdrop = document.getElementById('heroBackdrop');
-    var bgEl = document.getElementById('heroBgLayer');
-    var fPoster = document.getElementById('featuredPoster');
-    var fTitle = document.getElementById('fTitle');
-    var fGenre = document.getElementById('fGenre');
-    var fYear = document.getElementById('fYear');
-    var fLang = document.getElementById('fLang');
-    var fStory = document.getElementById('fStory');
-    var fPlayBtn = document.getElementById('fPlayBtn');
-    var fInfoBtn = document.getElementById('fInfoBtn');
-    var fLink = document.getElementById('featuredLink');
-    var dotsEl = document.getElementById('carouselDots');
-
-    function setBackground(url) {
-        if (!url || !url.trim()) url = '/static/default_bg.jpg';
-        var finalUrl = url.startsWith('http') ? url : '/static/uploads/' + url;
-        var img = new Image();
-        img.onload = function () {
-            bgEl.style.backgroundImage = "url('" + finalUrl + "')";
-            bgEl.classList.remove('zoomed');
-            setTimeout(function () { bgEl.classList.add('zoomed'); }, 100);
-        };
-        img.onerror = function () {
-            bgEl.style.backgroundImage = "url('https://placehold.co/1600x600/0d0a0a/E50914?text=DeepFlix')";
-        };
-        img.src = finalUrl;
-    }
-
-    function updateCarousel(idx) {
-        var item = featItems[idx % featItems.length];
-        if (!item) return;
-        setBackground(item.backdrop_url || item.thumbnail || item.image || '');
-
-        var poster = item.thumbnail ? '/static/uploads/' + item.thumbnail : 'https://placehold.co/360x540/0f0c0c/E50914?text=DeepFlix';
-        fPoster.src = poster;
-        fPoster.onerror = function () { this.src = 'https://placehold.co/360x540/0f0c0c/E50914?text=DeepFlix'; };
-
-        fTitle.textContent = item.title || '';
-        fGenre.textContent = item.genre || 'Cinema';
-        fYear.textContent = item.year || item.release_year || '2025';
-        fLang.textContent = item.language || 'Multi';
-        fStory.textContent = (item.story || item.description || 'Experience cinema like never before.').substring(0, 150);
-
-        var playUrl = "{{ url_for('watch_content', content_id=0) }}".replace('0', item.id);
-        var infoUrl = "{{ url_for('content_page', content_id=0) }}".replace('0', item.id);
-        fPlayBtn.href = playUrl;
-        fInfoBtn.href = infoUrl;
-        fLink.href = infoUrl;
-
-        document.querySelectorAll('.cdot').forEach(function (dot, i) {
-            dot.classList.toggle('active', i === idx);
-        });
-    }
-
-    function nextSlide() {
-        autoIdx = (autoIdx + 1) % featItems.length;
-        updateCarousel(autoIdx);
-    }
-
-    function startAuto() {
-        if (autoTimer) clearInterval(autoTimer);
-        autoTimer = setInterval(nextSlide, 4000);
-    }
-
-    function stopAuto() {
-        if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
-    }
-
-    if (featItems.length && dotsEl) {
-        featItems.forEach(function (_, i) {
-            var dot = document.createElement('button');
-            dot.className = 'cdot' + (i === 0 ? ' active' : '');
-            dot.setAttribute('aria-label', 'Slide ' + (i + 1));
-            dot.addEventListener('click', function () {
-                stopAuto();
-                autoIdx = i;
-                updateCarousel(autoIdx);
-                startAuto();
-            });
-            dotsEl.appendChild(dot);
-        });
-        updateCarousel(0);
-        startAuto();
-
-        if (backdrop) {
-            backdrop.addEventListener('mouseenter', stopAuto);
-            backdrop.addEventListener('mouseleave', startAuto);
+  /* ── HEART ── */
+  window.toggleHeart = function (contentId, btn) {
+    fetch('/ajax_toggle_heart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content_id: contentId }) })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.status === 'login_required') { showToast('Please login to like!'); return; }
+        if (data.status === 'success') {
+          var icon = btn.querySelector('i'), cnt = btn.querySelector('.heart-count');
+          if (data.liked) { icon.classList.replace('far', 'fas'); btn.classList.add('active'); showToast('❤️ Added to likes'); }
+          else { icon.classList.replace('fas', 'far'); btn.classList.remove('active'); showToast('💔 Removed from likes'); }
+          cnt.textContent = data.hearts;
         }
-    }
-    {% endif %}
+      }).catch(function () { showToast('Network error'); });
+  };
 
-    /* ── IMAGE FALLBACKS ── */
-    document.querySelectorAll('img').forEach(function (img) {
-        img.addEventListener('error', function () {
-            if (!this.src.includes('placehold.co')) {
-                this.src = 'https://placehold.co/300x450/0f0c0c/E50914?text=DeepFlix';
-            }
-        });
+  /* ── NOTIFICATIONS ── */
+  window.markAllRead = function () {
+    fetch('/mark_notifications_read', { method: 'POST' }).then(function () {
+      var b = document.getElementById('notifBadge'); if (b) b.classList.add('hidden');
+      showToast('All marked as read');
     });
+  };
+  var nBtn = document.getElementById('notifToggle'), nDrop = document.getElementById('notifDrop');
+  if (nBtn && nDrop) {
+    nBtn.addEventListener('click', function (e) { e.stopPropagation(); nDrop.classList.toggle('hidden'); });
+    nDrop.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', function () { nDrop.classList.add('hidden'); });
+  }
+  var lastNotifCount = {{ notifications|length if notifications else 0 }};
+  setInterval(function () {
+    if (document.hidden) return;
+    fetch('/check_notifications').then(function (r) { return r.json(); }).then(function (d) {
+      if (d.count > lastNotifCount) {
+        var badge = document.getElementById('notifBadge');
+        badge.innerText = d.count; badge.classList.remove('hidden');
+        try { document.getElementById('notifSound').play(); } catch (e) {}
+      }
+      lastNotifCount = d.count;
+    }).catch(function () {});
+  }, 10000);
 
-    console.log('✅ DeepFlix Advanced Dashboard — DM Sans + Playfair Display + Bebas Neue / grain / scroll reveal / ken-burns carousel');
+  /* ── SCROLL REVEAL ── */
+  var revEls = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
+    }, { threshold: 0.05, rootMargin: '0px 0px -40px 0px' });
+    revEls.forEach(function (el) { io.observe(el); });
+  } else { revEls.forEach(function (el) { el.classList.add('visible'); }); }
+
+  /* ── FEATURED CAROUSEL ── */
+  {% if show_hero %}
+  var featItems = {{ recommendations|tojson|safe }};
+  var autoIdx = 0, autoTimer = null;
+  var hero = document.getElementById('hero'), bgEl = document.getElementById('heroBg');
+  var fPoster = document.getElementById('featuredPoster'), fTitle = document.getElementById('fTitle'),
+      fGenre = document.getElementById('fGenre'), fYear = document.getElementById('fYear'),
+      fLang = document.getElementById('fLang'), fStory = document.getElementById('fStory'),
+      fPlay = document.getElementById('fPlayBtn'), fInfo = document.getElementById('fInfoBtn'),
+      fLink = document.getElementById('featuredLink'), dotsEl = document.getElementById('carouselDots');
+  var watchBase = "{{ url_for('watch_content', content_id=0) }}", infoBase = "{{ url_for('content_page', content_id=0) }}";
+  function swapId(base, id) { return base.replace(/0$/, id); }
+
+  function setBackground(url) {
+    if (!url || !String(url).trim()) url = '/static/default_bg.jpg';
+    var finalUrl = String(url).indexOf('http') === 0 ? url : '/static/uploads/' + url;
+    var img = new Image();
+    img.onload = function () {
+      bgEl.style.opacity = 0;
+      setTimeout(function () {
+        bgEl.style.backgroundImage = "url('" + finalUrl + "')";
+        bgEl.style.opacity = 1;
+        bgEl.classList.remove('zoomed');
+        setTimeout(function () { bgEl.classList.add('zoomed'); }, 60);
+      }, 250);
+    };
+    img.onerror = function () { bgEl.style.backgroundImage = "url('https://placehold.co/1600x700/0d0a0a/E50914?text=DeepFlix')"; };
+    img.src = finalUrl;
+  }
+
+  function updateCarousel(idx) {
+    var item = featItems[idx % featItems.length]; if (!item) return;
+    setBackground(item.backdrop_url || item.thumbnail || item.image || '');
+    fPoster.src = item.thumbnail ? '/static/uploads/' + item.thumbnail : 'https://placehold.co/360x540/0f0c0c/E50914?text=DeepFlix';
+    fPoster.onerror = function () { this.onerror = null; this.src = 'https://placehold.co/360x540/0f0c0c/E50914?text=DeepFlix'; };
+    fTitle.textContent = item.title || '';
+    fGenre.textContent = item.genre || 'Cinema';
+    fYear.textContent = item.year || item.release_year || '2025';
+    fLang.textContent = item.language || 'Multi';
+    fStory.textContent = (item.story || item.description || 'Experience cinema like never before.').substring(0, 180);
+    fPlay.href = swapId(watchBase, item.id);
+    fInfo.href = swapId(infoBase, item.id);
+    fLink.href = swapId(infoBase, item.id);
+    document.querySelectorAll('.cdot').forEach(function (d, i) { d.classList.toggle('active', i === idx); });
+  }
+  function nextSlide() { autoIdx = (autoIdx + 1) % featItems.length; updateCarousel(autoIdx); }
+  function startAuto() { stopAuto(); if (!reduce) autoTimer = setInterval(nextSlide, 5000); }
+  function stopAuto() { if (autoTimer) { clearInterval(autoTimer); autoTimer = null; } }
+
+  if (featItems.length && dotsEl) {
+    featItems.slice(0, 12).forEach(function (_, i) {
+      var dot = document.createElement('button');
+      dot.className = 'cdot' + (i === 0 ? ' active' : '');
+      dot.setAttribute('aria-label', 'Slide ' + (i + 1));
+      dot.addEventListener('click', function () { stopAuto(); autoIdx = i; updateCarousel(i); startAuto(); });
+      dotsEl.appendChild(dot);
+    });
+    updateCarousel(0); startAuto();
+    hero.addEventListener('mouseenter', stopAuto);
+    hero.addEventListener('mouseleave', startAuto);
+    /* swipe on touch */
+    var sx = 0;
+    hero.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+    hero.addEventListener('touchend', function (e) {
+      var dx = e.changedTouches[0].clientX - sx;
+      if (Math.abs(dx) > 50) { stopAuto(); autoIdx = (autoIdx + (dx < 0 ? 1 : featItems.length - 1)) % featItems.length; updateCarousel(autoIdx); startAuto(); }
+    }, { passive: true });
+    document.addEventListener('visibilitychange', function () { document.hidden ? stopAuto() : startAuto(); });
+  }
+  {% else %}
+  if (bg) bg.style.backgroundImage = 'radial-gradient(ellipse at 20% 30%, rgba(229,9,20,.25), transparent 60%)';
+  {% endif %}
+  if (bg) setTimeout(function () { bg.classList.add('zoomed'); }, 100);
 })();
 </script>
 </body>
