@@ -258,8 +258,26 @@
         .df-search::-webkit-search-cancel-button { -webkit-appearance: none; }
         .df-search::placeholder { color: rgba(240,237,230,0.4); }
         .df-search:focus { border-color: var(--red); background: rgba(8,7,7,0.85); box-shadow: 0 0 0 3px var(--red-muted); }
+        .mobile-search-toggle { display: none; }
         @media (max-width: 767px) {
-            .df-nav.scrolled .search-wrap { max-height: 0; opacity: 0; margin-top: -0.6rem; overflow: hidden; pointer-events: none; }
+            .mobile-search-toggle {
+                display: inline-flex; align-items: center; justify-content: center;
+                width: 40px; height: 40px; flex: 0 0 40px;
+                border: 1px solid rgba(255,255,255,0.14); border-radius: 50%;
+                color: var(--off-white); background: rgba(255,255,255,0.06);
+                font-size: 1rem;
+            }
+            .search-wrap {
+                display: none; position: absolute; top: calc(100% + 7px);
+                left: var(--gx); right: var(--gx); z-index: 700;
+                width: auto; max-height: none; margin: 0; padding: 7px;
+                border: 1px solid rgba(229,9,20,0.35); border-radius: 15px;
+                background: rgba(12,9,9,0.97); box-shadow: 0 14px 34px rgba(0,0,0,.55);
+                -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+            }
+            .df-nav.mobile-search-open .search-wrap { display: block; }
+            .search-wrap i { left: 1.1rem; }
+            .df-search { height: 44px; }
         }
         @media (min-width: 768px) {
             .search-wrap { order: 0; flex: 1 1 auto; max-width: 440px; }
@@ -458,7 +476,7 @@
 
         .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.6rem; align-items: end; }
         @media (min-width: 640px) { .hero-grid { grid-template-columns: auto minmax(0, 1fr); gap: 2rem; } }
-        @media (min-width: 1120px) { .hero-grid { grid-template-columns: auto minmax(0, 1fr) 280px; gap: 2.4rem; } }
+        @media (min-width: 1120px) { .hero-grid { grid-template-columns: auto minmax(0, 1fr); gap: 2.4rem; } }
 
         .featured-poster-link { display: none; }
         @media (min-width: 640px) { .featured-poster-link { display: block; } }
@@ -568,27 +586,25 @@
         .carousel-dots.paused .cdot.active::after { animation-play-state: paused; }
         @keyframes dotfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
-        /* up-next rail (large screens) */
-        .up-next { display: none; flex-direction: column; gap: 0.6rem; }
-        @media (min-width: 1120px) { .up-next { display: flex; } }
-        .up-next-title { font-size: 0.78rem; font-weight: 600; color: var(--muted); letter-spacing: 0.04em; }
+        /* compact Up Next cards under the hero controls */
+        .up-next { display: flex; flex-direction: column; gap: 0.55rem; width: 100%; margin-top: 0.25rem; }
+        .up-next-title { font-size: 0.76rem; font-weight: 700; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+        .up-next-list { display: flex; gap: 0.65rem; width: 100%; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: thin; scrollbar-color: var(--red) transparent; }
         .up-item {
-            display: flex; align-items: center; gap: 0.8rem;
-            width: 100%;
-            text-align: left;
-            padding: 0.5rem;
-            border-radius: 12px;
-            background: rgba(8,7,7,0.55);
-            border: 1px solid var(--border);
-            -webkit-backdrop-filter: blur(8px);
-            backdrop-filter: blur(8px);
+            display: flex; align-items: center; gap: 0.55rem;
+            flex: 0 0 178px; min-width: 0; text-align: left;
+            padding: 0.45rem; border-radius: 10px;
+            background: rgba(8,7,7,0.68); border: 1px solid var(--border);
+            -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
             transition: border-color 0.2s, background 0.2s, transform 0.2s;
         }
-        .up-item:hover { border-color: var(--red); background: rgba(229,9,20,0.1); transform: translateX(-3px); }
-        .up-item img { width: 42px; height: 60px; border-radius: 6px; object-fit: cover; background: #140f0f; flex-shrink: 0; }
+        .up-item:hover { border-color: var(--red); background: rgba(229,9,20,0.12); transform: translateY(-2px); }
+        .up-item img { width: 38px; height: 54px; border-radius: 6px; object-fit: cover; background: #140f0f; flex-shrink: 0; }
         .up-item span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-        .up-item strong { font-size: 0.82rem; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-        .up-item em { font-style: normal; font-size: 0.7rem; color: var(--gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .up-item strong { font-size: 0.76rem; font-weight: 700; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .up-item em { font-style: normal; font-size: 0.65rem; color: var(--gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @media (min-width: 768px) { .up-item { flex-basis: 190px; } }
+        @media (max-width: 479px) { .up-item { flex-basis: 155px; } }
 
         /* ══════════════════════════════════════
            MAIN LAYOUT / SECTIONS
@@ -1033,7 +1049,7 @@
         </nav>
     </div>
 
-    <form method="GET" action="{{ url_for('user_dashboard') }}" class="search-wrap" role="search">
+    <form method="GET" action="{{ url_for('user_dashboard') }}" class="search-wrap" id="mobileSearchForm" role="search">
         <i class="fas fa-search" aria-hidden="true"></i>
         <input type="search" name="search" value="{{ search_query }}"
                placeholder="Search title, genre, hero, director…"
@@ -1043,6 +1059,10 @@
     </form>
 
     <div class="nav-right">
+        <button type="button" class="mobile-search-toggle" id="mobileSearchToggle"
+                aria-label="Open search" aria-expanded="false" aria-controls="mobileSearchForm">
+            <i class="fas fa-search" aria-hidden="true"></i>
+        </button>
         <!-- Notifications -->
         <div class="notif-wrap">
             <button type="button" class="notif-btn" id="notifToggle" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
@@ -1145,9 +1165,8 @@
                 </div>
 
                 <div class="carousel-dots" id="carouselDots" role="group" aria-label="Choose featured title"></div>
+                <aside class="up-next" id="upNext" aria-label="Up next"></aside>
             </div>
-
-            <aside class="up-next" id="upNext" aria-label="Up next"></aside>
         </div>
     </div>
 </section>
@@ -1750,6 +1769,9 @@
         head.className = 'up-next-title';
         head.textContent = 'Up next';
         upNext.appendChild(head);
+        var track = document.createElement('div');
+        track.className = 'up-next-list';
+        upNext.appendChild(track);
         var n = Math.min(3, items.length - 1);
         for (var k = 1; k <= n; k++) {
             (function (idx) {
@@ -1773,7 +1795,7 @@
                 b.appendChild(im);
                 b.appendChild(tx);
                 b.addEventListener('click', function () { go(idx, true); });
-                upNext.appendChild(b);
+                track.appendChild(b);
             })((cur + k) % items.length);
         }
     }
@@ -1812,6 +1834,44 @@
     go(0, false);
     {% endif %}
 })();
+    /* Mobile search: tap the magnifier to reveal the input; tap again or outside to close. */
+    var navEl = document.getElementById('dfNav');
+    var mobileSearchToggle = document.getElementById('mobileSearchToggle');
+    var mobileSearchForm = document.getElementById('mobileSearchForm');
+    if (navEl && mobileSearchToggle && mobileSearchForm) {
+        mobileSearchToggle.addEventListener('click', function () {
+            var isOpen = navEl.classList.toggle('mobile-search-open');
+            mobileSearchToggle.setAttribute('aria-expanded', String(isOpen));
+            mobileSearchToggle.setAttribute('aria-label', isOpen ? 'Close search' : 'Open search');
+            var icon = mobileSearchToggle.querySelector('i');
+            if (icon) icon.className = isOpen ? 'fas fa-times' : 'fas fa-search';
+            if (isOpen) {
+                var field = mobileSearchForm.querySelector('input[name="search"]');
+                if (field) window.setTimeout(function () { field.focus(); }, 80);
+            }
+        });
+        document.addEventListener('click', function (event) {
+            if (window.matchMedia('(max-width: 767px)').matches &&
+                navEl.classList.contains('mobile-search-open') &&
+                !navEl.contains(event.target)) {
+                navEl.classList.remove('mobile-search-open');
+                mobileSearchToggle.setAttribute('aria-expanded', 'false');
+                mobileSearchToggle.setAttribute('aria-label', 'Open search');
+                var icon = mobileSearchToggle.querySelector('i');
+                if (icon) icon.className = 'fas fa-search';
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && navEl.classList.contains('mobile-search-open')) {
+                navEl.classList.remove('mobile-search-open');
+                mobileSearchToggle.setAttribute('aria-expanded', 'false');
+                mobileSearchToggle.setAttribute('aria-label', 'Open search');
+                var icon = mobileSearchToggle.querySelector('i');
+                if (icon) icon.className = 'fas fa-search';
+                mobileSearchToggle.focus();
+            }
+        });
+    }
 </script>
 </body>
 </html>
