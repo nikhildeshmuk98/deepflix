@@ -2373,6 +2373,165 @@ def kids_watch(content_id):
 # =========================================================
 # ROUTES: USER DASHBOARD
 # =========================================================
+
+# =========================================================
+# DEEPFLIX AI CHAT - CATALOG-AWARE ASSISTANT
+# =========================================================
+_CHAT_MOODS = {
+    'happy': ('comedy', 'romance', 'family'), 'sad': ('drama', 'romance'),
+    'bored': ('thriller', 'comedy', 'action'), 'stressed': ('comedy', 'family'),
+    'romantic': ('romance',), 'scared': ('horror', 'thriller'),
+    'excited': ('action', 'adventure'), 'nostalgic': ('classic',),
+}
+_CHAT_GENRES = {
+    'action': ('action', 'fight'), 'comedy': ('comedy', 'funny', 'humor'),
+    'romance': ('romance', 'romantic'), 'thriller': ('thriller', 'suspense', 'gripping'),
+    'horror': ('horror', 'scary', 'ghost'), 'drama': ('drama', 'emotional'),
+    'crime': ('crime', 'criminal', 'detective'), 'adventure': ('adventure',),
+    'animation': ('animation', 'animated', 'cartoon'), 'fantasy': ('fantasy',),
+    'science fiction': ('science fiction', 'sci-fi'), 'family': ('family',),
+    'mystery': ('mystery',), 'documentary': ('documentary',),
+}
+_CHAT_LANGUAGES = {
+    'hindi': ('hindi', 'hindhi'), 'telugu': ('telugu',), 'tamil': ('tamil',),
+    'malayalam': ('malayalam',), 'kannada': ('kannada',), 'english': ('english',),
+    'bengali': ('bengali',), 'marathi': ('marathi',), 'punjabi': ('punjabi',),
+    'japanese': ('japanese',), 'korean': ('korean',),
+}
+_CHAT_STOP = {'recommend','recommendation','suggest','movie','movies','film','films','series','show','shows','please','me','a','an','the','some','something','any','what','which','is','are','for','to','in','of','and','or','i','want','need','watch','play','that','this','it','under','genre','category','language','today','feeling','feel','im','i’m','my','about'}
+
+def _deepflix_chat_reply(message, history=None):
+    """Return structured, catalog-grounded results and a safe playback URL."""
+    text = (message or '').strip()
+    low = text.lower()
+    if not text:
+        return {'reply': 'Tell me a movie title, genre, language, actor, or mood.', 'movies': []}
+    is_play = bool(re.search(r'\b(play|watch|start|open)\b', low))
+    asks_genre = bool(re.search(r'\b(what|which|under|genre|category)\b', low)) and ('genre' in low or 'category' in low)
+    asks_details = asks_genre or bool(re.search(r'\b(what is|tell me about|details about)\b', low))
+    explicit_genres = [g for g, terms in _CHAT_GENRES.items() if any(t in low for t in terms)]
+    language = next((name for name, terms in _CHAT_LANGUAGES.items() if any(t in low for t in terms)), None)
+    mood = next((m for m in _CHAT_MOODS if re.search(r'\b'+re.escape(m)+r'\b', low)), None)
+    wanted_genres = list(dict.fromkeys(explicit_genres + (list(_CHAT_MOODS.get(mood, ())) if mood and not explicit_genres else [])))
+    # Actor/character fields are discovered from the actual schema below; never assume a schema.
+    conn = get_connection()
+    if not conn:
+        return {'reply': 'I cannot connect to the DeepFlix catalog right now. Please try again.', 'movies': []}
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute('SHOW COLUMNS FROM contents')
+            columns = {row['Field'].lower() for row in cursor.fetchall()}
+            cursor.execute("SELECT * FROM contents WHERE (is_kids=0 OR is_kids IS NULL) ORDER BY COALESCE(hearts,0) DESC, COALESCE(views,0) DESC LIMIT 600")
+            catalog = cursor.fetchall()
+    except Exception as exc:
+        app.logger.exception('DeepFlix chat catalog retrieval error: %s', exc)
+        return {'reply': 'I could not retrieve the catalog right now. Please try again.', 'movies': []}
+    finally:
+        conn.close()
+    if not catalog:
+        return {'reply': 'There are no catalog titles available to recommend yet.', 'movies': []}
+
+    def field(row, *names):
+        for n in names:
+            if n in columns and row.get(n) not in (None, ''):
+                return str(row.get(n))
+        return ''
+    cast_fields = [c for c in columns if c in {'hero','hero2','hero3','heroine','heroine2','heroine3','comedian','comedian2','director','producer','cast','actors','actor','stars'}]
+    def searchable(row):
+        return ' '.join([field(row,'title'), field(row,'genre'), field(row,'language'), field(row,'story'), *[str(row.get(c) or '') for c in cast_fields]]).lower()
+    # Follow-up "play that" uses the preceding recommendation result IDs held in session.
+    previous = session.get('deepflix_chat_last_ids', [])
+    if is_play:
+        target_id = None
+        title_words = [w for w in re.findall(r'[a-z0-9]+', low) if w not in _CHAT_STOP and w not in {'play','watch','open','start'}]
+        if title_words:
+            target = ' '.join(title_words)
+            exact = next((r for r in catalog if target in (r.get('title') or '').lower()), None)
+            if exact: target_id = exact.get('id')
+        if target_id is None and previous:
+            target_id = previous[0]
+        if target_id:
+            return {'reply': 'Opening the movie player now.', 'movies': [], 'play_url': url_for('play_content', content_id=int(target_id))}
+        return {'reply': 'Tell me the exact movie title you want to play, or select Play on a recommendation card.', 'movies': []}
+
+    # Title lookup has precedence for title-specific factual questions.
+    title_terms = [w for w in re.findall(r'[a-z0-9]+', low) if w not in _CHAT_STOP and w not in set(sum([list(v) for v in _CHAT_GENRES.values()], []))]
+    title_candidates = []
+    for row in catalog:
+        title = (row.get('title') or '').lower()
+        if title and (title in low or (title_terms and all(w in title for w in title_terms))):
+            title_candidates.append(row)
+    if asks_details and title_candidates:
+        chosen = title_candidates[0]
+        movie = _chat_movie_card(chosen, columns)
+        session['deepflix_chat_last_ids'] = [movie['id']]
+        genres = movie.get('genre') or 'not listed in the catalog'
+        return {'reply': f"{movie['title']} is listed under: {genres}.", 'movies': [movie]}
+
+    # Filter strictly for explicit language and genre; relevance scores only rank eligible matches.
+    eligible = catalog[:]
+    if language:
+        eligible = [r for r in eligible if language in (field(r,'language').lower()) or (language == 'hindi' and 'hindhi' in field(r,'language').lower())]
+    if wanted_genres:
+        eligible = [r for r in eligible if any(g in field(r,'genre').lower() for g in wanted_genres)]
+    if title_candidates and not wanted_genres and not language:
+        eligible = title_candidates
+    actor_terms = [w for w in re.findall(r'[a-z]+', low) if w not in _CHAT_STOP and w not in {t for terms in _CHAT_GENRES.values() for t in terms} and w not in _CHAT_LANGUAGES]
+    # When no title/genre/language filter, only score catalog text if useful terms were supplied.
+    def score(row):
+        title = field(row,'title').lower(); genre = field(row,'genre').lower(); lang = field(row,'language').lower(); story = field(row,'story').lower(); cast = ' '.join(str(row.get(c) or '') for c in cast_fields).lower()
+        s = sum(10 for g in wanted_genres if g in genre)
+        s += sum(12 for w in actor_terms if w in title) + sum(6 for w in actor_terms if w in genre or w in cast) + sum(1 for w in actor_terms if w in story)
+        if language and language in lang: s += 20
+        if title_candidates and row in title_candidates: s += 50
+        return s
+    if not eligible:
+        filters = ', '.join(([language.title()] if language else []) + [g.title() for g in wanted_genres])
+        return {'reply': f"I couldn't find a title in our catalog matching {filters}. I won't show unrelated movies. Try another language or genre.", 'movies': []}
+    ranked = sorted(eligible, key=lambda r: (score(r), int(r.get('hearts') or 0), int(r.get('views') or 0)), reverse=True)
+    if not wanted_genres and not language and not title_candidates and not actor_terms:
+        ranked = sorted(catalog, key=lambda r: (int(r.get('hearts') or 0), int(r.get('views') or 0)), reverse=True)
+    # If user supplied actor/title-like terms but no relevance score, don't pretend relevance.
+    if actor_terms and not title_candidates and not wanted_genres and not language and not any(score(r)>0 for r in ranked):
+        return {'reply': "I couldn't confidently match that name or request to our catalog. Try a movie title, actor name, genre or language.", 'movies': []}
+    selected = ranked[:5]
+    cards = [_chat_movie_card(r, columns) for r in selected]
+    session['deepflix_chat_last_ids'] = [c['id'] for c in cards]
+    if asks_details and title_candidates:
+        chosen = title_candidates[0]
+        movie = _chat_movie_card(chosen, columns)
+        return {'reply': f"{movie['title']} — {movie.get('genre') or 'Genre not listed'}.", 'movies':[movie]}
+    desc = []
+    if language: desc.append(language.title())
+    desc.extend(g.title() for g in wanted_genres)
+    if mood and not explicit_genres: desc.append(f'{mood} mood')
+    heading = ('Here are catalog matches for ' + ' + '.join(desc) + ':' if desc else 'Here are some titles from the DeepFlix catalog:')
+    return {'reply': heading, 'movies': cards}
+
+def _chat_movie_card(row, columns):
+    title = str(row.get('title') or 'Untitled')
+    thumb = str(row.get('thumbnail') or row.get('poster') or row.get('poster_image') or '').strip()
+    story = str(row.get('story') or '').strip()
+    if len(story)>240: story=story[:237].rstrip()+'...'
+    return {'id': int(row.get('id')), 'title': title, 'year': row.get('release_year'), 'language': row.get('language'), 'genre': row.get('genre'), 'story': story, 'poster': url_for('static', filename='uploads/'+thumb) if thumb and not thumb.startswith(('http://','https://')) else (thumb or None), 'watch_url': url_for('watch_content', content_id=int(row.get('id'))), 'play_url': url_for('play_content', content_id=int(row.get('id')))}
+
+@app.route('/api/chat', methods=['POST'], endpoint='deepflix_ai_chat')
+@login_required
+def deepflix_ai_chat():
+    try:
+        payload = request.get_json(silent=True) or {}
+        message = payload.get('message', '')
+        if not isinstance(message, str) or not message.strip():
+            return jsonify({'reply':'Please type a message first.', 'movies':[]}), 400
+        if len(message)>1000:
+            return jsonify({'reply':'Please keep your message under 1000 characters.', 'movies':[]}), 400
+        result = _deepflix_chat_reply(message.strip(), payload.get('history', []))
+        return jsonify(result)
+    except Exception:
+        app.logger.exception('DeepFlix AI chat endpoint failed')
+        return jsonify({'reply':'Sorry, something went wrong. Please try again.', 'movies':[]}), 500
+
+
 @app.route('/user_dashboard', endpoint='user_dashboard')
 @login_required
 def user_dashboard():
