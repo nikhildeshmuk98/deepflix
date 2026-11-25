@@ -2400,113 +2400,166 @@ _CHAT_LANGUAGES = {
 }
 _CHAT_STOP = {'recommend','recommendation','suggest','movie','movies','film','films','series','show','shows','please','me','a','an','the','some','something','any','what','which','is','are','for','to','in','of','and','or','i','want','need','watch','play','that','this','it','under','genre','category','language','today','feeling','feel','im','i’m','my','about'}
 
+
 def _deepflix_chat_reply(message, history=None):
-    """Return structured, catalog-grounded results and a safe playback URL."""
+    """Database-grounded chat: strict catalog filters, cast/director lists and counts."""
     text = (message or '').strip()
     low = text.lower()
     if not text:
-        return {'reply': 'Tell me a movie title, genre, language, actor, or mood.', 'movies': []}
-    is_play = bool(re.search(r'\b(play|watch|start|open)\b', low))
-    asks_genre = bool(re.search(r'\b(what|which|under|genre|category)\b', low)) and ('genre' in low or 'category' in low)
-    asks_details = asks_genre or bool(re.search(r'\b(what is|tell me about|details about)\b', low))
-    explicit_genres = [g for g, terms in _CHAT_GENRES.items() if any(t in low for t in terms)]
-    language = next((name for name, terms in _CHAT_LANGUAGES.items() if any(t in low for t in terms)), None)
-    mood = next((m for m in _CHAT_MOODS if re.search(r'\b'+re.escape(m)+r'\b', low)), None)
-    wanted_genres = list(dict.fromkeys(explicit_genres + (list(_CHAT_MOODS.get(mood, ())) if mood and not explicit_genres else [])))
-    # Actor/character fields are discovered from the actual schema below; never assume a schema.
+        return {'reply': 'Ask me about movies, languages, genres, actors, actresses or directors.', 'movies': []}
+
+    def norm(v):
+        return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9]+', ' ', str(v or '').lower())).strip()
+
     conn = get_connection()
     if not conn:
-        return {'reply': 'I cannot connect to the DeepFlix catalog right now. Please try again.', 'movies': []}
+        return {'reply': 'I cannot connect to the DeepFlix catalog right now.', 'movies': []}
     try:
-        with conn.cursor() as cursor:
-            cursor.execute('SHOW COLUMNS FROM contents')
-            columns = {row['Field'].lower() for row in cursor.fetchall()}
-            cursor.execute("SELECT * FROM contents WHERE (is_kids=0 OR is_kids IS NULL) ORDER BY COALESCE(hearts,0) DESC, COALESCE(views,0) DESC LIMIT 600")
-            catalog = cursor.fetchall()
-    except Exception as exc:
-        app.logger.exception('DeepFlix chat catalog retrieval error: %s', exc)
-        return {'reply': 'I could not retrieve the catalog right now. Please try again.', 'movies': []}
+        with conn.cursor() as cur:
+            cur.execute('SHOW COLUMNS FROM contents')
+            columns = {r['Field'].lower(): r['Field'] for r in cur.fetchall()}
+            cur.execute("SELECT * FROM contents WHERE (is_kids=0 OR is_kids IS NULL) ORDER BY COALESCE(hearts,0) DESC, COALESCE(views,0) DESC LIMIT 1000")
+            catalog = cur.fetchall()
+    except Exception:
+        app.logger.exception('DeepFlix catalog retrieval failed')
+        return {'reply': 'I could not retrieve the catalog right now.', 'movies': []}
     finally:
         conn.close()
+
     if not catalog:
-        return {'reply': 'There are no catalog titles available to recommend yet.', 'movies': []}
+        return {'reply': 'There are no titles available in the catalog.', 'movies': []}
 
-    def field(row, *names):
-        for n in names:
-            if n in columns and row.get(n) not in (None, ''):
-                return str(row.get(n))
-        return ''
-    cast_fields = [c for c in columns if c in {'hero','hero2','hero3','heroine','heroine2','heroine3','comedian','comedian2','director','producer','cast','actors','actor','stars'}]
-    def searchable(row):
-        return ' '.join([field(row,'title'), field(row,'genre'), field(row,'language'), field(row,'story'), *[str(row.get(c) or '') for c in cast_fields]]).lower()
-    # Follow-up "play that" uses the preceding recommendation result IDs held in session.
-    previous = session.get('deepflix_chat_last_ids', [])
-    if is_play:
-        target_id = None
-        title_words = [w for w in re.findall(r'[a-z0-9]+', low) if w not in _CHAT_STOP and w not in {'play','watch','open','start'}]
-        if title_words:
-            target = ' '.join(title_words)
-            exact = next((r for r in catalog if target in (r.get('title') or '').lower()), None)
-            if exact: target_id = exact.get('id')
-        if target_id is None and previous:
-            target_id = previous[0]
-        if target_id:
-            return {'reply': 'Opening the movie player now.', 'movies': [], 'play_url': url_for('play_content', content_id=int(target_id))}
-        return {'reply': 'Tell me the exact movie title you want to play, or select Play on a recommendation card.', 'movies': []}
+    def col(*names):
+        return next((columns[n] for n in names if n in columns), None)
+    title_col = col('title') or 'title'
+    year_col = col('release_year', 'year') or 'release_year'
+    lang_col = col('language', 'lang') or 'language'
+    genre_col = col('genre', 'genres', 'category', 'categories') or 'genre'
+    story_cols = [columns[k] for k in columns if any(x in k for x in ('story','description','overview','synopsis'))]
+    # Use the actual structured fields used by the content-upload form.
+    actor_cols = [columns[k] for k in ('hero','hero2','hero3','heroine','heroine2','heroine3') if k in columns]
+    director_cols = [columns[k] for k in ('director','director2','director3') if k in columns]
+    actor_extra = [columns[k] for k in columns if k in ('cast','actors','actor','starring','stars')]
+    actor_cols += actor_extra
+    actress_cols = [columns[k] for k in ('heroine','heroine2','heroine3') if k in columns]
+    hero_cols = [columns[k] for k in ('hero','hero2','hero3') if k in columns]
 
-    # Title lookup has precedence for title-specific factual questions.
-    title_terms = [w for w in re.findall(r'[a-z0-9]+', low) if w not in _CHAT_STOP and w not in set(sum([list(v) for v in _CHAT_GENRES.values()], []))]
-    title_candidates = []
+    def val(row,k):
+        return str(row.get(k) or '') if k else ''
+    def names_from(rows, fields):
+        names=set()
+        for row in rows:
+            for f in fields:
+                raw=val(row,f)
+                # Each field is normally a single person; split common multi-name delimiters.
+                for item in re.split(r'[,;/|]+',raw):
+                    n=item.strip()
+                    if n and norm(n) not in ('na','n a','none','unknown'):
+                        names.add(n)
+        return sorted(names,key=str.casefold)
+    def list_response(label, fields):
+        items=names_from(catalog,fields)
+        if not items:
+            return {'reply':f'I could not find {label} names in the available catalog fields.', 'movies':[]}
+        return {'reply':f'I found {len(items)} unique {label} in the catalog: ' + ', '.join(items), 'movies':[], 'people':items, 'count':len(items)}
+    # Entity list / statistics intents.
+    if re.search(r'\b(list|show|name|names|who are|all)\b',low) and re.search(r'\b(directors?)\b',low):
+        return list_response('directors',director_cols)
+    if re.search(r'\b(list|show|name|names|who are|all)\b',low) and re.search(r'\b(heroines|actresses)\b',low):
+        return list_response('actresses',actress_cols)
+    if re.search(r'\b(list|show|name|names|who are|all)\b',low) and re.search(r'\b(heroes|actors)\b',low):
+        return list_response('actors',hero_cols or actor_cols)
+    if re.search(r'\b(how many|count|number of|total)\b',low) and re.search(r'\b(directors?)\b',low):
+        n=len(names_from(catalog,director_cols))
+        return {'reply':f'There are {n} unique directors represented in the catalog fields.', 'movies':[], 'count':n}
+    if re.search(r'\b(how many|count|number of|total)\b',low) and re.search(r'\b(heroines|actresses)\b',low):
+        n=len(names_from(catalog,actress_cols))
+        return {'reply':f'There are {n} unique actresses represented in the catalog fields.', 'movies':[], 'count':n}
+    if re.search(r'\b(how many|count|number of|total)\b',low) and re.search(r'\b(heroes|actors)\b',low):
+        n=len(names_from(catalog,hero_cols or actor_cols))
+        return {'reply':f'There are {n} unique actors represented in the catalog fields.', 'movies':[], 'count':n}
+    if re.search(r'\b(how many|count|number of|total)\b',low) and re.search(r'\b(movies|films|titles)\b',low):
+        n=len(catalog)
+        return {'reply':f'There are {n} catalog titles available in the searchable catalog.', 'movies':[], 'count':n}
+
+    genre_map={'romance':['romance','romantic'],'action':['action'],'comedy':['comedy','funny'],'horror':['horror'],'thriller':['thriller','suspense'],'drama':['drama'],'family':['family'],'crime':['crime'],'adventure':['adventure'],'animation':['animation','animated'],'fantasy':['fantasy'],'mystery':['mystery'],'documentary':['documentary'],'science fiction':['science fiction','sci fi']}
+    language_map={'telugu':['telugu'],'tamil':['tamil'],'hindi':['hindi'],'malayalam':['malayalam'],'kannada':['kannada'],'english':['english'],'marathi':['marathi'],'bengali':['bengali'],'punjabi':['punjabi'],'korean':['korean'],'japanese':['japanese']}
+    genres=[g for g,terms in genre_map.items() if any(re.search(r'\b'+re.escape(t)+r'\b',low) for t in terms)]
+    language=next((l for l,terms in language_map.items() if any(re.search(r'\b'+re.escape(t)+r'\b',low) for t in terms)),None)
+    # Actor/director name extraction, removing common request words.
+    person_query=None
+    for pattern in [r'(?:hero|actor|actress|star)\s+(.+?)\s+movies?',r'(.+?)\s+movies?\s+only',r'movies?\s+(?:of|by|with)\s+(.+)',r'(?:directed by|director)\s+(.+?)(?:\s+movies?)?$']:
+        m=re.search(pattern,low)
+        if m:
+            person_query=m.group(1).strip()
+            break
+    person_query=re.sub(r'\b(recommend|suggest|show|find|give|me|only|all|hero|actor|actress|star|movies|movie|films|film)\b',' ',person_query or '')
+    person_query=norm(person_query)
+    asks_director=bool(re.search(r'\b(director|directed by)\b',low))
+    person_fields=director_cols if asks_director else actor_cols
+    # Actor name matching shouldn't trigger from genre/language-only questions.
+    if not person_query or person_query in ('','movies','movie','films','film'):
+        person_query=None
+
+    # Decade and result count.
+    decade=None
+    m=re.search(r'\b(19|20)(\d)\s*\'?s\b',low)
+    if m: decade=int(m.group(1)+m.group(2))*10
+    else:
+        m=re.search(r'\b(\d{2})\s*\'?s\b',low)
+        if m: decade=(2000+int(m.group(1)) if int(m.group(1))<30 else 1900+int(m.group(1)))
+    count=1 if re.search(r'\b(only one|just one|one movie|single movie)\b',low) else 5
+    m=re.search(r'\b(\d{1,2})\s*(movies|films|titles)\b',low)
+    if m: count=min(int(m.group(1)),30)
+
+    def genre_match(row):
+        g=norm(val(row,genre_col))
+        return all(any(norm(t) in g for t in genre_map[requested]) for requested in genres)
+    def lang_match(row):
+        return not language or norm(val(row,lang_col))==language
+    def person_match(row):
+        if not person_query: return True
+        for f in person_fields:
+            if person_query in norm(val(row,f)): return True
+        return False
+    def year_match(row):
+        if decade is None:return True
+        try: y=int(re.search(r'\d{4}',val(row,year_col)).group())
+        except Exception:return False
+        return decade<=y<=decade+9
+    def card(row):
+        thumb=val(row,columns.get('thumbnail') or 'thumbnail')
+        if not thumb:
+            thumb=val(row,columns.get('poster') or 'poster')
+        if thumb and not thumb.startswith(('http://','https://','/')):
+            thumb=url_for('static',filename='uploads/'+thumb)
+        cid=row.get('id')
+        return {'id':cid,'title':val(row,title_col),'year':val(row,year_col),'language':val(row,lang_col),'genre':val(row,genre_col),'story':' '.join(val(row,f) for f in story_cols)[:500],'poster':thumb or None,'watch_url':url_for('watch_content',content_id=cid),'play_url':url_for('play_content',content_id=cid)}
+    matches=[]
     for row in catalog:
-        title = (row.get('title') or '').lower()
-        if title and (title in low or (title_terms and all(w in title for w in title_terms))):
-            title_candidates.append(row)
-    if asks_details and title_candidates:
-        chosen = title_candidates[0]
-        movie = _chat_movie_card(chosen, columns)
-        session['deepflix_chat_last_ids'] = [movie['id']]
-        genres = movie.get('genre') or 'not listed in the catalog'
-        return {'reply': f"{movie['title']} is listed under: {genres}.", 'movies': [movie]}
-
-    # Filter strictly for explicit language and genre; relevance scores only rank eligible matches.
-    eligible = catalog[:]
-    if language:
-        eligible = [r for r in eligible if language in (field(r,'language').lower()) or (language == 'hindi' and 'hindhi' in field(r,'language').lower())]
-    if wanted_genres:
-        eligible = [r for r in eligible if any(g in field(r,'genre').lower() for g in wanted_genres)]
-    if title_candidates and not wanted_genres and not language:
-        eligible = title_candidates
-    actor_terms = [w for w in re.findall(r'[a-z]+', low) if w not in _CHAT_STOP and w not in {t for terms in _CHAT_GENRES.values() for t in terms} and w not in _CHAT_LANGUAGES]
-    # When no title/genre/language filter, only score catalog text if useful terms were supplied.
-    def score(row):
-        title = field(row,'title').lower(); genre = field(row,'genre').lower(); lang = field(row,'language').lower(); story = field(row,'story').lower(); cast = ' '.join(str(row.get(c) or '') for c in cast_fields).lower()
-        s = sum(10 for g in wanted_genres if g in genre)
-        s += sum(12 for w in actor_terms if w in title) + sum(6 for w in actor_terms if w in genre or w in cast) + sum(1 for w in actor_terms if w in story)
-        if language and language in lang: s += 20
-        if title_candidates and row in title_candidates: s += 50
-        return s
-    if not eligible:
-        filters = ', '.join(([language.title()] if language else []) + [g.title() for g in wanted_genres])
-        return {'reply': f"I couldn't find a title in our catalog matching {filters}. I won't show unrelated movies. Try another language or genre.", 'movies': []}
-    ranked = sorted(eligible, key=lambda r: (score(r), int(r.get('hearts') or 0), int(r.get('views') or 0)), reverse=True)
-    if not wanted_genres and not language and not title_candidates and not actor_terms:
-        ranked = sorted(catalog, key=lambda r: (int(r.get('hearts') or 0), int(r.get('views') or 0)), reverse=True)
-    # If user supplied actor/title-like terms but no relevance score, don't pretend relevance.
-    if actor_terms and not title_candidates and not wanted_genres and not language and not any(score(r)>0 for r in ranked):
-        return {'reply': "I couldn't confidently match that name or request to our catalog. Try a movie title, actor name, genre or language.", 'movies': []}
-    selected = ranked[:5]
-    cards = [_chat_movie_card(r, columns) for r in selected]
-    session['deepflix_chat_last_ids'] = [c['id'] for c in cards]
-    if asks_details and title_candidates:
-        chosen = title_candidates[0]
-        movie = _chat_movie_card(chosen, columns)
-        return {'reply': f"{movie['title']} — {movie.get('genre') or 'Genre not listed'}.", 'movies':[movie]}
-    desc = []
-    if language: desc.append(language.title())
-    desc.extend(g.title() for g in wanted_genres)
-    if mood and not explicit_genres: desc.append(f'{mood} mood')
-    heading = ('Here are catalog matches for ' + ' + '.join(desc) + ':' if desc else 'Here are some titles from the DeepFlix catalog:')
-    return {'reply': heading, 'movies': cards}
+        if genres and not genre_match(row): continue
+        if language and not lang_match(row): continue
+        if person_query and not person_match(row): continue
+        if decade is not None and not year_match(row): continue
+        matches.append(row)
+    if not matches:
+        parts=[]
+        if person_query:parts.append(('director ' if asks_director else 'person ') + person_query)
+        if genres:parts.append('genre '+', '.join(genres))
+        if language:parts.append(language)
+        if decade is not None:parts.append(f'{decade}-{decade+9}')
+        return {'reply':"I couldn't find catalog entries matching "+(' and '.join(parts) or 'that request')+". I won't suggest unrelated titles.",'movies':[]}
+    matches.sort(key=lambda r:(int(r.get('hearts') or 0) if str(r.get('hearts') or 0).isdigit() else 0,int(r.get('views') or 0) if str(r.get('views') or 0).isdigit() else 0),reverse=True)
+    cards=[card(r) for r in matches[:count]]
+    session['deepflix_chat_last_ids']=[c['id'] for c in cards]
+    labels=[]
+    if person_query:labels.append(('movies by director '+person_query) if asks_director else ('movies featuring '+person_query))
+    if language:labels.append(language.title())
+    labels.extend(g.title() for g in genres)
+    if decade is not None:labels.append(f'{decade}-{decade+9}')
+    reply='Here are the catalog results'+(' for '+', '.join(labels) if labels else '')+'.'
+    if len(matches)<count:reply=f'I found {len(matches)} matching title(s) in the catalog. '+reply
+    return {'reply':reply,'movies':cards}
 
 def _chat_movie_card(row, columns):
     title = str(row.get('title') or 'Untitled')
@@ -2520,17 +2573,55 @@ def _chat_movie_card(row, columns):
 def deepflix_ai_chat():
     try:
         payload = request.get_json(silent=True) or {}
+
+        # Validate message
         message = payload.get('message', '')
+
         if not isinstance(message, str) or not message.strip():
-            return jsonify({'reply':'Please type a message first.', 'movies':[]}), 400
-        if len(message)>1000:
-            return jsonify({'reply':'Please keep your message under 1000 characters.', 'movies':[]}), 400
-        result = _deepflix_chat_reply(message.strip(), payload.get('history', []))
-        return jsonify(result)
+            return jsonify({
+                'reply': 'Please type a message first.',
+                'movies': []
+            }), 400
+
+        message = message.strip()
+
+        if len(message) > 1000:
+            return jsonify({
+                'reply': 'Please keep your message under 1000 characters.',
+                'movies': []
+            }), 400
+
+        # Validate chat history
+        history = payload.get('history', [])
+
+        if not isinstance(history, list):
+            history = []
+
+        # Keep only the most recent conversation messages
+        history = history[-10:]
+
+        # Get accurate recommendation response
+        result = _deepflix_chat_reply(message, history)
+
+        # Ensure response structure is valid
+        if not isinstance(result, dict):
+            result = {
+                'reply': 'Sorry, I could not process your request.',
+                'movies': []
+            }
+
+        result.setdefault('reply', 'Here is what I found.')
+        result.setdefault('movies', [])
+
+        return jsonify(result), 200
+
     except Exception:
         app.logger.exception('DeepFlix AI chat endpoint failed')
-        return jsonify({'reply':'Sorry, something went wrong. Please try again.', 'movies':[]}), 500
 
+        return jsonify({
+            'reply': 'Sorry, something went wrong. Please try again.',
+            'movies': []
+        }), 500
 
 @app.route('/user_dashboard', endpoint='user_dashboard')
 @login_required
@@ -2645,42 +2736,142 @@ def user_dashboard():
         """, (user_id,))
         continue_watching = cursor.fetchall()
 
-        # ---------------- Recommendations ----------------
+        # ---------------- ADAPTIVE PERSONALIZED PICKS ----------------
+        # Registration genres are an onboarding signal, not a permanent preference.
+        # As watches, ratings, likes and hearts accumulate, their influence grows.
         recommendations = []
-        cursor.execute("SELECT COUNT(*) AS total FROM user_history WHERE user_id=%s", (user_id,))
-        if cursor.fetchone()['total'] == 0:
-            cursor.execute("""
-                SELECT * FROM contents
-                WHERE genre LIKE %s AND language LIKE %s AND is_kids = 0
-                ORDER BY hearts DESC LIMIT 12
-            """, (f"%{user.get('fav_genre') or ''}%", f"%{user.get('fav_language') or ''}%"))
-            recommendations = cursor.fetchall()
-        else:
-            cursor.execute("""
-                SELECT c.id, c.story
-                FROM user_history uh JOIN contents c ON uh.content_id=c.id
-                WHERE uh.user_id=%s
-                ORDER BY uh.watched_at DESC LIMIT 1
-            """, (user_id,))
-            last = cursor.fetchone() or {}
-            recommendations = fetch_recommendations(
-                cursor, user_id, last.get('story') or '', current_id=last.get('id'))
+        cursor.execute("SELECT content_id, watched_at FROM user_history WHERE user_id=%s ORDER BY watched_at DESC", (user_id,))
+        history_rows = cursor.fetchall()
+        watched_ids = {r['content_id'] for r in history_rows}
 
-        # PyMySQL fetchall() returns a tuple; normalize recommendations
-        # to a list before appending the remaining popular content.
-        recommendations = list(recommendations or [])
+        # Build a weighted profile from recent viewing + explicit positive/negative ratings.
+        genre_profile = {}
+        def add_genres(raw_genre, weight):
+            if not raw_genre or weight == 0:
+                return
+            parts = re.split(r'[,|/;]+', str(raw_genre))
+            for part in parts:
+                g = part.strip().lower()
+                if g:
+                    genre_profile[g] = genre_profile.get(g, 0.0) + weight
 
-        if len(recommendations) < 12:
-            existing = [r['id'] for r in recommendations]
-            fill_sql = "SELECT * FROM contents WHERE is_kids = 0"
-            fill_params = []
-            if existing:
-                fill_sql += f" AND id NOT IN ({','.join(['%s'] * len(existing))})"
-                fill_params.extend(existing)
-            fill_sql += " ORDER BY hearts DESC LIMIT %s"
-            fill_params.append(12 - len(recommendations))
+        # Recent watches carry more weight than older watches; watch history alone
+        # is evidence of interest, but ratings/likes provide stronger signals.
+        if history_rows:
+            cursor.execute("SELECT id AS content_id, genre FROM contents WHERE id IN (%s)" %
+                           ','.join(['%s'] * len(watched_ids)), tuple(watched_ids))
+            watched_content = {r['content_id']: r.get('genre') for r in cursor.fetchall()}
+            for idx, row in enumerate(history_rows):
+                weight = max(0.35, 1.0 - idx * 0.045)
+                add_genres(watched_content.get(row['content_id']), weight)
+
+        # Rating scale: >=4 is a positive signal; <=2 weakens that genre.
+        cursor.execute("SELECT c.genre, r.rating FROM ratings r JOIN contents c ON c.id=r.content_id WHERE r.user_id=%s", (user_id,))
+        for row in cursor.fetchall():
+            rating = float(row.get('rating') or 0)
+            add_genres(row.get('genre'), (rating - 3.0) * 0.65 if rating else 0)
+
+        # Both existing interaction tables are read defensively.
+        for table in ('likes', 'user_hearts'):
+            try:
+                cursor.execute(f"SELECT c.genre FROM {table} x JOIN contents c ON c.id=x.content_id WHERE x.user_id=%s", (user_id,))
+                for row in cursor.fetchall():
+                    add_genres(row.get('genre'), 1.4)
+            except Exception as interaction_error:
+                app.logger.warning('Skipping %s preference signals: %s', table, interaction_error)
+
+        # Onboarding genres provide a prior. Their weight fades as the amount of
+        # behavioral evidence grows, allowing the profile to evolve over time.
+        preferred_genres = [g.strip().lower() for g in (user.get('fav_genre') or '').split(',') if g.strip()]
+        preferred_language = (user.get('fav_language') or '').strip()
+        behavior_count = len(history_rows)
+        try:
+            cursor.execute("SELECT COUNT(*) AS n FROM ratings WHERE user_id=%s", (user_id,))
+            behavior_count += int((cursor.fetchone() or {}).get('n') or 0)
+            cursor.execute("SELECT COUNT(*) AS n FROM likes WHERE user_id=%s", (user_id,))
+            behavior_count += int((cursor.fetchone() or {}).get('n') or 0)
+            cursor.execute("SELECT COUNT(*) AS n FROM user_hearts WHERE user_id=%s", (user_id,))
+            behavior_count += int((cursor.fetchone() or {}).get('n') or 0)
+        except Exception:
+            pass
+
+        onboarding_weight = max(0.15, 1.0 - behavior_count * 0.07)
+        for genre in preferred_genres:
+            genre_profile[genre] = genre_profile.get(genre, 0.0) + onboarding_weight
+
+        # Fetch candidate catalog once and score candidates against the evolving profile.
+        cursor.execute("SELECT * FROM contents WHERE (is_kids=0 OR is_kids IS NULL)")
+        catalog = cursor.fetchall()
+        profile_max = max([abs(v) for v in genre_profile.values()] or [0.0])
+        profile_norm = {g: v / profile_max for g, v in genre_profile.items()} if profile_max else {}
+
+        def candidate_profile_score(content):
+            raw = str(content.get('genre') or '').lower()
+            tags = [x.strip() for x in re.split(r'[,|/;]+', raw) if x.strip()]
+            score = sum(profile_norm.get(tag, 0.0) for tag in tags)
+            # Slightly reward partial metadata matches (e.g. "Sci-Fi" variants).
+            for tag in tags:
+                for prof_genre, prof_value in profile_norm.items():
+                    if prof_genre != tag and (prof_genre in tag or tag in prof_genre):
+                        score += prof_value * 0.25
+            return score
+
+        # Engine output remains one signal, but behavior profile reranks the catalog.
+        engine_ids = []
+        if watched_ids:
+            last = history_rows[0] if history_rows else None
+            if last:
+                cursor.execute("SELECT story FROM contents WHERE id=%s", (last['content_id'],))
+                last_content = cursor.fetchone() or {}
+                engine_ids = fetch_recommendations(cursor, user_id, last_content.get('story') or '', current_id=last['content_id'], limit=60) or []
+        engine_rank = {r['id']: (len(engine_ids) - i) / max(len(engine_ids), 1) for i, r in enumerate(engine_ids)}
+
+        ranked = []
+        for item in catalog:
+            cid = item.get('id')
+            if cid in watched_ids:
+                continue
+            lang = (item.get('language') or '').lower()
+            if behavior_count <= 1 and preferred_language and preferred_language.lower() not in ('all', 'any') and preferred_language.lower() not in lang:
+                # Cold start: respect the language selected during onboarding.
+                continue
+            if preferred_language and preferred_language.lower() not in ('all', 'any') and preferred_language.lower() not in lang:
+                language_penalty = 0.30
+            else:
+                language_penalty = 0.0
+            profile_score = candidate_profile_score(item)
+            hybrid_score = engine_rank.get(cid, 0.0)
+            # Prior-only users stay genre/language-led; established profiles shift
+            # toward observed preferences + hybrid signals.
+            if behavior_count <= 1:
+                score = profile_score - language_penalty
+            else:
+                score = (0.72 * profile_score + 0.28 * hybrid_score) - language_penalty
+            if score > 0:
+                ranked.append((score, item))
+
+        ranked.sort(key=lambda pair: pair[0], reverse=True)
+        recommendations = [item for _, item in ranked[:12]]
+
+        # If profile signals are sparse, preserve selected onboarding genres and
+        # language as the cold-start ranking. Do not inject unrelated global picks.
+        if not recommendations and preferred_genres:
+            genre_clauses = ' OR '.join(['LOWER(genre) LIKE %s'] * len(preferred_genres))
+            fill_params = [f'%{g}%' for g in preferred_genres]
+            fill_sql = "SELECT * FROM contents WHERE (is_kids=0 OR is_kids IS NULL) AND (" + genre_clauses + ")"
+            if preferred_language and preferred_language.lower() not in ('all', 'any'):
+                fill_sql += " AND LOWER(language) LIKE %s"
+                fill_params.append(f'%{preferred_language.lower()}%')
+            if watched_ids:
+                fill_sql += " AND id NOT IN (" + ','.join(['%s'] * len(watched_ids)) + ")"
+                fill_params.extend(watched_ids)
+            fill_sql += " ORDER BY COALESCE(hearts,0) DESC, COALESCE(views,0) DESC LIMIT 12"
             cursor.execute(fill_sql, tuple(fill_params))
-            recommendations.extend(cursor.fetchall())
+            recommendations = cursor.fetchall()
+
+        # Deduplicate by content ID while preserving rank.
+        seen_rec_ids = set()
+        recommendations = [r for r in recommendations if r.get('id') not in seen_rec_ids and not seen_rec_ids.add(r.get('id'))]
 
         return render_template(
             "user_dashboard.html",
