@@ -1,9 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ person.name if person else name }} Movies · DeepFlix</title>
+    <title>{{ person.name if person else name }} Movies Â· DeepFlix</title>
     <!-- Tailwind CSS -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <!-- Font Awesome for icons -->
@@ -80,7 +179,7 @@
             backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(239, 68, 68, 0.3);
         }
-        /* Header profile image – small circular */
+        /* Header profile image â€“ small circular */
         .header-profile-img {
             width: 40px;
             height: 40px;
@@ -126,7 +225,7 @@
             transform: scale(1.02);
             box-shadow: 0 10px 15px -5px rgba(239, 68, 68, 0.5);
         }
-        /* Main profile image (big) – unchanged from your original */
+        /* Main profile image (big) â€“ unchanged from your original */
         .profile-image {
             width: 120px;
             height: 120px;
@@ -161,21 +260,21 @@
         <div class="flex items-center gap-4 md:gap-6">
             <!-- DeepFlix Logo -->
             <a href="{{ url_for('user_dashboard') }}" class="block">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" 
-                     alt="DeepFlix" 
+                <img src="{{ url_for('static', filename='img/logo.png') }}"
+                     alt="DeepFlix"
                      class="h-10 w-auto"
                      onerror="this.src='https://placehold.co/120x40/1f1f1f/red?text=DeepFlix'">
             </a>
 
             <!-- Home link -->
-            <a href="{{ url_for('user_dashboard') }}" 
+            <a href="{{ url_for('user_dashboard') }}"
                class="hover:text-red-500 transition flex items-center gap-1 text-sm sm:text-base">
                 <i class="fas fa-home"></i>
                 <span class="hidden sm:inline">Home</span>
             </a>
 
             <!-- Movies link -->
-            <a href="{{ url_for('all_movies') }}" 
+            <a href="{{ url_for('all_movies') }}"
                class="hover:text-red-500 transition flex items-center gap-1 text-sm sm:text-base">
                 <i class="fas fa-film"></i>
                 <span class="hidden sm:inline">Movies</span>
@@ -187,7 +286,7 @@
             <!-- Profile link (image + name) -->
             <a href="{{ url_for('profile') }}" class="profile-link">
                 {% if user and user.profile_image %}
-                    <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}"
+                    <img src="{{ image_url(user.profile_image) }}"
                          alt="Profile"
                          class="header-profile-img"
                          onerror="this.style.display='none'; this.parentElement.querySelector('.header-profile-icon').style.display='flex';">
@@ -200,13 +299,13 @@
                     </div>
                 {% endif %}
                 <span class="profile-text hidden md:inline">
-                    {{ session.get('username', 'Profile') }} 
+                    {{ session.get('username', 'Profile') }}
                     <i class="fas fa-chevron-right"></i>
                 </span>
             </a>
 
             <!-- Logout Button -->
-            <a href="{{ url_for('logout') }}" 
+            <a href="{{ url_for('logout') }}"
                class="logout-btn bg-red-600 px-5 py-2 rounded-full text-sm font-semibold flex items-center gap-2 hover:bg-red-700 transition shadow-lg">
                 <i class="fas fa-sign-out-alt"></i> Logout
             </a>
@@ -215,14 +314,14 @@
 
     <!-- Main content (adds top padding to avoid header overlap) -->
     <main class="container mx-auto px-4 md:px-8 pt-24 pb-16">
-        
+
         <!-- Profile Section: Image + Name + Movie Count -->
         <div class="flex flex-col md:flex-row items-center md:items-end gap-8 mb-12">
             <!-- Person's photo -->
             <div class="flex-shrink-0">
                 {% if person and person.profile_image %}
-                    <img src="{{ url_for('static', filename='uploads/' + person.profile_image) }}" 
-                         alt="{{ person.name }}" 
+                    <img src="{{ image_url(person.profile_image) }}"
+                         alt="{{ person.name }}"
                          class="profile-image"
                          onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.profile-placeholder').style.display='flex';">
                     <div class="profile-placeholder" style="display: none;">
@@ -255,8 +354,8 @@
                 <!-- Image container with fixed aspect ratio -->
                 <div class="image-container">
                     {% if movie.thumbnail %}
-                    <img src="{{ url_for('static', filename='uploads/' + movie.thumbnail) }}" 
-                         alt="{{ movie.title }}" 
+                    <img src="{{ image_url(movie.thumbnail) }}"
+                         alt="{{ movie.title }}"
                          class="card-image"
                          onerror="this.style.display='none'; this.parentNode.querySelector('.fallback-icon').style.display='flex';">
                     <div class="fallback-icon" style="display: none;"><i class="fas fa-film"></i></div>
@@ -300,7 +399,7 @@
 
     <!-- Optional footer (light) -->
     <footer class="text-center text-gray-600 text-sm py-6 border-t border-gray-800">
-        <p>© 2025 DeepFlix — your cinema, elevated.</p>
+        <p>Â© 2025 DeepFlix â€” your cinema, elevated.</p>
     </footer>
 </body>
 </html>

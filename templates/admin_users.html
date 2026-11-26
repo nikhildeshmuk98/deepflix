@@ -1,9 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage Users · Deepflix Admin</title>
+    <title>Manage Users Â· Deepflix Admin</title>
 
     <!-- Tailwind + Inter font -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
@@ -205,9 +304,9 @@
         <div class="flex items-center justify-between mb-8">
             <div>
                 <h1 class="text-4xl md:text-5xl font-black tracking-tight">
-                    <span class="text-red-600">👥</span> Users
+                    <span class="text-red-600">ðŸ‘¥</span> Users
                 </h1>
-                <p class="text-gray-400 mt-1 text-sm md:text-base">Manage your community – view profiles, watch time & more</p>
+                <p class="text-gray-400 mt-1 text-sm md:text-base">Manage your community â€“ view profiles, watch time & more</p>
             </div>
             <!-- optional small summary (static for now, can be dynamic) -->
             <div class="hidden md:block bg-white/5 backdrop-blur-sm px-5 py-2 rounded-full border border-white/10">
@@ -250,7 +349,7 @@
                             <td class="text-xs text-gray-500">{{ user['id'] }}</td>
                             <td>
                                 {% if user['profile_image'] %}
-                                    <img src="{{ url_for('static', filename='uploads/' ~ user['profile_image']) }}" class="profile-img">
+                                    <img src="{{ image_url(user['profile_image']) }}" class="profile-img">
                                 {% else %}
                                     {% if user['gender'] and user['gender']|lower == 'female' %}
                                         <img src="{{ url_for('static', filename='f_profile.png') }}" class="profile-img">
@@ -267,8 +366,8 @@
                                     <span class="online-dot offline"></span> <span class="text-gray-400 text-xs">Offline</span>
                                 {% endif %}
                             </td>
-                            <td><span class="bg-white/10 px-3 py-1 rounded-full text-xs">{{ user['fav_genre'] or '—' }}</span></td>
-                            <td>{{ user['fav_language'] or '—' }}</td>
+                            <td><span class="bg-white/10 px-3 py-1 rounded-full text-xs">{{ user['fav_genre'] or 'â€”' }}</span></td>
+                            <td>{{ user['fav_language'] or 'â€”' }}</td>
                             <td class="font-mono text-sm">{{ user['watch_time'] or 0 }} <span class="text-gray-500 text-xs">min</span></td>
                             <td>
                                 <a href="{{ url_for('user_wordcloud', user_id=user['id']) }}" class="inline-flex items-center gap-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 px-4 py-2 rounded-full text-xs font-medium transition border border-blue-500/30">
@@ -317,13 +416,13 @@
 
         <!-- subtle footer note -->
         <p class="text-center text-xs text-gray-700 mt-8">
-            <i class="far fa-eye mr-1"></i> showing real‑time data · deepflix admin
+            <i class="far fa-eye mr-1"></i> showing realâ€‘time data Â· deepflix admin
         </p>
     </main>
 
     <!-- optional tiny script for interactive feel (nothing heavy) -->
     <script>
-        // just to keep the online dot animation feeling fresh – no logic needed
+        // just to keep the online dot animation feeling fresh â€“ no logic needed
         // we could add a tooltip, but not necessary
     </script>
 </body>

@@ -1,14 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ content['title'] }} · DeepFlix Kids</title>
+    <title>{{ content['title'] }} Â· DeepFlix Kids</title>
     <!-- Tailwind + Font Awesome -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        /* ----- custom kid‑friendly dark theme with red accents ----- */
+        /* ----- custom kidâ€‘friendly dark theme with red accents ----- */
         body {
             background: #0a0a0a;
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -492,7 +591,7 @@
                 <span>Back</span>
             </a>
             <span class="text-xl font-bold bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent hidden sm:inline-block">
-                ✦ DeepFlix Kids
+                âœ¦ DeepFlix Kids
             </span>
         </div>
         {% if content.genre %}
@@ -510,7 +609,7 @@
         <div id="player-fallback" class="w-full h-full hidden items-center justify-center bg-gradient-to-b from-gray-900 to-black">
             <div class="text-center p-8 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10">
                 <i class="fas fa-film text-7xl text-gray-700 mb-5"></i>
-                <p class="text-gray-300 text-xl">✨ No video available for this content ✨</p>
+                <p class="text-gray-300 text-xl">âœ¨ No video available for this content âœ¨</p>
                 <p class="text-gray-500 mt-2">but you can still read reviews & explore</p>
             </div>
         </div>
@@ -549,40 +648,40 @@
                         {% if content.hero %}
                         <a href="/person/{{ content.hero }}" class="cast-item">
                             {% if content.hero_image %}
-                                {% set hero_img = content.hero_image.split('/')[-1] %}
-                                <img src="{{ url_for('static', filename='uploads/' + hero_img) }}" alt="{{ content.hero }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';">
+                                {% set hero_img = content.hero_image %}
+                                <img src="{{ image_url(hero_img) }}" alt="{{ content.hero }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';">
                                 <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>
                             {% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
                             <h4>{{ content.hero }}</h4><div class="role">Hero (Lead)</div>{% if content.hero_caste %}<div class="caste">{{ content.hero_caste }}</div>{% endif %}
                         </a>{% endif %}
                         {% if content.hero2 and content.hero2 != "None" %}
                         <a href="/person/{{ content.hero2 }}" class="cast-item">
-                            {% if content.hero2_image %}{% set hero2_img = content.hero2_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + hero2_img) }}" alt="{{ content.hero2 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            {% if content.hero2_image %}{% set hero2_img = content.hero2_image %}<img src="{{ image_url(hero2_img) }}" alt="{{ content.hero2 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
                             <h4>{{ content.hero2 }}</h4><div class="role">Hero (Supporting)</div>{% if content.hero2_caste %}<div class="caste">{{ content.hero2_caste }}</div>{% endif %}
                         </a>{% endif %}
                         {% if content.hero3 and content.hero3 != "None" %}
                         <a href="/person/{{ content.hero3 }}" class="cast-item">
-                            {% if content.hero3_image %}{% set hero3_img = content.hero3_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + hero3_img) }}" alt="{{ content.hero3 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            {% if content.hero3_image %}{% set hero3_img = content.hero3_image %}<img src="{{ image_url(hero3_img) }}" alt="{{ content.hero3 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
                             <h4>{{ content.hero3 }}</h4><div class="role">Hero (Character)</div>{% if content.hero3_caste %}<div class="caste">{{ content.hero3_caste }}</div>{% endif %}
                         </a>{% endif %}
                         {% if content.heroine %}
                         <a href="/person/{{ content.heroine }}" class="cast-item">
-                            {% if content.heroine_image %}{% set heroine_img = content.heroine_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + heroine_img) }}" alt="{{ content.heroine }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            {% if content.heroine_image %}{% set heroine_img = content.heroine_image %}<img src="{{ image_url(heroine_img) }}" alt="{{ content.heroine }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
                             <h4>{{ content.heroine }}</h4><div class="role">Heroine (Lead)</div>{% if content.heroine_caste %}<div class="caste">{{ content.heroine_caste }}</div>{% endif %}
                         </a>{% endif %}
                         {% if content.heroine2 and content.heroine2 != "None" %}
                         <a href="/person/{{ content.heroine2 }}" class="cast-item">
-                            {% if content.heroine2_image %}{% set heroine2_img = content.heroine2_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + heroine2_img) }}" alt="{{ content.heroine2 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            {% if content.heroine2_image %}{% set heroine2_img = content.heroine2_image %}<img src="{{ image_url(heroine2_img) }}" alt="{{ content.heroine2 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
                             <h4>{{ content.heroine2 }}</h4><div class="role">Heroine (Supporting)</div>{% if content.heroine2_caste %}<div class="caste">{{ content.heroine2_caste }}</div>{% endif %}
                         </a>{% endif %}
                         {% if content.heroine3 and content.heroine3 != "None" %}
                         <a href="/person/{{ content.heroine3 }}" class="cast-item">
-                            {% if content.heroine3_image %}{% set heroine3_img = content.heroine3_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + heroine3_img) }}" alt="{{ content.heroine3 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            {% if content.heroine3_image %}{% set heroine3_img = content.heroine3_image %}<img src="{{ image_url(heroine3_img) }}" alt="{{ content.heroine3 }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
                             <h4>{{ content.heroine3 }}</h4><div class="role">Heroine (Character)</div>{% if content.heroine3_caste %}<div class="caste">{{ content.heroine3_caste }}</div>{% endif %}
                         </a>{% endif %}
                         {% if content.director %}
                         <a href="/person/{{ content.director }}" class="cast-item">
-                            {% if content.director_image %}{% set director_img = content.director_image.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + director_img) }}" alt="{{ content.director }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
+                            {% if content.director_image %}{% set director_img = content.director_image %}<img src="{{ image_url(director_img) }}" alt="{{ content.director }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.avatar-placeholder').style.display='flex';"><div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle"></i></div>{% else %}<div class="avatar-placeholder"><i class="fas fa-user-circle"></i></div>{% endif %}
                             <h4>{{ content.director }}</h4><div class="role">Director</div>
                         </a>{% endif %}
                     </div>
@@ -595,12 +694,12 @@
                         <span class="mr-4 font-medium text-gray-200">Rate this:</span>
                         <div class="flex space-x-1.5" id="star-container">
                             {% for i in range(1, 6) %}
-                            <button onclick="rateContent({{ content['id'] }}, {{ i }})" class="star-btn text-4xl text-gray-600 hover:text-yellow-400 focus:outline-none transition-transform active:scale-125" data-rating="{{ i }}">★</button>
+                            <button onclick="rateContent({{ content['id'] }}, {{ i }})" class="star-btn text-4xl text-gray-600 hover:text-yellow-400 focus:outline-none transition-transform active:scale-125" data-rating="{{ i }}">â˜…</button>
                             {% endfor %}
                         </div>
                     </div>
                     <button id="shareMainBtn" class="text-gray-400 hover:text-white transition-all flex items-center gap-3 group">
-                        <i class="fas fa-share-alt group-hover:rotate-12 transition"></i> 
+                        <i class="fas fa-share-alt group-hover:rotate-12 transition"></i>
                         <span class="border-b border-transparent group-hover:border-red-400">Share</span>
                     </button>
                 </div>
@@ -609,15 +708,16 @@
             <!-- right: community reviews with glass effect (AJAX) -->
             <div class="lg:w-1/3 bg-gray-900/70 backdrop-blur-md p-6 rounded-3xl border border-gray-800/80 shadow-2xl">
                 <h3 class="text-2xl font-bold mb-5 flex items-center gap-3">
-                    <i class="fas fa-comments text-red-500"></i> 
+                    <i class="fas fa-comments text-red-500"></i>
                     <span>Community Reviews</span>
                     <span id="reviewCountBadge" class="text-sm bg-gray-800 px-3 py-1 rounded-full text-gray-300">{{ reviews|length if reviews else 0 }}</span>
                 </h3>
 
                 <!-- AJAX review form (stays open after submit) -->
                 <form id="reviewForm" class="mb-7">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="content_id" value="{{ content['id'] }}">
-                    <textarea name="review_text" id="reviewTextarea" rows="3" placeholder="Write your thoughts... (be kind!)" 
+                    <textarea name="review_text" id="reviewTextarea" rows="3" placeholder="Write your thoughts... (be kind!)"
                               class="w-full bg-gray-800/70 p-4 rounded-2xl text-white border border-gray-700 focus:border-red-500 focus:ring-2 focus:ring-red-500/30 transition-all resize-none" required></textarea>
                     <button type="submit" id="submitReviewBtn"
                             class="mt-4 w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold py-3 rounded-xl transition-all shadow-xl shadow-red-600/30 flex items-center justify-center gap-2">
@@ -670,7 +770,7 @@
                     {% for item in recommendations %}
                     <div class="recommendation-card" onclick="window.location.href='{{ url_for('watch_content', content_id=item.id) }}'">
                         <div class="poster-container">{% if item.genre %}<div class="genre-badge"><i class="fas fa-film mr-1"></i>{{ item.genre|title }}</div>{% endif %}
-                            <div class="poster-wrapper">{% if item.poster_path %}{% if item.poster_path.startswith(('http://', 'https://')) %}<img src="{{ item.poster_path }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% else %}{% set filename = item.poster_path.split('/')[-1] %}<img src="{{ url_for('static', filename='uploads/' + filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% endif %}{% else %}{% set title_filename = item.title|replace(' ', '_')|replace(':', '')|replace('-', '')|lower + '.jpg' %}<img src="{{ url_for('static', filename='uploads/' + title_filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% endif %}
+                            <div class="poster-wrapper">{% if item.poster_path %}{% if item.poster_path.startswith(('http://', 'https://')) %}<img src="{{ item.poster_path }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% else %}{% set filename = item.poster_path %}<img src="{{ image_url(filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% endif %}{% else %}{% set title_filename = item.title|replace(' ', '_')|replace(':', '')|replace('-', '')|lower + '.jpg' %}<img src="{{ image_url(title_filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">{% endif %}
                             <div class="fallback-icon"><i class="fas fa-film"></i><span>{{ item.title|truncate(18) }}</span></div></div>
                             <div class="poster-overlay"></div><div class="play-button-center"><i class="fas fa-play"></i></div>
                             <div class="movie-info-hover"><div class="movie-title-hover">{{ item.title }}</div><div class="flex items-center gap-3 mt-1">{% if item.release_year %}<div class="movie-year-hover">{{ item.release_year }}</div>{% endif %}{% if item.rating %}<div class="text-yellow-400 text-xs flex items-center gap-1"><i class="fas fa-star text-xs"></i> {{ item.rating }}/5</div>{% endif %}</div></div>
@@ -730,16 +830,16 @@
         closeModalBtn?.addEventListener('click', () => { shareModal.classList.remove('active'); });
         shareModal?.addEventListener('click', (e) => { if(e.target === shareModal) shareModal.classList.remove('active'); });
         copyLinkBtn?.addEventListener('click', () => {
-            navigator.clipboard.writeText(getCurrentPageUrl()).then(() => { showToast('📋 Link copied to clipboard!'); shareModal.classList.remove('active'); });
+            navigator.clipboard.writeText(getCurrentPageUrl()).then(() => { showToast('ðŸ“‹ Link copied to clipboard!'); shareModal.classList.remove('active'); });
         });
         whatsappBtn?.addEventListener('click', () => {
-            const text = encodeURIComponent(`🎬 Check out this movie: {{ content['title'] }} – ${getCurrentPageUrl()}`);
+            const text = encodeURIComponent(`ðŸŽ¬ Check out this movie: {{ content['title'] }} â€“ ${getCurrentPageUrl()}`);
             window.open(`https://wa.me/?text=${text}`, '_blank');
             shareModal.classList.remove('active');
         });
         instaBtn?.addEventListener('click', () => {
             navigator.clipboard.writeText(getCurrentPageUrl()).then(() => {
-                showToast('✨ Link copied! Open Instagram and share it in your story or DM.', 'success');
+                showToast('âœ¨ Link copied! Open Instagram and share it in your story or DM.', 'success');
                 shareModal.classList.remove('active');
             });
         });
@@ -778,7 +878,7 @@
             e.preventDefault();
             const formData = new FormData(reviewForm);
             const reviewText = formData.get('review_text');
-            if (!reviewText.trim()) { showToast('✏️ Please write something first', 'error'); return; }
+            if (!reviewText.trim()) { showToast('âœï¸ Please write something first', 'error'); return; }
             const submitBtn = document.getElementById('submitReviewBtn');
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Posting...';
@@ -793,9 +893,9 @@
                     const sentiment = data.sentiment_score !== undefined ? data.sentiment_score : null;
                     await addReviewToDOM(username, reviewText, sentiment);
                     reviewTextarea.value = '';
-                    showToast('⭐ Review posted!', 'success');
+                    showToast('â­ Review posted!', 'success');
                 } else {
-                    showToast('⚠️ Could not post review', 'error');
+                    showToast('âš ï¸ Could not post review', 'error');
                 }
             } catch(err) {
                 showToast('Network error, try again', 'error');
@@ -815,7 +915,7 @@
         function onPlayerError() { showFallback(); }
         function showFallback() { document.getElementById('player').classList.add('hidden'); document.getElementById('player-fallback').classList.remove('hidden'); }
         function reportProgress(forcePercent = null) { if(!player||!player.getCurrentTime) return; let percent; if(forcePercent!==null) percent=forcePercent; else { const currentTime=player.getCurrentTime(); const duration=player.getDuration(); if(!duration||duration===0) return; percent=(currentTime/duration)*100; if(Math.abs(percent-lastReportedTime)<PROGRESS_THRESHOLD) return; } percent=Math.min(100,Math.max(0,percent)); lastReportedTime=percent; fetch('/api/progress/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:contentId,progress:percent})}).catch(()=>{}); }
-        function rateContent(contentId, rating) { fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:contentId,rating:rating})}).then(res=>res.json()).then(data=>{ if(data.success){ const stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<rating){ star.classList.add('active'); star.style.color='#fbbf24'; } else { star.classList.remove('active'); star.style.color=''; } }); showToast('⭐ Rating saved!'); } }).catch(()=>showToast('⚠️ Could not save rating','error')); }
+        function rateContent(contentId, rating) { fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:contentId,rating:rating})}).then(res=>res.json()).then(data=>{ if(data.success){ const stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<rating){ star.classList.add('active'); star.style.color='#fbbf24'; } else { star.classList.remove('active'); star.style.color=''; } }); showToast('â­ Rating saved!'); } }).catch(()=>showToast('âš ï¸ Could not save rating','error')); }
         function loadUserRating() { fetch(`/api/rating/get?content_id=${contentId}`).then(res=>res.json()).then(data=>{ if(data.success&&data.rating>0){ const stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<data.rating){ star.classList.add('active'); star.style.color='#fbbf24'; } }); } }).catch(()=>{}); }
         function scrollCarousel(direction) { const carousel=document.getElementById('recommendations-carousel'); if(!carousel) return; const cardWidth=220; const scrollAmount=direction==='left'?-cardWidth*2:cardWidth*2; carousel.scrollBy({left:scrollAmount,behavior:'smooth'}); setTimeout(updateArrowStates,350); }
         function updateArrowStates() { const carousel=document.getElementById('recommendations-carousel'); if(!carousel) return; const leftArrow=document.getElementById('carousel-left'); const rightArrow=document.getElementById('carousel-right'); if(!leftArrow||!rightArrow) return; if(carousel.scrollLeft<=15) leftArrow.classList.add('disabled'); else leftArrow.classList.remove('disabled'); const maxScroll=carousel.scrollWidth-carousel.clientWidth; if(carousel.scrollLeft>=maxScroll-15) rightArrow.classList.add('disabled'); else rightArrow.classList.remove('disabled'); }

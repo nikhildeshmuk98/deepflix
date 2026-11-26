@@ -1,17 +1,116 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>DeepFlux · Cinematic Intelligence Hub</title>
-    
+    <title>DeepFlux Â· Cinematic Intelligence Hub</title>
+
     <!-- Tailwind + Font Awesome 6.5.0 -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    
+
     <!-- Chart.js 4 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
+
     <style>
         * {
             margin: 0;
@@ -360,7 +459,7 @@
         ::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 20px; }
         ::-webkit-scrollbar-thumb { background: #e50914; border-radius: 20px; }
         ::-webkit-scrollbar-thumb:hover { background: #f40612; }
-        
+
         .confusion-table {
             background: rgba(0,0,0,0.3);
             border-radius: 1rem;
@@ -385,7 +484,7 @@
             padding: 0.2rem 0.8rem;
             margin-left: 1rem;
         }
-        
+
         .advanced-section-title {
             letter-spacing: -0.3px;
         }
@@ -402,7 +501,7 @@
         </div>
         <div class="flex items-center space-x-4">
             <h1 class="text-xl md:text-2xl font-black text-white hidden sm:block tracking-wider">
-                <span class="gradient-text">ANALYTICS</span> <span class="text-white/70">· DEEP</span>
+                <span class="gradient-text">ANALYTICS</span> <span class="text-white/70">Â· DEEP</span>
             </h1>
             <a href="{{ url_for('logout') }}" class="group relative bg-gradient-to-r from-red-700 to-red-600 hover:from-red-600 hover:to-red-500 text-white px-6 py-2.5 rounded-full font-semibold text-sm shadow-2xl transition-all duration-300 flex items-center gap-2 overflow-hidden">
                 <span class="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform"></span>
@@ -425,7 +524,7 @@
                     <span class="gradient-text">Insight</span> <span class="text-white">Studio</span>
                 </h1>
                 <p class="text-gray-400 mt-1 flex items-center gap-2">
-                    <i class="fas fa-bolt text-red-500"></i> Live metrics · DeepFlux universe
+                    <i class="fas fa-bolt text-red-500"></i> Live metrics Â· DeepFlux universe
                 </p>
             </div>
         </div>
@@ -437,7 +536,7 @@
             </div>
             <div class="live-badge">
                 <span class="pulse-dot"></span>
-                <span class="text-gray-300">Live · streaming now</span>
+                <span class="text-gray-300">Live Â· streaming now</span>
             </div>
         </div>
     </div>
@@ -546,7 +645,7 @@
                         <tbody id="confusionBody"><tr><td>Fetching live metrics...</td></tr></tbody>
                     </table>
                 </div>
-                <p class="text-xs text-gray-500 mt-2">Rows: True labels, Columns: Predicted labels (based on genres) · Auto-refreshes every 5s</p>
+                <p class="text-xs text-gray-500 mt-2">Rows: True labels, Columns: Predicted labels (based on genres) Â· Auto-refreshes every 5s</p>
             </div>
             <div id="section-training" class="glass-card p-6 flex flex-col scroll-mt-24">
                 <div class="flex items-center justify-between mb-4">
@@ -554,7 +653,7 @@
                     <span class="refresh-indicator text-gray-400 text-xs"><i class="fas fa-sync-alt"></i> Live stream</span>
                 </div>
                 <div class="chart-wrapper"><canvas id="trainingChart"></canvas></div>
-                <div class="flex justify-between text-xs text-gray-500 mt-2"><span>Accuracy ↑ (green)</span><span>Val Accuracy (cyan)</span><span>Loss ↓ (red)</span><span>Val Loss (orange)</span></div>
+                <div class="flex justify-between text-xs text-gray-500 mt-2"><span>Accuracy â†‘ (green)</span><span>Val Accuracy (cyan)</span><span>Loss â†“ (red)</span><span>Val Loss (orange)</span></div>
             </div>
         </div>
     </div>
@@ -590,8 +689,8 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6" id="latestMoviesGrid">
             {% for movie in posters %}
             <div class="poster-card group" data-movie='{{ movie | tojson }}'>
-                {% set thumbnail = movie.thumbnail.split('/')[-1] if movie.thumbnail else '' %}
-                <img src="{{ url_for('static', filename='uploads/' + thumbnail) }}" alt="{{ movie.title }}" class="poster-image" onerror="this.src='https://placehold.co/400x600/1a1a1a/red?text=No+Poster'">
+                {% set thumbnail = movie.thumbnail if movie.thumbnail else '' %}
+                <img src="{{ image_url(thumbnail) }}" alt="{{ movie.title }}" class="poster-image" onerror="this.src='https://placehold.co/400x600/1a1a1a/red?text=No+Poster'">
                 <div class="poster-overlay"><p class="font-black text-lg">{{ movie.title }}</p><p class="text-sm text-red-300">{{ movie.genre if movie.genre else 'Drama' }}</p>{% if movie.release_year %}<p class="text-xs text-gray-300 mt-1">{{ movie.release_year }}</p>{% endif %}</div>
             </div>
             {% endfor %}
@@ -599,13 +698,13 @@
     </div>
 
     <!-- user galaxy, heroes, heroines, directors, producers sections (condensed but intact) -->
-    <div id="section-users" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-users text-red-500"></i><span class="gradient-text">User</span> <span class="text-white">Galaxy</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ users|length }} explorers</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for user in users %}<a href="/admin_user_analysis/{{ user.id }}" class="person-card block">{% if user.profile_image %}<img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" class="person-avatar mx-auto mb-4" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">{% else %}<div class="person-avatar mx-auto mb-4 bg-gradient-to-br from-red-900 to-gray-800 flex items-center justify-center text-4xl border-2 border-red-400"><i class="fas fa-user text-red-300"></i></div>{% endif %}<p class="font-bold text-white text-lg truncate">{{ user.username }}</p><p class="text-xs text-gray-400 mt-1">ID: {{ user.id }}</p></a>{% endfor %}</div></div>
-    <div id="section-heroes" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-star text-yellow-500"></i><span class="gradient-text">Hero</span> <span class="text-white">Icons</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ heroes|length }} legends</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for hero in heroes %}<a href="/admin_hero_analysis/{{ hero.hero }}" class="person-card block"><img src="{{ url_for('static', filename='uploads/' + hero.image) }}" class="person-avatar mx-auto mb-4 border-2 border-yellow-500/50" onerror="this.src='https://placehold.co/200x200/111827/ef4444?text=Hero'"><p class="font-bold text-white text-lg truncate">{{ hero.hero }}</p><p class="text-sm text-yellow-400 mt-1">{{ hero.count }} Movies</p></a>{% endfor %}</div></div>
-    <div id="section-heroines" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-heart text-pink-500"></i><span class="gradient-text">Heroine</span> <span class="text-white">Divas</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ heroines|length }} stars</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for heroine in heroines %}<a href="/admin_heroine_analysis/{{ heroine.heroine }}" class="person-card block"><img src="{{ url_for('static', filename='uploads/' + heroine.image) }}" class="person-avatar mx-auto mb-4 border-2 border-pink-500/50" onerror="this.src='https://placehold.co/200x200/111827/ec4899?text=Heroine'"><p class="font-bold text-white text-lg truncate">{{ heroine.heroine }}</p><p class="text-sm text-pink-400 mt-1">{{ heroine.count }} Movies</p></a>{% endfor %}</div></div>
-    <div id="section-directors" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-video text-green-500"></i><span class="gradient-text">Director</span> <span class="text-white">Visionaries</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ directors|length }} auteurs</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for director in directors %}<a href="/admin_director_analysis/{{ director.director }}" class="person-card block"><img src="{{ url_for('static', filename='uploads/' + director.image) }}" class="person-avatar mx-auto mb-4 border-2 border-green-500/50" onerror="this.src='https://placehold.co/200x200/111827/f59e0b?text=Director'"><p class="font-bold text-white text-lg truncate">{{ director.director }}</p><p class="text-sm text-green-400 mt-1">{{ director.count }} Movies</p></a>{% endfor %}</div></div>
-    <div id="section-producers" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-coins text-yellow-500"></i><span class="gradient-text">Producer</span> <span class="text-white">Masters</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ producers|length }} producers</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for producer in producers %}<a href="/admin_producer_analysis/{{ producer.producer }}" class="person-card block"><img src="{{ url_for('static', filename='uploads/' + producer.image) }}" class="person-avatar mx-auto mb-4 border-2 border-yellow-500/50" onerror="this.src='https://placehold.co/200x200/111827/f59e0b?text=Producer'"><p class="font-bold text-white text-lg truncate">{{ producer.producer }}</p><p class="text-sm text-yellow-400 mt-1">{{ producer.count }} Movies</p></a>{% endfor %}</div></div>
+    <div id="section-users" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-users text-red-500"></i><span class="gradient-text">User</span> <span class="text-white">Galaxy</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ users|length }} explorers</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for user in users %}<a href="/admin_user_analysis/{{ user.id }}" class="person-card block">{% if user.profile_image %}<img src="{{ image_url(user.profile_image) }}" class="person-avatar mx-auto mb-4" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">{% else %}<div class="person-avatar mx-auto mb-4 bg-gradient-to-br from-red-900 to-gray-800 flex items-center justify-center text-4xl border-2 border-red-400"><i class="fas fa-user text-red-300"></i></div>{% endif %}<p class="font-bold text-white text-lg truncate">{{ user.username }}</p><p class="text-xs text-gray-400 mt-1">ID: {{ user.id }}</p></a>{% endfor %}</div></div>
+    <div id="section-heroes" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-star text-yellow-500"></i><span class="gradient-text">Hero</span> <span class="text-white">Icons</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ heroes|length }} legends</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for hero in heroes %}<a href="/admin_hero_analysis/{{ hero.hero }}" class="person-card block"><img src="{{ image_url(hero.image) }}" class="person-avatar mx-auto mb-4 border-2 border-yellow-500/50" onerror="this.src='https://placehold.co/200x200/111827/ef4444?text=Hero'"><p class="font-bold text-white text-lg truncate">{{ hero.hero }}</p><p class="text-sm text-yellow-400 mt-1">{{ hero.count }} Movies</p></a>{% endfor %}</div></div>
+    <div id="section-heroines" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-heart text-pink-500"></i><span class="gradient-text">Heroine</span> <span class="text-white">Divas</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ heroines|length }} stars</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for heroine in heroines %}<a href="/admin_heroine_analysis/{{ heroine.heroine }}" class="person-card block"><img src="{{ image_url(heroine.image) }}" class="person-avatar mx-auto mb-4 border-2 border-pink-500/50" onerror="this.src='https://placehold.co/200x200/111827/ec4899?text=Heroine'"><p class="font-bold text-white text-lg truncate">{{ heroine.heroine }}</p><p class="text-sm text-pink-400 mt-1">{{ heroine.count }} Movies</p></a>{% endfor %}</div></div>
+    <div id="section-directors" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-video text-green-500"></i><span class="gradient-text">Director</span> <span class="text-white">Visionaries</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ directors|length }} auteurs</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for director in directors %}<a href="/admin_director_analysis/{{ director.director }}" class="person-card block"><img src="{{ image_url(director.image) }}" class="person-avatar mx-auto mb-4 border-2 border-green-500/50" onerror="this.src='https://placehold.co/200x200/111827/f59e0b?text=Director'"><p class="font-bold text-white text-lg truncate">{{ director.director }}</p><p class="text-sm text-green-400 mt-1">{{ director.count }} Movies</p></a>{% endfor %}</div></div>
+    <div id="section-producers" class="mt-20 scroll-mt-24"><div class="flex items-center justify-between mb-8"><h2 class="text-3xl font-black flex items-center gap-3"><i class="fas fa-coins text-yellow-500"></i><span class="gradient-text">Producer</span> <span class="text-white">Masters</span></h2><span class="text-gray-400 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full">{{ producers|length }} producers</span></div><div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">{% for producer in producers %}<a href="/admin_producer_analysis/{{ producer.producer }}" class="person-card block"><img src="{{ image_url(producer.image) }}" class="person-avatar mx-auto mb-4 border-2 border-yellow-500/50" onerror="this.src='https://placehold.co/200x200/111827/f59e0b?text=Producer'"><p class="font-bold text-white text-lg truncate">{{ producer.producer }}</p><p class="text-sm text-yellow-400 mt-1">{{ producer.count }} Movies</p></a>{% endfor %}</div></div>
 
-    <footer class="footer mt-20 text-center text-gray-500 text-sm py-6 rounded-t-3xl"><i class="far fa-chart-bar mr-1 text-red-500"></i> DeepFlix Analytics · Cinematic data stream<span class="mx-2">·</span><i class="far fa-clock mr-1"></i> <span id="currentYear"></span></footer>
+    <footer class="footer mt-20 text-center text-gray-500 text-sm py-6 rounded-t-3xl"><i class="far fa-chart-bar mr-1 text-red-500"></i> DeepFlix Analytics Â· Cinematic data stream<span class="mx-2">Â·</span><i class="far fa-clock mr-1"></i> <span id="currentYear"></span></footer>
 </div>
 
 <!-- Modals -->
@@ -627,10 +726,10 @@
     const users = {{ users | default([]) | tojson }};
     const topUsersData = {{ top_users | default([]) | tojson }};
 
-    function truncate(label, max=15) { return label.length > max ? label.substring(0, max)+'…' : label; }
+    function truncate(label, max=15) { return label.length > max ? label.substring(0, max)+'â€¦' : label; }
     const vibrantPie = ['#e50914', '#f97316', '#facc15', '#4ade80', '#22d3ee', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#f43f5e', '#8b5cf6', '#06b6d4'];
     const barColors = ['#e50914', '#f97316', '#facc15', '#4ade80', '#22d3ee', '#3b82f6', '#a855f7', '#ec4899'];
-    
+
     // Existing charts init
     if(languages.length) new Chart(document.getElementById('languageChart'), {type:'pie', data:{labels:languages.map(l=>l.language), datasets:[{data:languages.map(l=>l.count), backgroundColor:vibrantPie.slice(0,languages.length), borderColor:'#1f2937', borderWidth:2}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{color:'#d1d5db', font:{size:11}}}, tooltip:{backgroundColor:'#1f2937',borderColor:'#e50914'}}}});
     if(genres.length) new Chart(document.getElementById('genreChart'), {type:'pie', data:{labels:genres.map(g=>g.genre), datasets:[{data:genres.map(g=>g.count), backgroundColor:vibrantPie.slice(0,genres.length), borderColor:'#1f2937', borderWidth:2}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{color:'#d1d5db'}}, tooltip:{backgroundColor:'#1f2937',borderColor:'#e50914'}}}});
@@ -717,7 +816,7 @@
         } catch(err) { console.warn(err); }
     }
     loadModelMetrics(); setInterval(loadModelMetrics, 5000);
-    
+
     // Modal, search, stat tiles logic (identical to original)
     const statModal = document.getElementById('statModal'), modalTitle=document.getElementById('modalTitle'), modalBody=document.getElementById('modalBody');
     const closeModal = document.getElementById('closeModal'), movieModal=document.getElementById('movieModal'), movieModalContent=document.getElementById('movieModalContent'), closeMovieModal=document.getElementById('closeMovieModal');
@@ -725,17 +824,17 @@
     closeMovieModal.onclick = ()=>movieModal.classList.remove('active');
     window.onclick = e => { if(e.target===statModal) statModal.classList.remove('active'); if(e.target===movieModal) movieModal.classList.remove('active'); };
     function showStatModal(title, html) { modalTitle.innerText = title; modalBody.innerHTML = html; statModal.classList.add('active'); }
-    function showMovieModal(movie) { const thumb = movie.thumbnail ? movie.thumbnail.split('/').pop() : ''; const imgUrl = thumb ? `/static/uploads/${thumb}` : 'https://placehold.co/300x450/1f2937/red?text=No+Poster'; movieModalContent.innerHTML = `<img src="${imgUrl}" class="w-56 h-72 object-cover rounded-2xl mx-auto mb-5 border-4 border-red-500 shadow-2xl"><h3 class="text-3xl font-black text-red-400">${movie.title}</h3><p class="text-gray-300 mt-3"><span class="text-red-500">Language:</span> ${movie.language || 'N/A'}</p><p class="text-gray-300"><span class="text-red-500">Genre:</span> ${movie.genre || 'N/A'}</p><p class="text-gray-300"><span class="text-red-500">Views:</span> ${movie.views || 0}</p><p class="text-gray-300"><span class="text-red-500">Hearts:</span> ${movie.hearts || 0}</p>`; movieModal.classList.add('active'); }
+    function showMovieModal(movie) { const imgUrl = movie.thumbnail || 'https://placehold.co/300x450/1f2937/red?text=No+Poster'; movieModalContent.innerHTML = `<img src="${imgUrl}" class="w-56 h-72 object-cover rounded-2xl mx-auto mb-5 border-4 border-red-500 shadow-2xl"><h3 class="text-3xl font-black text-red-400">${movie.title}</h3><p class="text-gray-300 mt-3"><span class="text-red-500">Language:</span> ${movie.language || 'N/A'}</p><p class="text-gray-300"><span class="text-red-500">Genre:</span> ${movie.genre || 'N/A'}</p><p class="text-gray-300"><span class="text-red-500">Views:</span> ${movie.views || 0}</p><p class="text-gray-300"><span class="text-red-500">Hearts:</span> ${movie.hearts || 0}</p>`; movieModal.classList.add('active'); }
     document.querySelectorAll('.poster-card').forEach(card => { card.addEventListener('click', () => { let movieData = null; try { movieData = JSON.parse(card.getAttribute('data-movie')); } catch(e) {} if(movieData) showMovieModal(movieData); }); });
-    document.getElementById('stat-movies').addEventListener('click',()=>{ let html='<div class="grid grid-cols-2 sm:grid-cols-3 gap-5">'; posters.forEach(m=>{ let thumb=m.thumbnail?m.thumbnail.split('/').pop():''; html+=`<div><img src="${thumb?`/static/uploads/${thumb}`:'https://placehold.co/200x300/1f2937/red'}" class="w-full aspect-[2/3] object-cover rounded-xl border-2 border-red-500/30"><p class="text-sm mt-2">${m.title}</p></div>`; }); html+='</div>'; showStatModal('All Movies',html); });
+    document.getElementById('stat-movies').addEventListener('click',()=>{ let html='<div class="grid grid-cols-2 sm:grid-cols-3 gap-5">'; posters.forEach(m=>{ html+=`<div><img src="${m.thumbnail || 'https://placehold.co/200x300/1f2937/red'}" class="w-full aspect-[2/3] object-cover rounded-xl border-2 border-red-500/30"><p class="text-sm mt-2">${m.title}</p></div>`; }); html+='</div>'; showStatModal('All Movies',html); });
     document.getElementById('stat-languages').addEventListener('click',()=>{ let html='<ul class="space-y-3 text-lg">'; languages.forEach(l=>{ html+=`<li class="flex justify-between border-b border-gray-700 pb-2"><span>${l.language}</span><span class="text-red-500 font-bold">${l.count}</span></li>`; }); html+='</ul>'; showStatModal('Languages Distribution',html); });
     document.getElementById('stat-genres').addEventListener('click',()=>{ let html='<ul class="space-y-3 text-lg">'; genres.forEach(g=>{ html+=`<li class="flex justify-between border-b border-gray-700 pb-2"><span>${g.genre}</span><span class="text-red-500 font-bold">${g.count}</span></li>`; }); html+='</ul>'; showStatModal('Genres Breakdown',html); });
     document.getElementById('stat-views').addEventListener('click',()=>{ let total=mostWatched.reduce((a,w)=>a+w.views,0); let html=`<p class="text-2xl mb-5">Total Views: <span class="text-red-500 font-black">${total}</span></p><h3 class="font-bold text-xl mb-3">Most Watched</h3><ul class="space-y-3">${mostWatched.map(w=>`<li class="flex justify-between border-b border-gray-700 pb-2"><span>${w.title}</span><span class="text-purple-400">${w.views} views</span></li>`).join('')}</ul>`; showStatModal('Total Views Details',html); });
-    
+
     // search (simplified working)
     const searchInput = document.getElementById('searchInput'), searchDropdown = document.getElementById('searchDropdown');
     let searchItems = []; posters.forEach(m=>searchItems.push({type:'movie', label:m.title, data:m})); heroes.forEach(h=>searchItems.push({type:'hero', label:h.hero, url:`/admin_hero_analysis/${h.hero}`})); heroines.forEach(hn=>searchItems.push({type:'heroine', label:hn.heroine, url:`/admin_heroine_analysis/${hn.heroine}`})); directors.forEach(d=>searchItems.push({type:'director', label:d.director, url:`/admin_director_analysis/${d.director}`})); users.forEach(u=>searchItems.push({type:'user', label:u.username, url:`/admin_user_analysis/${u.id}`})); genres.forEach(g=>searchItems.push({type:'genre', label:g.genre, data:g})); languages.forEach(l=>searchItems.push({type:'language', label:l.language, data:l})); ['section-analytics','section-advanced-analytics','section-ai-models','section-top-performers','section-latest-movies','section-users','section-heroes','section-heroines','section-directors','section-producers'].forEach(id=>searchItems.push({type:'section', label:id.replace('section-','').replace(/-/g,' ').toUpperCase(), targetId:id}));
-    function filterSearch(term){ if(!term.trim()){ searchDropdown.classList.remove('active'); return; } const lower=term.toLowerCase(); const results=searchItems.filter(i=>i.label.toLowerCase().includes(lower)).slice(0,10); if(!results.length){ searchDropdown.classList.remove('active'); return; } let html=''; results.forEach(i=>{ let icon={movie:'🎬',hero:'⭐',heroine:'💖',director:'🎥',user:'👤',genre:'🏷️',language:'🌐',section:'📍'}[i.type]||'🔍'; html+=`<div class="search-item" data-type="${i.type}" data-target="${i.targetId||''}" data-url="${i.url||''}" data-json='${JSON.stringify(i.data||{})}'><span>${icon}</span><span class="flex-1">${i.label}</span><span class="bg-red-500/20 text-red-300 px-3 py-1 rounded-full text-xs">${i.type}</span></div>`; }); searchDropdown.innerHTML=html; searchDropdown.classList.add('active'); document.querySelectorAll('.search-item').forEach(el=>{ el.addEventListener('click',()=>{ const targetId=el.dataset.target, url=el.dataset.url; if(targetId) document.getElementById(targetId)?.scrollIntoView({behavior:'smooth',block:'start'}); else if(url) window.location.href=url; else if(el.dataset.type==='movie'){ let data; try{ data=JSON.parse(el.dataset.json); if(data) showMovieModal(data); }catch(e){} } searchDropdown.classList.remove('active'); searchInput.value=''; }); }); }
+    function filterSearch(term){ if(!term.trim()){ searchDropdown.classList.remove('active'); return; } const lower=term.toLowerCase(); const results=searchItems.filter(i=>i.label.toLowerCase().includes(lower)).slice(0,10); if(!results.length){ searchDropdown.classList.remove('active'); return; } let html=''; results.forEach(i=>{ let icon={movie:'ðŸŽ¬',hero:'â­',heroine:'ðŸ’–',director:'ðŸŽ¥',user:'ðŸ‘¤',genre:'ðŸ·ï¸',language:'ðŸŒ',section:'ðŸ“'}[i.type]||'ðŸ”'; html+=`<div class="search-item" data-type="${i.type}" data-target="${i.targetId||''}" data-url="${i.url||''}" data-json='${JSON.stringify(i.data||{})}'><span>${icon}</span><span class="flex-1">${i.label}</span><span class="bg-red-500/20 text-red-300 px-3 py-1 rounded-full text-xs">${i.type}</span></div>`; }); searchDropdown.innerHTML=html; searchDropdown.classList.add('active'); document.querySelectorAll('.search-item').forEach(el=>{ el.addEventListener('click',()=>{ const targetId=el.dataset.target, url=el.dataset.url; if(targetId) document.getElementById(targetId)?.scrollIntoView({behavior:'smooth',block:'start'}); else if(url) window.location.href=url; else if(el.dataset.type==='movie'){ let data; try{ data=JSON.parse(el.dataset.json); if(data) showMovieModal(data); }catch(e){} } searchDropdown.classList.remove('active'); searchInput.value=''; }); }); }
     searchInput.addEventListener('input',e=>filterSearch(e.target.value));
     document.addEventListener('click',e=>{ if(!searchInput.contains(e.target) && !searchDropdown.contains(e.target)) searchDropdown.classList.remove('active'); });
     document.getElementById('currentYear').textContent=new Date().getFullYear();

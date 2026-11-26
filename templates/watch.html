@@ -1,10 +1,109 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#0a0a0a">
-    <title>{{ content['title'] }} · DeepFlix</title>
+    <title>{{ content['title'] }} Â· DeepFlix</title>
 
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -359,7 +458,7 @@
     <div class="avatar">
         <span>{{ name[:1]|upper }}</span>
         {% if image %}
-        <img src="{{ url_for('static', filename='uploads/' + image.split('/')[-1]) }}" alt="{{ name }}" loading="lazy" onerror="this.remove()">
+        <img src="{{ image_url(image) }}" alt="{{ name }}" loading="lazy" onerror="this.remove()">
         {% endif %}
     </div>
     <h4>{{ name }}</h4>
@@ -444,7 +543,7 @@
                         <span class="lbl">Rate this:</span>
                         <div class="stars" id="star-container">
                             {% for i in range(1, 6) %}
-                            <button type="button" onclick="rateContent({{ content['id'] }}, {{ i }})" class="star-btn" data-rating="{{ i }}" aria-label="Rate {{ i }} out of 5">★</button>
+                            <button type="button" onclick="rateContent({{ content['id'] }}, {{ i }})" class="star-btn" data-rating="{{ i }}" aria-label="Rate {{ i }} out of 5">â˜…</button>
                             {% endfor %}
                         </div>
                     </div>
@@ -461,8 +560,9 @@
                 </h3>
 
                 <form action="{{ url_for('api_review') }}" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="content_id" value="{{ content['id'] }}">
-                    <textarea name="review_text" rows="3" required placeholder="Write your honest review…" class="review-textarea"></textarea>
+                    <textarea name="review_text" rows="3" required placeholder="Write your honest reviewâ€¦" class="review-textarea"></textarea>
                     <button type="submit" class="post-btn"><i class="fas fa-paper-plane"></i> Post review</button>
                 </form>
 
@@ -514,7 +614,7 @@
                                 {% if item.thumbnail.startswith('data:image') or item.thumbnail.startswith(('http://', 'https://')) %}
                                     <img src="{{ item.thumbnail }}" alt="{{ item.title }}" loading="lazy" onerror="this.remove()">
                                 {% else %}
-                                    <img src="{{ url_for('static', filename='uploads/' + item.thumbnail) }}" alt="{{ item.title }}" loading="lazy" onerror="this.remove()">
+                                    <img src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}" loading="lazy" onerror="this.remove()">
                                 {% endif %}
                             {% endif %}
 

@@ -1,9 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>DeepFlix Kids · magical movie wall</title>
+    <title>DeepFlix Kids Â· magical movie wall</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -528,7 +627,7 @@
             <div class="search-bar">
                 <i class="fas fa-search"></i>
                 <form method="GET" action="{{ url_for('kids_search') }}" style="display:flex;flex:1;gap:6px;">
-                    <input type="text" name="q" placeholder="Search kids movies…">
+                    <input type="text" name="q" placeholder="Search kids moviesâ€¦">
                     <button type="submit"><i class="fas fa-arrow-right"></i></button>
                 </form>
             </div>
@@ -538,7 +637,7 @@
                     <span class="bell-count" id="bellCount">{{ kids_notifications|length if kids_notifications else 0 }}</span>
                     <div class="notif-drop" id="notifDrop">
                         <h4><i class="fas fa-bell" style="color:var(--red)"></i> Notifications</h4>
-                        {% if kids_notifications %}<ul>{% for n in kids_notifications %}<li><strong>{{ n.content_title }}</strong> — {{ n.message }}</li>{% endfor %}</ul>
+                        {% if kids_notifications %}<ul>{% for n in kids_notifications %}<li><strong>{{ n.content_title }}</strong> â€” {{ n.message }}</li>{% endfor %}</ul>
                         {% else %}<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:10px;">No new notifications</p>{% endif %}
                     </div>
                 </div>
@@ -550,33 +649,33 @@
         <div class="hero-body" id="heroBody">
             <div id="heroData" style="display:none;">[{% for item in kids_contents %}{"id":{{item.id}},"title":{{item.title|tojson}},"thumbnail":{{item.thumbnail|tojson}},"backdrop_url":{{item.backdrop_url|tojson if item.backdrop_url else ''|tojson}},"genre":{{item.genre|tojson}},"language":{{item.language|tojson}},"release_year":{{item.release_year|tojson if item.release_year else '""'}},"rating":{{item.rating|tojson if item.rating else '""'}},"duration":{{item.duration|tojson if item.duration else '""'}},"story":{{item.story|tojson if item.story else '""'}},"director":{{item.director|tojson if item.director else '""'}},"director_image":{{item.director_image|tojson if item.director_image else '""'}},"hero":{{item.hero|tojson if item.hero else '""'}},"hero_image":{{item.hero_image|tojson if item.hero_image else '""'}},"hero_caste":{{item.hero_caste|tojson if item.hero_caste else '""'}},"hero2":{{item.hero2|tojson if item.hero2 else '""'}},"hero2_image":{{item.hero2_image|tojson if item.hero2_image else '""'}},"hero2_caste":{{item.hero2_caste|tojson if item.hero2_caste else '""'}},"hero3":{{item.hero3|tojson if item.hero3 else '""'}},"hero3_image":{{item.hero3_image|tojson if item.hero3_image else '""'}},"hero3_caste":{{item.hero3_caste|tojson if item.hero3_caste else '""'}},"heroine":{{item.heroine|tojson if item.heroine else '""'}},"heroine_image":{{item.heroine_image|tojson if item.heroine_image else '""'}},"heroine_caste":{{item.heroine_caste|tojson if item.heroine_caste else '""'}},"heroine2":{{item.heroine2|tojson if item.heroine2 else '""'}},"heroine2_image":{{item.heroine2_image|tojson if item.heroine2_image else '""'}},"heroine2_caste":{{item.heroine2_caste|tojson if item.heroine2_caste else '""'}},"heroine3":{{item.heroine3|tojson if item.heroine3 else '""'}},"heroine3_image":{{item.heroine3_image|tojson if item.heroine3_image else '""'}},"heroine3_caste":{{item.heroine3_caste|tojson if item.heroine3_caste else '""'}}}{% if not loop.last %},{% endif %}{% endfor %}]</div>
             <div class="hero-poster-wrap"><div class="hero-poster"><img id="heroPosterImg" src=""><a id="heroPlayLink" href="#" class="hero-poster-overlay"><div class="play-ripple"><i class="fas fa-play"></i></div></a></div></div>
-            <div class="hero-info"><h1 class="hero-title" id="heroTitle">✨ Loading</h1><div class="hero-badges" id="heroBadges"></div><div class="story-label"><i class="fas fa-book-open"></i> Story</div><p class="story-text" id="hStory"></p><div class="hero-meta-row" id="hMeta"></div><div class="cast-section-label"><i class="fas fa-users"></i> Cast & Crew</div><div class="cast-row" id="hCast"></div><a id="heroWatchBtn" href="#" class="watch-now-btn"><i class="fas fa-play"></i> Watch Now</a></div>
+            <div class="hero-info"><h1 class="hero-title" id="heroTitle">âœ¨ Loading</h1><div class="hero-badges" id="heroBadges"></div><div class="story-label"><i class="fas fa-book-open"></i> Story</div><p class="story-text" id="hStory"></p><div class="hero-meta-row" id="hMeta"></div><div class="cast-section-label"><i class="fas fa-users"></i> Cast & Crew</div><div class="cast-row" id="hCast"></div><a id="heroWatchBtn" href="#" class="watch-now-btn"><i class="fas fa-play"></i> Watch Now</a></div>
         </div>
         {% endif %}
     </div>
 </section>
 
 <!-- continue watching, language, etc -->
-{% if continue_watching %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-play-circle"></i> Continue Watching <span class="divider"></span></h2><div class="h-scroll">{% for item in continue_watching %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:{{ (item.progress/item.duration*100) if item.duration else 0 }}%"></div></div></div>{% endfor %}</div></div>{% endif %}
+{% if continue_watching %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-play-circle"></i> Continue Watching <span class="divider"></span></h2><div class="h-scroll">{% for item in continue_watching %}<div class="movie-card"><img class="thumb" src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:{{ (item.progress/item.duration*100) if item.duration else 0 }}%"></div></div></div>{% endfor %}</div></div>{% endif %}
 
-<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-language"></i> Browse by Language <span class="divider"></span></h2><div class="lang-row">{% set languages=[{'name':'Telugu','image':'kidstelugu.png'},{'name':'Hindi','image':'kidshindi.png'},{'name':'English','image':'kidsenglish.png'},{'name':'Tamil','image':'kidstamil.png'},{'name':'Malayalam','image':'kidsmalayalam.png'},{'name':'Punjabi','image':'kidspunjab.png'}] %}{% for lang in languages %}<a href="{{ url_for('kids_dashboard',search=request.args.get('search',''),language=lang.name,genre=request.args.get('genre','')) }}" class="lang-card"><img src="{{ url_for('static',filename='uploads/'+lang.image) }}" onerror="this.src='https://placehold.co/400x200/111827/ef4444?text={{ lang.name }}'"><div class="lang-label">{{ lang.name }}</div></a>{% endfor %}</div></div>
+<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-language"></i> Browse by Language <span class="divider"></span></h2><div class="lang-row">{% set languages=[{'name':'Telugu','image':'kidstelugu.png'},{'name':'Hindi','image':'kidshindi.png'},{'name':'English','image':'kidsenglish.png'},{'name':'Tamil','image':'kidstamil.png'},{'name':'Malayalam','image':'kidsmalayalam.png'},{'name':'Punjabi','image':'kidspunjab.png'}] %}{% for lang in languages %}<a href="{{ url_for('kids_dashboard',search=request.args.get('search',''),language=lang.name,genre=request.args.get('genre','')) }}" class="lang-card"><img src="{{ image_url(lang.image) }}" onerror="this.src='https://placehold.co/400x200/111827/ef4444?text={{ lang.name }}'"><div class="lang-label">{{ lang.name }}</div></a>{% endfor %}</div></div>
 
-{% if trending_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-fire"></i> 🔥 Trending Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in trending_kids %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div><div class="rank-num">{{ loop.index }}</div></div>{% endfor %}</div></div>{% endif %}
-{% if comedy_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-laugh-squint"></i> 😂 Comedy Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in comedy_kids %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
-{% if action_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-bolt"></i> 💥 Action Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in action_kids %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
-{% if deepflix_top %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-crown"></i> 👑 Top 15 Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in deepflix_top %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div></div>{% endfor %}</div></div>{% endif %}
-{% if because_you_watched %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-star"></i> ⭐ Because You Watched <span class="divider"></span></h2><div class="h-scroll">{% for item in because_you_watched %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
-{% if new_arrivals %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-gift"></i> 🆕 New Arrivals <span class="divider"></span></h2><div class="h-scroll">{% for item in new_arrivals %}<div class="movie-card"><img class="thumb" src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
+{% if trending_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-fire"></i> ðŸ”¥ Trending Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in trending_kids %}<div class="movie-card"><img class="thumb" src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div><div class="rank-num">{{ loop.index }}</div></div>{% endfor %}</div></div>{% endif %}
+{% if comedy_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-laugh-squint"></i> ðŸ˜‚ Comedy Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in comedy_kids %}<div class="movie-card"><img class="thumb" src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
+{% if action_kids %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-bolt"></i> ðŸ’¥ Action Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in action_kids %}<div class="movie-card"><img class="thumb" src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
+{% if deepflix_top %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-crown"></i> ðŸ‘‘ Top 15 Kids <span class="divider"></span></h2><div class="h-scroll">{% for item in deepflix_top %}<div class="movie-card"><img class="thumb" src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span></div></div>{% endfor %}</div></div>{% endif %}
+{% if because_you_watched %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-star"></i> â­ Because You Watched <span class="divider"></span></h2><div class="h-scroll">{% for item in because_you_watched %}<div class="movie-card"><img class="thumb" src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
+{% if new_arrivals %}<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-gift"></i> ðŸ†• New Arrivals <span class="divider"></span></h2><div class="h-scroll">{% for item in new_arrivals %}<div class="movie-card"><img class="thumb" src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}"><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="card-title-bar"><span>{{ item.title }}</span><small>{{ item.genre }}</small></div></div>{% endfor %}</div></div>{% endif %}
 
-<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-film"></i> All Kids Movies <span class="divider"></span></h2><div class="poster-grid">{% for item in kids_contents %}<div class="grid-card"><img src="{{ url_for('static',filename='uploads/'+item.thumbnail) }}" alt="{{ item.title }}"><span class="kids-badge"><i class="fas fa-child"></i> kids</span><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="grid-card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="grid-overlay"><h3>{{ item.title }}</h3><small>{{ item.genre }}{% if item.language %} · {{ item.language }}{% endif %}</small></div></div>{% else %}<div style="grid-column:1/-1;text-align:center;padding:40px;"><p style="color:var(--red);font-weight:800;">No movies yet — coming soon!</p></div>{% endfor %}</div></div>
+<div class="content-wrap sec"><h2 class="sec-title"><i class="fas fa-film"></i> All Kids Movies <span class="divider"></span></h2><div class="poster-grid">{% for item in kids_contents %}<div class="grid-card"><img src="{{ image_url(item.thumbnail) }}" alt="{{ item.title }}"><span class="kids-badge"><i class="fas fa-child"></i> kids</span><a href="{{ url_for('kids_watch',content_id=item.id) }}" class="grid-card-play"><div class="play-dot"><i class="fas fa-play"></i></div></a><div class="grid-overlay"><h3>{{ item.title }}</h3><small>{{ item.genre }}{% if item.language %} Â· {{ item.language }}{% endif %}</small></div></div>{% else %}<div style="grid-column:1/-1;text-align:center;padding:40px;"><p style="color:var(--red);font-weight:800;">No movies yet â€” coming soon!</p></div>{% endfor %}</div></div>
 
-<footer class="site-footer"><p><i class="fas fa-star" style="color:var(--red);"></i> DeepFlix Kids — <span>safe & fun</span> for every child <i class="fas fa-star" style="color:var(--red);"></i></p></footer>
+<footer class="site-footer"><p><i class="fas fa-star" style="color:var(--red);"></i> DeepFlix Kids â€” <span>safe & fun</span> for every child <i class="fas fa-star" style="color:var(--red);"></i></p></footer>
 
 <script>
     function toggleNotif(){const d=document.getElementById('notifDrop');d.style.display=d.style.display==='block'?'none':'block';}
     document.addEventListener('click',function(e){const drop=document.getElementById('notifDrop');const bell=document.querySelector('.bell-wrap');if(drop&&drop.style.display==='block'&&bell&&!bell.contains(e.target))drop.style.display='none';});
     {% if kids_contents %}
-    (function(){const dataEl=document.getElementById('heroData');if(!dataEl)return;let items;try{items=JSON.parse(dataEl.innerHTML);}catch(e){console.warn(e);return;}if(!items.length)return;let cur=0;const BASE="{{ url_for('static',filename='uploads/') }}";const WATCH="{{ url_for('kids_watch',content_id=0) }}";const bgEl=document.getElementById('heroBg');const imgEl=document.getElementById('heroPosterImg');const playA=document.getElementById('heroPlayLink');const watchA=document.getElementById('heroWatchBtn');const titleEl=document.getElementById('heroTitle');const gEl=document.getElementById('hGenre');const lEl=document.getElementById('hLang');const yEl=document.getElementById('hYear');const rEl=document.getElementById('hRating');const sEl=document.getElementById('hStory');const metaEl=document.getElementById('hMeta');const castEl=document.getElementById('hCast');function getUrl(path,isBackdrop=false){if(!path||path==='null'||path==='""')return isBackdrop?'https://placehold.co/1400x500/060608/ef4444?text=DeepFlix+Kids':'https://placehold.co/400x600/111827/ef4444?text=Poster';if(path.startsWith('http'))return path;return BASE+path;}function render(i){const it=items[i];if(!it)return;const watchUrl=WATCH.replace('/0','/'+it.id);let backdropImg=it.backdrop_url?getUrl(it.backdrop_url,true):'https://placehold.co/1400x500/060608/ef4444?text=DeepFlix+Kids';bgEl.style.opacity='0';setTimeout(()=>{bgEl.style.backgroundImage=`url('${backdropImg}')`;bgEl.style.opacity='1';},120);imgEl.src=it.thumbnail?getUrl(it.thumbnail,false):'https://placehold.co/400x600/111827/ef4444?text=Poster';playA.href=watchA.href=watchUrl;titleEl.textContent=it.title||'Kids Movie';let badgesHTML=`<div class="badge"><i class="fas fa-tag"></i><span>${it.genre||'—'}</span></div><div class="badge"><i class="fas fa-language"></i><span>${it.language||'—'}</span></div><div class="badge"><i class="fas fa-calendar-alt"></i><span>${it.release_year||'—'}</span></div><div class="badge"><i class="fas fa-star" style="color:#facc15"></i><span>${it.rating||'Kids'}</span></div>`;document.getElementById('heroBadges').innerHTML=badgesHTML;sEl.textContent=it.story||'Magical adventure awaits!';let mc='';if(it.duration)mc+=`<div class="meta-chip"><div class="mc-label">Duration</div><div class="mc-val">${it.duration}min</div></div>`;if(it.director)mc+=`<div class="meta-chip"><div class="mc-label">Director</div><div class="mc-val">${it.director}</div></div>`;metaEl.innerHTML=mc||'<div class="meta-chip"><div class="mc-label">Fun</div><div class="mc-val">✨</div></div>';let cc='';function chip(name,img,role){if(!name||name==='null')return;let imgSrc=img?getUrl(img,false):`https://placehold.co/200x200/1f2937/ef4444?text=${encodeURIComponent(name.charAt(0))}`;cc+=`<div class="cast-chip"><img src="${imgSrc}" onerror="this.src='https://placehold.co/200x200/1f2937/ef4444?text=${encodeURIComponent(name.charAt(0))}'"><div class="cc-name">${name}</div><div class="cc-role">${role}</div></div>`;}chip(it.hero,it.hero_image,it.hero_caste||'Hero');chip(it.hero2,it.hero2_image,it.hero2_caste||'Hero');chip(it.hero3,it.hero3_image,it.hero3_caste||'Hero');chip(it.heroine,it.heroine_image,it.heroine_caste||'Heroine');chip(it.heroine2,it.heroine2_image,it.heroine2_caste||'Heroine');chip(it.heroine3,it.heroine3_image,it.heroine3_caste||'Heroine');chip(it.director,it.director_image,'Director');castEl.innerHTML=cc||'<p style="color:var(--muted);font-size:.7rem;">star cast</p>';}bgEl.style.transition='opacity 0.5s ease';render(0);setInterval(()=>{cur=(cur+1)%items.length;render(cur);},6200);})();
+    (function(){const dataEl=document.getElementById('heroData');if(!dataEl)return;let items;try{items=JSON.parse(dataEl.innerHTML);}catch(e){console.warn(e);return;}if(!items.length)return;let cur=0;const BASE="{{ url_for('static',filename='uploads/') }}";const WATCH="{{ url_for('kids_watch',content_id=0) }}";const bgEl=document.getElementById('heroBg');const imgEl=document.getElementById('heroPosterImg');const playA=document.getElementById('heroPlayLink');const watchA=document.getElementById('heroWatchBtn');const titleEl=document.getElementById('heroTitle');const gEl=document.getElementById('hGenre');const lEl=document.getElementById('hLang');const yEl=document.getElementById('hYear');const rEl=document.getElementById('hRating');const sEl=document.getElementById('hStory');const metaEl=document.getElementById('hMeta');const castEl=document.getElementById('hCast');function getUrl(path,isBackdrop=false){if(!path||path==='null'||path==='""')return isBackdrop?'https://placehold.co/1400x500/060608/ef4444?text=DeepFlix+Kids':'https://placehold.co/400x600/111827/ef4444?text=Poster';if(path.startsWith('http'))return path;return BASE+path;}function render(i){const it=items[i];if(!it)return;const watchUrl=WATCH.replace('/0','/'+it.id);let backdropImg=it.backdrop_url?getUrl(it.backdrop_url,true):'https://placehold.co/1400x500/060608/ef4444?text=DeepFlix+Kids';bgEl.style.opacity='0';setTimeout(()=>{bgEl.style.backgroundImage=`url('${backdropImg}')`;bgEl.style.opacity='1';},120);imgEl.src=it.thumbnail?getUrl(it.thumbnail,false):'https://placehold.co/400x600/111827/ef4444?text=Poster';playA.href=watchA.href=watchUrl;titleEl.textContent=it.title||'Kids Movie';let badgesHTML=`<div class="badge"><i class="fas fa-tag"></i><span>${it.genre||'â€”'}</span></div><div class="badge"><i class="fas fa-language"></i><span>${it.language||'â€”'}</span></div><div class="badge"><i class="fas fa-calendar-alt"></i><span>${it.release_year||'â€”'}</span></div><div class="badge"><i class="fas fa-star" style="color:#facc15"></i><span>${it.rating||'Kids'}</span></div>`;document.getElementById('heroBadges').innerHTML=badgesHTML;sEl.textContent=it.story||'Magical adventure awaits!';let mc='';if(it.duration)mc+=`<div class="meta-chip"><div class="mc-label">Duration</div><div class="mc-val">${it.duration}min</div></div>`;if(it.director)mc+=`<div class="meta-chip"><div class="mc-label">Director</div><div class="mc-val">${it.director}</div></div>`;metaEl.innerHTML=mc||'<div class="meta-chip"><div class="mc-label">Fun</div><div class="mc-val">âœ¨</div></div>';let cc='';function chip(name,img,role){if(!name||name==='null')return;let imgSrc=img?getUrl(img,false):`https://placehold.co/200x200/1f2937/ef4444?text=${encodeURIComponent(name.charAt(0))}`;cc+=`<div class="cast-chip"><img src="${imgSrc}" onerror="this.src='https://placehold.co/200x200/1f2937/ef4444?text=${encodeURIComponent(name.charAt(0))}'"><div class="cc-name">${name}</div><div class="cc-role">${role}</div></div>`;}chip(it.hero,it.hero_image,it.hero_caste||'Hero');chip(it.hero2,it.hero2_image,it.hero2_caste||'Hero');chip(it.hero3,it.hero3_image,it.hero3_caste||'Hero');chip(it.heroine,it.heroine_image,it.heroine_caste||'Heroine');chip(it.heroine2,it.heroine2_image,it.heroine2_caste||'Heroine');chip(it.heroine3,it.heroine3_image,it.heroine3_caste||'Heroine');chip(it.director,it.director_image,'Director');castEl.innerHTML=cc||'<p style="color:var(--muted);font-size:.7rem;">star cast</p>';}bgEl.style.transition='opacity 0.5s ease';render(0);setInterval(()=>{cur=(cur+1)%items.length;render(cur);},6200);})();
     {% endif %}
 </script>
 </body>

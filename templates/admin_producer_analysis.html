@@ -1,6 +1,105 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ producer }} Analysis - DeepFlix</title>
@@ -28,7 +127,7 @@
     <div class="flex justify-between items-center mb-10">
 
         <!-- LOGO -->
-        <img src="{{ url_for('static', filename='img/logo.png') }}" 
+        <img src="{{ url_for('static', filename='img/logo.png') }}"
              class="h-10 w-auto object-contain"
              onerror="this.src='https://placehold.co/120x40/000000/f59e0b?text=DeepFlix'">
 
@@ -43,8 +142,8 @@
     <!-- ========== PRODUCER PROFILE ========== -->
     <div class="flex items-center gap-6 mb-12">
 
-        <img 
-            src="{{ url_for('static', filename='uploads/' + producer_image) }}"
+        <img
+            src="{{ image_url(producer_image) }}"
             class="w-24 h-24 rounded-full object-cover border-4 border-yellow-500 shadow-lg"
             onerror="this.src='https://placehold.co/150x150/111827/f59e0b?text=Producer'">
 
@@ -70,8 +169,8 @@
         {% for movie in movies %}
         <div class="movie-card relative bg-gray-900 rounded-lg overflow-hidden shadow-xl cursor-pointer">
 
-            <img 
-                src="{{ url_for('static', filename='uploads/' + movie.thumbnail) }}"
+            <img
+                src="{{ image_url(movie.thumbnail) }}"
                 class="w-full h-60 object-cover"
                 onerror="this.src='https://placehold.co/300x450/1f2937/yellow?text=No+Poster'">
 
@@ -82,7 +181,7 @@
                 </p>
 
                 <p class="text-xs text-gray-300">
-                    {{ movie.genre }} • {{ movie.language }}
+                    {{ movie.genre }} â€¢ {{ movie.language }}
                 </p>
 
             </div>
@@ -103,7 +202,7 @@
 
             <span class="w-3 h-3 bg-yellow-500 rounded-full mr-3"></span>
 
-            {{ g.genre }} —
+            {{ g.genre }} â€”
             <span class="text-yellow-400 font-bold ml-1">
                 {{ g.count }} Movies
             </span>
@@ -125,7 +224,7 @@
 
             <span class="w-3 h-3 bg-blue-400 rounded-full mr-3"></span>
 
-            {{ l.language }} —
+            {{ l.language }} â€”
             <span class="text-blue-400 font-bold ml-1">
                 {{ l.count }} Movies
             </span>

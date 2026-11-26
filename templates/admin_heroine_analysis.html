@@ -1,6 +1,105 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ heroine }} Analysis</title>
@@ -24,13 +123,13 @@
         <!-- ========== HEADER with Logo & Logout ========== -->
         <div class="flex justify-between items-center mb-10">
             <!-- DeepFlix Logo (top left) -->
-            <img src="{{ url_for('static', filename='img/logo.png') }}" 
-                 alt="DeepFlix" 
+            <img src="{{ url_for('static', filename='img/logo.png') }}"
+                 alt="DeepFlix"
                  class="h-10 w-auto object-contain"
                  onerror="this.src='https://placehold.co/120x40/000000/ec4899?text=DeepFlix'">
-            
+
             <!-- Logout Button (top right) -->
-            <a href="{{ url_for('logout') if url_for else '#' }}" 
+            <a href="{{ url_for('logout') if url_for else '#' }}"
                class="bg-pink-600 hover:bg-pink-700 text-white font-semibold py-2 px-6 rounded-full transition duration-200 shadow-lg hover:shadow-pink-500/50">
                Logout
             </a>
@@ -38,8 +137,8 @@
 
         <!-- ========== HEROINE PROFILE ========== -->
         <div class="flex items-center gap-6 mb-12">
-            <img 
-                src="{{ url_for('static', filename='uploads/' + heroine_image) }}"
+            <img
+                src="{{ image_url(heroine_image) }}"
                 class="w-24 h-24 rounded-full object-cover border-4 border-pink-500 shadow-lg shadow-pink-500/30"
                 onerror="this.src='https://placehold.co/150x150/111827/ec4899?text=Heroine'">
             <div>
@@ -57,15 +156,15 @@
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6 mb-12">
             {% for movie in movies %}
             <div class="movie-card relative bg-gray-900 rounded-lg overflow-hidden shadow-xl cursor-pointer">
-                <img 
-                    src="{{ url_for('static', filename='uploads/' + movie.thumbnail) }}"
+                <img
+                    src="{{ image_url(movie.thumbnail) }}"
                     class="w-full h-60 object-cover"
                     onerror="this.src='https://placehold.co/300x450/1f2937/pink?text=No+Poster'">
-                
+
                 <!-- Hidden movie info (appears on hover) -->
                 <div class="movie-overlay absolute inset-0 bg-black bg-opacity-80 flex flex-col justify-end p-3 opacity-0 hover:opacity-100 transition-opacity duration-200">
                     <p class="text-sm font-bold text-white">{{ movie.title }}</p>
-                    <p class="text-xs text-gray-300">{{ movie.genre }} • {{ movie.language }}</p>
+                    <p class="text-xs text-gray-300">{{ movie.genre }} â€¢ {{ movie.language }}</p>
                 </div>
             </div>
             {% endfor %}
@@ -77,7 +176,7 @@
             {% for g in genres %}
             <li class="text-gray-200 flex items-center">
                 <span class="inline-block w-3 h-3 bg-pink-500 rounded-full mr-3"></span>
-                {{ g.genre }} — <span class="text-pink-400 font-bold ml-1">{{ g.count }} Movies</span>
+                {{ g.genre }} â€” <span class="text-pink-400 font-bold ml-1">{{ g.count }} Movies</span>
             </li>
             {% endfor %}
         </ul>
@@ -88,7 +187,7 @@
             {% for l in languages %}
             <li class="text-gray-200 flex items-center">
                 <span class="inline-block w-3 h-3 bg-purple-400 rounded-full mr-3"></span>
-                {{ l.language }} — <span class="text-purple-400 font-bold ml-1">{{ l.count }} Movies</span>
+                {{ l.language }} â€” <span class="text-purple-400 font-bold ml-1">{{ l.count }} Movies</span>
             </li>
             {% endfor %}
         </ul>

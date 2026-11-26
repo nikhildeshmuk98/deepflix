@@ -1,9 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>DeepFlix · Cinematic Universe</title>
+    <title>DeepFlix Â· Cinematic Universe</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,7 +138,7 @@
             overflow-x: hidden;
         }
 
-        /* ── NOISE OVERLAY ── */
+        /* â”€â”€ NOISE OVERLAY â”€â”€ */
         body::before {
             content: '';
             position: fixed; inset: 0; z-index: 0;
@@ -48,7 +147,7 @@
             opacity: 0.6;
         }
 
-        /* ── AMBIENT GLOW ── */
+        /* â”€â”€ AMBIENT GLOW â”€â”€ */
         .ambient {
             position: fixed; border-radius: 50%; filter: blur(130px);
             pointer-events: none; z-index: 0;
@@ -70,7 +169,7 @@
             50%      { transform: translate(40px,30px) scale(1.1); }
         }
 
-        /* ── HEADER ── */
+        /* â”€â”€ HEADER â”€â”€ */
         header {
             position: sticky; top: 0; z-index: 100;
             background: rgba(12,12,14,0.85);
@@ -110,7 +209,7 @@
             border-color: rgba(232,25,44,0.25);
         }
 
-        /* ── SEARCH ── */
+        /* â”€â”€ SEARCH â”€â”€ */
         .search-wrap { position: relative; flex: 1; max-width: 480px; }
         .search-input {
             width: 100%;
@@ -157,7 +256,7 @@
             background: var(--red); color: #fff;
         }
 
-        /* ── PROFILE PILL ── */
+        /* â”€â”€ PROFILE PILL â”€â”€ */
         .profile-pill {
             display: flex; align-items: center; gap: 10px;
             padding: 5px 14px 5px 5px;
@@ -198,7 +297,7 @@
             transform: translateY(-1px);
         }
 
-        /* ── PAGE HERO ── */
+        /* â”€â”€ PAGE HERO â”€â”€ */
         .page-hero {
             position: relative; z-index: 1;
             padding: 3.5rem 0 2rem;
@@ -222,7 +321,7 @@
             font-size: 0.85rem; color: var(--text-2);
         }
 
-        /* ── GENRE FILTER ── */
+        /* â”€â”€ GENRE FILTER â”€â”€ */
         .genre-section { position: relative; z-index: 1; margin-bottom: 3rem; }
         .genre-label {
             font-size: 0.7rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase;
@@ -263,7 +362,7 @@
         }
         .filter-reset:hover { color: var(--red); }
 
-        /* ── LANGUAGE SECTION ── */
+        /* â”€â”€ LANGUAGE SECTION â”€â”€ */
         .lang-section { position: relative; z-index: 1; margin-bottom: 4rem; }
         .lang-header {
             display: flex; align-items: center; gap: 12px;
@@ -292,7 +391,7 @@
             background: linear-gradient(to right, var(--border), transparent);
         }
 
-        /* ── CINEMATIC RECTANGLE GRID (Backdrop Focus) ── */
+        /* â”€â”€ CINEMATIC RECTANGLE GRID (Backdrop Focus) â”€â”€ */
         .movie-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -314,7 +413,7 @@
             border-color: var(--border-h);
         }
 
-        /* RECTANGLE ASPECT: 16:9 — PERFECT FOR BACKDROPS */
+        /* RECTANGLE ASPECT: 16:9 â€” PERFECT FOR BACKDROPS */
         .card-img-wrap {
             aspect-ratio: 16 / 9;
             overflow: hidden;
@@ -410,7 +509,7 @@
         .tag-genre { background: rgba(0,0,0,0.6); color: #ddd; border-left: 2px solid var(--red);}
         .tag-lang  { background: rgba(232,25,44,0.35); color: #fff; }
 
-        /* ── EMPTY STATE ── */
+        /* â”€â”€ EMPTY STATE â”€â”€ */
         .empty-state {
             position: relative; z-index: 1;
             margin: 4rem auto; max-width: 480px;
@@ -535,7 +634,7 @@
 
     <form method="GET" action="{{ url_for('all_movies') }}" class="search-wrap desktop-search" style="margin:0 1rem;">
         <i class="fas fa-search search-icon"></i>
-        <input type="text" name="search" id="searchBox" autocomplete="off" class="search-input" value="{{ search_value if search_value else '' }}" placeholder="Search movies, cast, director…">
+        <input type="text" name="search" id="searchBox" autocomplete="off" class="search-input" value="{{ search_value if search_value else '' }}" placeholder="Search movies, cast, directorâ€¦">
         {% if request.args.get('genre') %}<input type="hidden" name="genre" value="{{ request.args.get('genre') }}">{% endif %}
         <div id="suggestions"></div>
     </form>
@@ -544,7 +643,7 @@
         <a href="{{ url_for('profile') }}" class="profile-pill">
             <div class="profile-avatar">
                 {% if user and user.profile_image %}
-                    <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" onerror="this.style.display='none'">
+                    <img src="{{ image_url(user.profile_image) }}" onerror="this.style.display='none'">
                 {% else %}<i class="fas fa-user" style="font-size:0.8rem;"></i>{% endif %}
             </div>
             <span class="profile-text" style="font-size:0.82rem;">{{ user.username if user else 'Profile' }}</span>
@@ -558,7 +657,7 @@
     <div class="mobile-search-bar">
         <form method="GET" action="{{ url_for('all_movies') }}" class="search-wrap" style="max-width:none;">
             <i class="fas fa-search search-icon"></i>
-            <input type="text" name="search" autocomplete="off" class="search-input" value="{{ search_value if search_value else '' }}" placeholder="Search movies…">
+            <input type="text" name="search" autocomplete="off" class="search-input" value="{{ search_value if search_value else '' }}" placeholder="Search moviesâ€¦">
             {% if request.args.get('genre') %}<input type="hidden" name="genre" value="{{ request.args.get('genre') }}">{% endif %}
         </form>
     </div>
@@ -619,7 +718,7 @@
                         <div class="badge badge-new"><i class="fas fa-bolt"></i> NEW</div>
                         {% endif %}
                         <div class="card-img-wrap">
-                            {% set backdrop_url = movie.backdrop_url if movie.backdrop_url else (movie.backdrop if movie.backdrop else (url_for('static', filename='uploads/' + movie.thumbnail) if movie.thumbnail else '')) %}
+                            {% set backdrop_url = movie.backdrop_url if movie.backdrop_url else (movie.backdrop if movie.backdrop else (image_url(movie.thumbnail) if movie.thumbnail else '')) %}
                             {% if backdrop_url %}
                             <img class="card-img" src="{{ backdrop_url }}" alt="{{ movie.title }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                             <div class="card-fallback" style="display:none;"><i class="fas fa-film"></i></div>
@@ -657,7 +756,7 @@
                 <a href="{{ url_for('content_page', content_id=movie.id) }}" class="card" style="animation-delay:{{ 0.05 * loop.index }}s">
                     {% if movie.rating %}<div class="badge badge-rating"><i class="fas fa-star"></i> {{ movie.rating }}</div>{% else %}<div class="badge badge-new"><i class="fas fa-bolt"></i> FRESH</div>{% endif %}
                     <div class="card-img-wrap">
-                        {% set backdrop_url = movie.backdrop_url if movie.backdrop_url else (movie.backdrop if movie.backdrop else (url_for('static', filename='uploads/' + movie.thumbnail) if movie.thumbnail else '')) %}
+                        {% set backdrop_url = movie.backdrop_url if movie.backdrop_url else (movie.backdrop if movie.backdrop else (image_url(movie.thumbnail) if movie.thumbnail else '')) %}
                         {% if backdrop_url %}
                         <img class="card-img" src="{{ backdrop_url }}" alt="{{ movie.title }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                         <div class="card-fallback" style="display:none;"><i class="fas fa-globe"></i></div>
@@ -697,7 +796,7 @@
         <a href="#" class="footer-link"><i class="fab fa-youtube"></i></a>
         <a href="#" class="footer-link"><i class="fab fa-facebook-f"></i></a>
     </div>
-    <p class="footer-copy">© 2025 DeepFlix — Where stories breathe. All rights reserved.</p>
+    <p class="footer-copy">Â© 2025 DeepFlix â€” Where stories breathe. All rights reserved.</p>
 </footer>
 
 <script>

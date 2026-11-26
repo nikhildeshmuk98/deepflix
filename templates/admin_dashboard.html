@@ -1,6 +1,105 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DeepFlixAI - Admin Dashboard</title>
@@ -373,7 +472,7 @@
                     {% if messages %}
                         <div class="mb-8 space-y-3">
                             {% for category, message in messages %}
-                                <div class="flash-message flex items-center gap-3 
+                                <div class="flash-message flex items-center gap-3
                                     {% if category == 'success' %}bg-green-900/40 border-green-500 text-green-100
                                     {% elif category == 'danger' %}bg-red-900/40 border-red-500 text-red-100
                                     {% else %}bg-blue-900/40 border-blue-500 text-blue-100{% endif %}">
@@ -439,7 +538,7 @@
                             <i class="fas fa-plus"></i> Upload
                         </a>
                     </div>
-                   
+
                     <!-- Upload CSV -->
                     <div class="glass-card p-6 flex flex-col items-center text-center group">
                         <div class="card-icon mb-4">
@@ -460,13 +559,14 @@
                         <h3 class="font-bold text-lg mb-2">Train Model</h3>
                         <p class="text-sm text-gray-400 mb-4">Generate new recommendation model</p>
                         <form method="POST" action="{{ url_for('train_model') }}" onsubmit="startTraining()" class="w-full">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button id="trainBtn" type="submit" class="btn-red-netflix text-white py-2 px-5 rounded-full text-sm font-semibold w-full flex items-center justify-center gap-2">
                                 <i class="fas fa-brain"></i> Train
                             </button>
                         </form>
                         <!-- Loading indicator (hidden by default) -->
                         <p id="loadingText" style="display:none; color: #fbbf24; margin-top: 0.5rem; font-size: 0.9rem;">
-                            ⏳ Training in progress...
+                            Training in progress...
                         </p>
                     </div>
 
@@ -537,14 +637,14 @@
                             </thead>
                             <tbody>
                                 {% for content in contents %}
-                                <tr class="content-row" 
+                                <tr class="content-row"
                                     data-hero="{{ content['hero']|default('')|lower }}"
                                     data-heroine="{{ content['heroine']|default('')|lower }}"
                                     data-director="{{ content['director']|default('')|lower }}">
                                     <td class="font-mono text-red-400">{{ content['id'] }}</td>
                                     <td>
-                                        <img src="{{ url_for('static', filename='uploads/' + content['thumbnail']) }}" 
-                                             alt="{{ content['title'] }}" 
+                                        <img src="{{ image_url(content['thumbnail']) }}"
+                                             alt="{{ content['title'] }}"
                                              class="table-img"
                                              onerror="this.onerror=null; this.src='https://via.placeholder.com/50x70?text=No+Image';">
                                     </td>
@@ -558,11 +658,13 @@
                                             <a href="{{ url_for('edit_content', content_id=content['id']) }}" class="action-btn edit">
     <i class="fas fa-edit"></i> Edit
 </a>
-                                            <a href="{{ url_for('delete_content', content_id=content['id']) }}" 
-                                               class="action-btn delete"
-                                               onclick="return confirm('Are you sure you want to delete this content?');">
-                                                <i class="fas fa-trash"></i> Delete
-                                            </a>
+                                            <form method="POST" action="{{ url_for('delete_content', content_id=content['id']) }}" class="inline"
+                                                  onsubmit="return confirm('Are you sure you want to delete this content?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <button type="submit" class="action-btn delete">
+                                                    <i class="fas fa-trash"></i> Delete
+                                                </button>
+                                            </form>
                                         </div>
                                     </td>
                                 </tr>

@@ -2,9 +2,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>DeepFlix | {{ movie.title }} — Cinematic Edition</title>
+    <title>DeepFlix | {{ movie.title }} â€” Cinematic Edition</title>
 
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -40,7 +139,7 @@
             overflow-x: hidden;
         }
 
-        /* ─── GRAIN OVERLAY ──────────────────────────────────────────── */
+        /* â”€â”€â”€ GRAIN OVERLAY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         body::before {
             content: '';
             position: fixed;
@@ -52,7 +151,7 @@
             background-size: 200px 200px;
         }
 
-        /* ─── HERO BACKDROP ──────────────────────────────────────────── */
+        /* â”€â”€â”€ HERO BACKDROP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .hero-wrap {
             position: relative;
             width: 100%;
@@ -104,7 +203,7 @@
             z-index: 10;
         }
 
-        /* ─── HEADER ─────────────────────────────────────────────────── */
+        /* â”€â”€â”€ HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .df-header {
             padding: 1.25rem 2rem;
             display: flex;
@@ -191,7 +290,7 @@
             box-shadow: 0 6px 18px var(--red-glow);
         }
 
-        /* ─── HERO BODY ──────────────────────────────────────────────── */
+        /* â”€â”€â”€ HERO BODY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .hero-body {
             display: grid;
             grid-template-columns: 280px 1fr;
@@ -210,7 +309,7 @@
             }
         }
 
-        /* ─── POSTER ─────────────────────────────────────────────────── */
+        /* â”€â”€â”€ POSTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .poster-wrap {
             position: relative;
             border-radius: 18px;
@@ -283,7 +382,7 @@
             text-shadow: 0 1px 6px rgba(0,0,0,0.9);
         }
 
-        /* ─── RATING RIBBON ──────────────────────────────────────────── */
+        /* â”€â”€â”€ RATING RIBBON â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .rating-ribbon {
             position: absolute;
             top: 1rem; right: -1px;
@@ -302,7 +401,7 @@
 
         .rating-ribbon i { font-size: 0.75rem; color: var(--gold); }
 
-        /* ─── MOVIE META ─────────────────────────────────────────────── */
+        /* â”€â”€â”€ MOVIE META â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .meta-area {
             display: flex;
             flex-direction: column;
@@ -524,7 +623,7 @@
             text-overflow: ellipsis;
         }
 
-        /* ─── CAST SECTION ───────────────────────────────────────────── */
+        /* â”€â”€â”€ CAST SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .section-label {
             font-family: 'Bebas Neue', sans-serif;
             font-size: 1.4rem;
@@ -621,7 +720,7 @@
         .cast-card.is-director .cast-img { border-color: var(--gold); }
         .cast-card.is-director .cast-role { color: #ff9f43; }
 
-        /* ─── BELOW HERO ─────────────────────────────────────────────── */
+        /* â”€â”€â”€ BELOW HERO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .below-hero {
             background: var(--ink);
             position: relative;
@@ -647,7 +746,7 @@
             .below-inner { padding: 2rem 1.25rem 3rem; }
         }
 
-        /* ─── SIMILAR MOVIES ─────────────────────────────────────────── */
+        /* â”€â”€â”€ SIMILAR MOVIES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .similar-heading {
             font-family: 'Playfair Display', serif;
             font-size: clamp(1.4rem, 3vw, 2rem);
@@ -771,7 +870,7 @@
             .sim-bottom-title { display: none; }
         }
 
-        /* ─── FOOTER ─────────────────────────────────────────────────── */
+        /* â”€â”€â”€ FOOTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .df-footer {
             border-top: 1px solid rgba(229,9,20,0.2);
             padding: 2.5rem 2rem;
@@ -816,7 +915,7 @@
             color: var(--red);
         }
 
-        /* ─── SCROLL REVEAL ──────────────────────────────────────────── */
+        /* â”€â”€â”€ SCROLL REVEAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .reveal {
             opacity: 0;
             transform: translateY(22px);
@@ -835,7 +934,7 @@
         .reveal-d4 { transition-delay: 0.32s; }
         .reveal-d5 { transition-delay: 0.40s; }
 
-        /* ─── SCROLLBAR ──────────────────────────────────────────────── */
+        /* â”€â”€â”€ SCROLLBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--red); border-radius: 999px; }
@@ -843,17 +942,17 @@
 </head>
 <body>
 
-<!-- ═══════════════════ HERO BACKDROP SECTION ═══════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• HERO BACKDROP SECTION â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="hero-wrap">
 
     <!-- Background image (sharp, scale animates slowly) -->
     <div class="hero-bg"
-         style="background-image: url('{% if movie.backdrop_url %}{% if movie.backdrop_url.startswith('http') %}{{ movie.backdrop_url }}{% else %}{{ url_for('static', filename='uploads/' + movie.backdrop_url) }}{% endif %}{% elif movie.thumbnail %}{{ url_for('static', filename='uploads/' + movie.thumbnail) }}{% else %}https://placehold.co/1920x1080/111/red?text=DeepFlix{% endif %}');">
+         style="background-image: url('{% if movie.backdrop_url %}{% if movie.backdrop_url.startswith('http') %}{{ movie.backdrop_url }}{% else %}{{ image_url(movie.backdrop_url) }}{% endif %}{% elif movie.thumbnail %}{{ image_url(movie.thumbnail) }}{% else %}https://placehold.co/1920x1080/111/red?text=DeepFlix{% endif %}');">
     </div>
 
     <div class="hero-inner">
 
-        <!-- ─── HEADER ──────────────────────────────────────────────── -->
+        <!-- â”€â”€â”€ HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <header class="df-header">
             <div class="df-logo-area">
                 <a href="{{ url_for('user_dashboard') }}" class="df-back" aria-label="Back">
@@ -879,7 +978,7 @@
             </nav>
         </header>
 
-        <!-- ─── HERO BODY ───────────────────────────────────────────── -->
+        <!-- â”€â”€â”€ HERO BODY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div class="hero-body">
 
             <!-- POSTER -->
@@ -896,7 +995,7 @@
                     </div>
                     {% endif %}
 
-                    <img src="{% if movie.thumbnail %}{{ url_for('static', filename='uploads/' + movie.thumbnail) }}{% else %}https://placehold.co/560x840/111/E50914?text=No+Poster{% endif %}"
+                    <img src="{% if movie.thumbnail %}{{ image_url(movie.thumbnail) }}{% else %}https://placehold.co/560x840/111/E50914?text=No+Poster{% endif %}"
                          alt="{{ movie.title }} poster"
                          class="poster-img"
                          onerror="this.src='https://placehold.co/560x840/111/E50914?text=DeepFlix'">
@@ -963,7 +1062,7 @@
                     <a href="{{ url_for('play_content', content_id=movie.id) }}" class="btn-play">
                         <i class="fas fa-play"></i> Play Now
                     </a>
-          
+
                     <button class="btn-ghost" onclick="shareMovie()">
                         <i class="fas fa-share-alt"></i> Share
                     </button>
@@ -978,7 +1077,7 @@
                 {% else %}
                 <div class="story-block reveal reveal-d4">
                     <div class="story-label">Storyline</div>
-                    <p class="story-text">✨ No description available. Dive into this cinematic journey and witness the magic unfold on DeepFlix.</p>
+                    <p class="story-text">âœ¨ No description available. Dive into this cinematic journey and witness the magic unfold on DeepFlix.</p>
                 </div>
                 {% endif %}
 
@@ -1047,7 +1146,7 @@
                             <div class="cast-avatar-wrap">
                                 <div class="cast-avatar-ring"></div>
                                 <div class="cast-avatar-bg"></div>
-                                <img src="{{ url_for('static', filename='uploads/' + movie.hero_image) if movie.hero_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
+                                <img src="{{ image_url(movie.hero_image) if movie.hero_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
                                      class="cast-img"
                                      alt="{{ movie.hero }}"
                                      onerror="this.src='https://placehold.co/200x200/111/E50914?text=H'">
@@ -1061,7 +1160,7 @@
                             <div class="cast-avatar-wrap">
                                 <div class="cast-avatar-ring"></div>
                                 <div class="cast-avatar-bg"></div>
-                                <img src="{{ url_for('static', filename='uploads/' + movie.hero2_image) if movie.hero2_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
+                                <img src="{{ image_url(movie.hero2_image) if movie.hero2_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
                                      class="cast-img"
                                      alt="{{ movie.hero2 }}"
                                      onerror="this.src='https://placehold.co/200x200/111/E50914?text=H'">
@@ -1075,7 +1174,7 @@
                             <div class="cast-avatar-wrap">
                                 <div class="cast-avatar-ring"></div>
                                 <div class="cast-avatar-bg"></div>
-                                <img src="{{ url_for('static', filename='uploads/' + movie.hero3_image) if movie.hero3_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
+                                <img src="{{ image_url(movie.hero3_image) if movie.hero3_image else 'https://placehold.co/200x200/111/E50914?text=H' }}"
                                      class="cast-img"
                                      alt="{{ movie.hero3 }}"
                                      onerror="this.src='https://placehold.co/200x200/111/E50914?text=H'">
@@ -1089,7 +1188,7 @@
                             <div class="cast-avatar-wrap">
                                 <div class="cast-avatar-ring"></div>
                                 <div class="cast-avatar-bg"></div>
-                                <img src="{{ url_for('static', filename='uploads/' + movie.heroine_image) if movie.heroine_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
+                                <img src="{{ image_url(movie.heroine_image) if movie.heroine_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
                                      class="cast-img"
                                      alt="{{ movie.heroine }}"
                                      onerror="this.src='https://placehold.co/200x200/111/f57ef5?text=L'">
@@ -1103,7 +1202,7 @@
                             <div class="cast-avatar-wrap">
                                 <div class="cast-avatar-ring"></div>
                                 <div class="cast-avatar-bg"></div>
-                                <img src="{{ url_for('static', filename='uploads/' + movie.heroine2_image) if movie.heroine2_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
+                                <img src="{{ image_url(movie.heroine2_image) if movie.heroine2_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
                                      class="cast-img"
                                      alt="{{ movie.heroine2 }}"
                                      onerror="this.src='https://placehold.co/200x200/111/f57ef5?text=L'">
@@ -1117,7 +1216,7 @@
                             <div class="cast-avatar-wrap">
                                 <div class="cast-avatar-ring"></div>
                                 <div class="cast-avatar-bg"></div>
-                                <img src="{{ url_for('static', filename='uploads/' + movie.heroine3_image) if movie.heroine3_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
+                                <img src="{{ image_url(movie.heroine3_image) if movie.heroine3_image else 'https://placehold.co/200x200/111/f57ef5?text=L' }}"
                                      class="cast-img"
                                      alt="{{ movie.heroine3 }}"
                                      onerror="this.src='https://placehold.co/200x200/111/f57ef5?text=L'">
@@ -1131,14 +1230,14 @@
                             <div class="cast-avatar-wrap">
                                 <div class="cast-avatar-ring"></div>
                                 <div class="cast-avatar-bg"></div>
-                                <img src="{{ url_for('static', filename='uploads/' + movie.director_image) if movie.director_image else 'https://placehold.co/200x200/111/f5c842?text=D' }}"
+                                <img src="{{ image_url(movie.director_image) if movie.director_image else 'https://placehold.co/200x200/111/f5c842?text=D' }}"
                                      class="cast-img"
                                      style="border-color:rgba(245,200,66,0.6);"
                                      alt="{{ movie.director }}"
                                      onerror="this.src='https://placehold.co/200x200/111/f5c842?text=D'">
                             </div>
                             <div class="cast-name">{{ movie.director }}</div>
-                            <div class="cast-role">🎬 Director</div>
+                            <div class="cast-role">ðŸŽ¬ Director</div>
                         </div>
                         {% endif %}
                     </div>
@@ -1151,7 +1250,7 @@
 </div><!-- /hero-wrap -->
 
 
-<!-- ═══════════════════ BELOW HERO ═══════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• BELOW HERO â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="below-hero">
     <div class="below-inner">
 
@@ -1164,7 +1263,7 @@
             <div class="similar-grid">
                 {% for similar in similar_movies[:10] %}
                 <a href="{{ url_for('content_page', content_id=similar.id) }}" class="sim-card reveal reveal-d{{ loop.index % 5 + 1 }}">
-                    <img src="{% if similar.thumbnail %}{{ url_for('static', filename='uploads/' + similar.thumbnail) }}{% else %}https://placehold.co/400x600/111/E50914?text=Movie{% endif %}"
+                    <img src="{% if similar.thumbnail %}{{ image_url(similar.thumbnail) }}{% else %}https://placehold.co/400x600/111/E50914?text=Movie{% endif %}"
                          alt="{{ similar.title }}"
                          class="sim-img"
                          onerror="this.src='https://placehold.co/400x600/111/E50914?text=DeepFlix'">
@@ -1201,14 +1300,14 @@
             <a href="#" aria-label="YouTube"><i class="fab fa-youtube"></i></a>
         </div>
 
-        <p class="footer-copy">© 2025 DeepFlix — Cinematic Edition &nbsp;·&nbsp; Stream with passion</p>
+        <p class="footer-copy">Â© 2025 DeepFlix â€” Cinematic Edition &nbsp;Â·&nbsp; Stream with passion</p>
     </footer>
 </div>
 
 
 <script>
 (function () {
-    /* ── Responsive: show mobile play btn below poster ── */
+    /* â”€â”€ Responsive: show mobile play btn below poster â”€â”€ */
     function checkMobile() {
         var btn = document.getElementById('mobile-play-btn');
         var cta = document.getElementById('desktop-cta');
@@ -1222,7 +1321,7 @@
     checkMobile();
     window.addEventListener('resize', checkMobile);
 
-    /* ── Scroll-reveal ── */
+    /* â”€â”€ Scroll-reveal â”€â”€ */
     var revealEls = document.querySelectorAll('.reveal');
     var io = new IntersectionObserver(function(entries) {
         entries.forEach(function(e) {
@@ -1245,7 +1344,7 @@
         });
     }, 60);
 
-    /* ── Buttons ── */
+    /* â”€â”€ Buttons â”€â”€ */
     window.addToList = function() {
         var btn = event.currentTarget;
         var icon = btn.querySelector('i');
@@ -1275,7 +1374,7 @@
         }
     };
 
-    /* ── Image fallbacks ── */
+    /* â”€â”€ Image fallbacks â”€â”€ */
     document.querySelectorAll('img').forEach(function(img) {
         img.addEventListener('error', function() {
             if (!this.src.includes('placehold.co')) {
@@ -1290,7 +1389,7 @@
         });
     });
 
-    console.log('✅ DeepFlix Cinematic Edition — Playfair + Bebas Neue + DM Sans / grain overlay / scroll reveal / conic cast rings');
+    console.log('âœ… DeepFlix Cinematic Edition â€” Playfair + Bebas Neue + DM Sans / grain overlay / scroll reveal / conic cast rings');
 })();
 
 

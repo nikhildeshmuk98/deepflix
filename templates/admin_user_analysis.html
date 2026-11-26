@@ -1,9 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>DeepFlix · User Analytics Dashboard</title>
+    <title>DeepFlix Â· User Analytics Dashboard</title>
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <!-- TailwindCSS + Font Awesome -->
@@ -90,13 +189,13 @@
         <div class="flex flex-wrap justify-between items-center gap-4 mb-10">
             <div class="flex items-center gap-3">
                 <!-- DeepFlix Logo with fallback gradient -->
-                <img src="{{ url_for('static', filename='img/logo.png') }}" 
-                     alt="DeepFlix" 
+                <img src="{{ url_for('static', filename='img/logo.png') }}"
+                     alt="DeepFlix"
                      class="h-10 w-auto object-contain drop-shadow-md"
                      onerror="this.src='https://via.placeholder.com/140x40/000000/ef4444?text=DEEPFLEX'; this.onerror=null;">
                 <span class="text-gray-400 text-sm hidden sm:inline-block border-l border-gray-700 pl-3">Analytics hub</span>
             </div>
-            <a href="{{ url_for('logout') if url_for else '#' }}" 
+            <a href="{{ url_for('logout') if url_for else '#' }}"
                class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-7 rounded-full transition-all duration-200 shadow-md hover:shadow-red-600/40 flex items-center gap-2 text-sm md:text-base">
                 <i class="fas fa-sign-out-alt"></i> Logout
             </a>
@@ -107,7 +206,7 @@
             <div id="profileImageWrapper" class="relative">
                 {% if user and user.profile_image %}
                 <img id="previewImage"
-                     src="{{ url_for('static', filename='uploads/' + user.profile_image) }}"
+                     src="{{ image_url(user.profile_image) }}"
                      class="w-24 h-24 rounded-full object-cover border-3 border-red-500 shadow-xl ring-2 ring-red-500/40"
                      onerror="this.style.display='none';document.getElementById('fallbackIcon').style.display='flex';">
                 {% endif %}
@@ -119,7 +218,7 @@
             </div>
             <div class="text-center sm:text-left">
                 <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-red-400 to-red-600 bg-clip-text text-transparent">{{ user.username }}</h1>
-                <p class="text-gray-300 flex items-center gap-2 justify-center sm:justify-start mt-1"><i class="fas fa-chart-line text-red-500 text-sm"></i> Premium analytics · realtime insights</p>
+                <p class="text-gray-300 flex items-center gap-2 justify-center sm:justify-start mt-1"><i class="fas fa-chart-line text-red-500 text-sm"></i> Premium analytics Â· realtime insights</p>
                 <div class="flex gap-3 mt-2 flex-wrap justify-center sm:justify-start">
                     <span class="bg-gray-800/70 text-xs px-3 py-1 rounded-full"><i class="far fa-calendar-alt mr-1"></i> Active member</span>
                 </div>
@@ -148,22 +247,22 @@
             <div class="bg-black/40 rounded-2xl p-5 border border-gray-800 backdrop-blur-sm chart-container">
                 <div class="flex items-center gap-2 mb-5 border-b border-gray-800 pb-2">
                     <span class="w-1.5 h-6 bg-red-500 rounded-full"></span>
-                    <h2 class="text-xl font-bold tracking-tight">🎭 Favorite Genres</h2>
-                    <span class="text-xs text-gray-400 ml-auto"><i class="fas fa-mouse-pointer"></i> click slice → explore</span>
+                    <h2 class="text-xl font-bold tracking-tight">ðŸŽ­ Favorite Genres</h2>
+                    <span class="text-xs text-gray-400 ml-auto"><i class="fas fa-mouse-pointer"></i> click slice â†’ explore</span>
                 </div>
                 <canvas id="genreChart" width="400" height="400" style="max-height: 320px; margin: 0 auto;"></canvas>
-                <p class="text-center text-gray-500 text-xs mt-3">Total views per genre — click any segment to see movies</p>
+                <p class="text-center text-gray-500 text-xs mt-3">Total views per genre â€” click any segment to see movies</p>
             </div>
 
             <!-- LANGUAGE BAR CHART -->
             <div class="bg-black/40 rounded-2xl p-5 border border-gray-800 backdrop-blur-sm chart-container">
                 <div class="flex items-center gap-2 mb-5 border-b border-gray-800 pb-2">
                     <span class="w-1.5 h-6 bg-red-500 rounded-full"></span>
-                    <h2 class="text-xl font-bold tracking-tight">🌐 Favorite Languages</h2>
-                    <span class="text-xs text-gray-400 ml-auto"><i class="fas fa-chart-simple"></i> click bar → movies</span>
+                    <h2 class="text-xl font-bold tracking-tight">ðŸŒ Favorite Languages</h2>
+                    <span class="text-xs text-gray-400 ml-auto"><i class="fas fa-chart-simple"></i> click bar â†’ movies</span>
                 </div>
                 <canvas id="languageChart" width="400" height="400" style="max-height: 320px; width: 100%;"></canvas>
-                <p class="text-center text-gray-500 text-xs mt-3">View count by language — interactive insights</p>
+                <p class="text-center text-gray-500 text-xs mt-3">View count by language â€” interactive insights</p>
             </div>
         </div>
 
@@ -172,7 +271,7 @@
             <div class="flex flex-wrap justify-between items-center mb-6 gap-2">
                 <div class="flex items-center gap-2">
                     <span class="w-1.5 h-7 bg-red-500 rounded-full"></span>
-                    <h2 class="text-xl font-bold tracking-tight">🏆 Most Watched Movies</h2>
+                    <h2 class="text-xl font-bold tracking-tight">ðŸ† Most Watched Movies</h2>
                 </div>
                 <span class="text-xs text-gray-400 bg-gray-900 px-3 py-1 rounded-full"><i class="fas fa-chart-line mr-1"></i> sorted by views</span>
             </div>
@@ -210,7 +309,7 @@
 
         // ---------- 1. sort movies by views (descending) to guarantee perfect views order ----------
         const sortedMovies = [...movies].sort((a,b) => (b.views || 0) - (a.views || 0));
-        
+
         // ---------- 2. Build lookup maps (genre -> movies, language -> movies) for modal ----------
         const moviesByGenre = new Map();
         const moviesByLanguage = new Map();
@@ -219,7 +318,7 @@
             const genre = movie.genre || "Uncategorized";
             if (!moviesByGenre.has(genre)) moviesByGenre.set(genre, []);
             moviesByGenre.get(genre).push(movie);
-            
+
             const lang = movie.language || "Other";
             if (!moviesByLanguage.has(lang)) moviesByLanguage.set(lang, []);
             moviesByLanguage.get(lang).push(movie);
@@ -239,21 +338,21 @@
             }
             container.innerHTML = '';
             movieList.forEach(movie => {
-                const thumbUrl = movie.thumbnail 
-                    ? `{{ url_for('static', filename='uploads/') }}${movie.thumbnail}` 
+                const thumbUrl = movie.thumbnail
+                    ? movie.thumbnail
                     : 'https://via.placeholder.com/200x120/1f2937/ef4444?text=No+Poster';
                 const card = document.createElement('div');
                 card.className = 'movie-card bg-gray-800/80 rounded-xl overflow-hidden shadow-md transition-all hover:shadow-red-500/20';
                 card.innerHTML = `
-                    <img src="${thumbUrl}" 
-                         class="w-full h-36 object-cover" 
+                    <img src="${thumbUrl}"
+                         class="w-full h-36 object-cover"
                          loading="lazy"
                          onerror="this.src='https://via.placeholder.com/200x120/1f2937/ef4444?text=Poster+Missing'">
                     <div class="p-3">
                         <p class="font-semibold text-sm truncate">${escapeHtml(movie.title || 'Untitled')}</p>
                         <div class="flex justify-between items-center mt-1">
                             <span class="text-xs text-gray-400"><i class="far fa-eye mr-1"></i> ${formatNumber(movie.views || 0)} views</span>
-                            <span class="text-xs bg-red-900/40 px-2 py-0.5 rounded-full">${movie.genre || '—'}</span>
+                            <span class="text-xs bg-red-900/40 px-2 py-0.5 rounded-full">${movie.genre || 'â€”'}</span>
                         </div>
                     </div>
                 `;
@@ -262,7 +361,7 @@
         }
 
         // simple XSS escape
-        function escapeHtml(str) { 
+        function escapeHtml(str) {
             if(!str) return '';
             return str.replace(/[&<>]/g, function(m) {
                 if(m === '&') return '&amp;';
@@ -290,17 +389,17 @@
                 const rank = idx + 1;
                 const views = movie.views || 0;
                 const percentWidth = (views / maxViews) * 100;
-                const medalIcon = rank === 1 ? '🥇' : (rank === 2 ? '🥈' : (rank === 3 ? '🥉' : ''));
-                const posterUrl = movie.thumbnail ? `{{ url_for('static', filename='uploads/') }}${movie.thumbnail}` : 'https://via.placeholder.com/56x80/2d2d2d/ef4444?text=🎬';
+                const medalIcon = rank === 1 ? 'ðŸ¥‡' : (rank === 2 ? 'ðŸ¥ˆ' : (rank === 3 ? 'ðŸ¥‰' : ''));
+                const posterUrl = movie.thumbnail ? movie.thumbnail : 'https://via.placeholder.com/56x80/2d2d2d/ef4444?text=ðŸŽ¬';
                 html += `
                     <div class="movie-row flex items-center gap-4 p-3 rounded-xl bg-gray-900/40 hover:bg-gray-800/60 transition-all">
                         <div class="flex items-center justify-center w-8 text-lg font-bold text-red-400">${medalIcon || rank}</div>
-                        <img src="${posterUrl}" class="w-12 h-16 object-cover rounded-md shadow-md" onerror="this.src='https://via.placeholder.com/56x80/1f2937/ef4444?text=🎞️'">
+                        <img src="${posterUrl}" class="w-12 h-16 object-cover rounded-md shadow-md" onerror="this.src='https://via.placeholder.com/56x80/1f2937/ef4444?text=ðŸŽžï¸'">
                         <div class="flex-1 min-w-0">
                             <p class="font-semibold text-gray-200 truncate">${escapeHtml(movie.title)}</p>
                             <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
-                                <span class="text-xs text-gray-400"><i class="fas fa-tag"></i> ${escapeHtml(movie.genre || '—')}</span>
-                                <span class="text-xs text-gray-400"><i class="fas fa-language"></i> ${escapeHtml(movie.language || '—')}</span>
+                                <span class="text-xs text-gray-400"><i class="fas fa-tag"></i> ${escapeHtml(movie.genre || 'â€”')}</span>
+                                <span class="text-xs text-gray-400"><i class="fas fa-language"></i> ${escapeHtml(movie.language || 'â€”')}</span>
                             </div>
                             <div class="w-full bg-gray-700 rounded-full h-1.5 mt-2 max-w-xs">
                                 <div class="progress-bar-fill h-1.5 rounded-full" style="width: ${percentWidth}%;"></div>
@@ -318,11 +417,11 @@
 
         // ---------- 4. CHARTS (pie + bar) with click events to show movies ----------
         let genreChart, langChart;
-        
+
         function initCharts() {
             const ctxGenre = document.getElementById('genreChart').getContext('2d');
             const ctxLang = document.getElementById('languageChart').getContext('2d');
-            
+
             // fallback if empty data
             const hasGenreData = genreLabels.length && genreCounts.some(c => c > 0);
             const pieData = {
@@ -349,14 +448,14 @@
                             const idx = activeElements[0].index;
                             const genreName = genreLabels[idx];
                             const moviesList = moviesByGenre.get(genreName) || [];
-                            showModal(`🎭 ${genreName} · Movies`, moviesList);
+                            showModal(`ðŸŽ­ ${genreName} Â· Movies`, moviesList);
                         } else if (!hasGenreData) {
                             showModal("No genre data", []);
                         }
                     }
                 }
             });
-            
+
             const hasLangData = languageLabels.length && languageCounts.some(c => c > 0);
             const barData = {
                 labels: hasLangData ? languageLabels : ['No data'],
@@ -387,7 +486,7 @@
                             const idx = activeElements[0].index;
                             const langName = languageLabels[idx];
                             const moviesList = moviesByLanguage.get(langName) || [];
-                            showModal(`🌐 ${langName} · Movies`, moviesList);
+                            showModal(`ðŸŒ ${langName} Â· Movies`, moviesList);
                         } else if (!hasLangData) {
                             showModal("No language data", []);
                         }
@@ -416,12 +515,12 @@
         document.getElementById('movieModal')?.addEventListener('click', (e) => {
             if (e.target === document.getElementById('movieModal')) closeModal();
         });
-        
+
         // extra polish: escape key closes modal
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closeModal();
         });
-        
+
         // fix profile image fallback edge case
         (function fixProfileImage() {
             const img = document.getElementById('previewImage');
@@ -431,22 +530,22 @@
                 if (fallback) fallback.style.display = 'flex';
             }
         })();
-        
+
         // Ensure total views are shown perfectly, if movies sum mismatch? just for extra clarity we show backend value
         // but also we can add small consistency note: none needed, backend reliable.
-        
+
         // small helper to recompute if needed: total views label is perfect from user object.
-        
+
         // make sure leaderboard respects sorting after DOM ready
         window.addEventListener('DOMContentLoaded', () => {
             renderLeaderboard();
             initCharts();
-            
+
             // small edge: if moviesByGenre or languages empty, we show empty modals gracefully
             if (sortedMovies.length === 0) {
                 document.getElementById('moviesLeaderboard').innerHTML = '<div class="text-center text-gray-400 py-10 bg-gray-900/50 rounded-2xl"><i class="fas fa-hourglass-half text-3xl mb-2"></i><p>No movies watched yet. Start your binge!</p></div>';
             }
-            
+
             // add tooltip effect to stat numbers (just UX)
             const statBoxes = document.querySelectorAll('.bg-gradient-to-br.from-gray-900');
             statBoxes.forEach(box => {
@@ -458,13 +557,13 @@
                 });
             });
         });
-        
+
         // responsive: ensure chart.js redraws on window resize? already handled by chart.js.
         window.addEventListener('resize', () => {
             if (genreChart) genreChart.resize();
             if (langChart) langChart.resize();
         });
-        
+
         // final safe fallback: if any genre or language data missing, chart displays correctly
         if (genreLabels.length === 0 || genreCounts.every(v => v === 0)) {
             console.log("No genre analytics available, using placeholder");
@@ -472,7 +571,7 @@
         if (languageLabels.length === 0 || languageCounts.every(v => v === 0)) {
             console.log("No language analytics available");
         }
-        
+
         // additional: ensure views on movie rows show big numbers nicely - already handled
     </script>
     <!-- ensure that tailwind custom classes are applied, and all views are perfectly readable -->

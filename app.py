@@ -12,6 +12,7 @@ os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
 import io
 import json
+import math
 import pickle
 import re
 import subprocess
@@ -42,11 +43,16 @@ from flask import (
     url_for,
 )
 
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from rapidfuzz import fuzz
 from textblob import TextBlob
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from wordcloud import WordCloud
+
+# Cloudinary - persistent image storage
+import cloudinary
+import cloudinary.uploader
 # =========================================================
 # CONFIGURATION
 # =========================================================
@@ -56,7 +62,44 @@ app = Flask(__name__, static_folder='static')
 app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'static', 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
-app.secret_key = os.getenv('SECRET_KEY', 'super_secret_hybrid_key')
+_secret_key = os.getenv('SECRET_KEY', '').strip()
+_is_production = (os.getenv('FLASK_ENV', '').strip().lower() == 'production'
+                 or os.getenv('RENDER', '').strip().lower() == 'true')
+if not _secret_key:
+    if _is_production:
+        raise RuntimeError('SECRET_KEY must be configured in production.')
+    _secret_key = os.urandom(32).hex()
+    app.logger.warning('SECRET_KEY is not configured; using an ephemeral development key.')
+app.secret_key = _secret_key
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=_is_production,
+)
+
+# =========================================================
+# CSRF PROTECTION
+# =========================================================
+csrf = CSRFProtect(app)
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    message = (
+        "Your security token is missing or expired. "
+        "Please refresh the page and try again."
+    )
+
+    if (
+        request.path.startswith('/api/')
+        or request.is_json
+        or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    ):
+        return jsonify(success=False, error=message), 400
+
+    return message, 400
+
+
 
 # Google Identity Services (set GOOGLE_CLIENT_ID in your environment/.env)
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '').strip()
@@ -90,8 +133,13 @@ DB_CONFIG = {
 # Enable SSL only when explicitly configured
 DB_SSL_CA = os.getenv('DB_SSL_CA', '').strip()
 
-if DB_SSL_CA and os.path.isfile(DB_SSL_CA):
-    DB_CONFIG['ssl'] = {'ca': DB_SSL_CA}
+if DB_SSL_CA:
+    if os.path.isfile(DB_SSL_CA):
+        DB_CONFIG['ssl'] = {'ca': DB_SSL_CA}
+    elif _is_production:
+        raise RuntimeError('Configured DB_SSL_CA file is missing in production.')
+    else:
+        app.logger.warning('Configured DB_SSL_CA file does not exist: %s', DB_SSL_CA)
 
 
 # =========================================================
@@ -227,9 +275,9 @@ def setup_database():
             """)
             ensure_unique(cursor, 'ratings', 'uniq_user_content', ('user_id', 'content_id'))
         conn.commit()
-        print("✅ Database schema ready.")
+        print("Database schema ready.")
     except Exception as e:
-        print(f"❌ DB Setup Error: {e}")
+        app.logger.exception("Database setup failed")
     finally:
         conn.close()
 
@@ -277,7 +325,7 @@ def load_nlp_model(force=False):
     # --------------------------------------
 
     if not ENABLE_TEXT_MODEL:
-        print("⚠️ Text model is disabled.")
+        print("Text model is disabled.")
         return False
 
     # --------------------------------------
@@ -304,14 +352,14 @@ def load_nlp_model(force=False):
                     matrix=None
                 )
 
-            print("🔄 NLP model reload requested.")
+            print("NLP model reload requested.")
 
         # ----------------------------------
         # ALREADY LOADED
         # ----------------------------------
 
         if text_model_ready():
-            print("✅ NLP model already loaded.")
+            print("NLP model already loaded.")
             return True
 
         # ----------------------------------
@@ -319,7 +367,7 @@ def load_nlp_model(force=False):
         # ----------------------------------
 
         if _NLP_FAILED:
-            print("⚠️ Previous NLP model loading failed.")
+            print("Previous NLP model loading failed.")
             return False
 
         # ----------------------------------
@@ -327,12 +375,12 @@ def load_nlp_model(force=False):
         # ----------------------------------
 
         if not os.path.isfile(MODEL_FILE):
-            print(f"❌ Model file missing: {MODEL_FILE}")
+            print(f"Model file missing: {MODEL_FILE}")
             _NLP_FAILED = True
             return False
 
         if not os.path.isfile(TOKENIZER_FILE):
-            print(f"❌ Tokenizer file missing: {TOKENIZER_FILE}")
+            print(f"Tokenizer file missing: {TOKENIZER_FILE}")
             _NLP_FAILED = True
             return False
 
@@ -346,7 +394,7 @@ def load_nlp_model(force=False):
 
             from tensorflow.keras.models import load_model
 
-            print("🔄 Loading CNN model...")
+            print("Loading CNN model...")
 
             # Load trained model without compilation.
             # This avoids unnecessary optimizer loading.
@@ -355,19 +403,19 @@ def load_nlp_model(force=False):
                 compile=False
             )
 
-            print("✅ CNN model loaded.")
+            print("CNN model loaded.")
 
             # ----------------------------------
             # LOAD TOKENIZER
             # ----------------------------------
 
-            print("🔄 Loading tokenizer...")
+            print("Loading tokenizer...")
 
             with open(TOKENIZER_FILE, "rb") as handle:
 
                 tokenizer = pickle.load(handle)
 
-            print("✅ Tokenizer loaded.")
+            print("Tokenizer loaded.")
 
             # ----------------------------------
             # CHECK EMBEDDING LAYER
@@ -391,7 +439,7 @@ def load_nlp_model(force=False):
             # BUILD EMBEDDING EXTRACTION MODEL
             # ----------------------------------
 
-            print("🔄 Creating CNN embedding model...")
+            print("Creating CNN embedding model...")
 
             embedding_model = tf.keras.Model(
                 inputs=model.inputs,
@@ -439,12 +487,12 @@ def load_nlp_model(force=False):
             # ----------------------------------
 
             print(
-                "✅ CNN + NLP initialization "
+                "CNN + NLP initialization "
                 "completed successfully."
             )
 
             print(
-                "✅ Main model, tokenizer, "
+                "Main model, tokenizer, "
                 "and embedding model are ready."
             )
 
@@ -463,7 +511,7 @@ def load_nlp_model(force=False):
             _NLP_FAILED = True
 
             print(
-                f"❌ NLP model initialization failed: {exc}"
+                f"NLP model initialization failed: {exc}"
             )
 
             return False
@@ -858,28 +906,69 @@ def admin_required(view):
 
 def resolve_profile_image(uploaded, gender):
     default = 'f_profile.png' if (gender or '').strip().lower() == 'female' else 'm_profile.png'
+
     if uploaded:
-        name = os.path.basename(uploaded.strip())
-        if os.path.isfile(os.path.join(current_app.static_folder, 'uploads', name)):
+        uploaded = str(uploaded).strip()
+
+        # Cloudinary or external image URL
+        if uploaded.startswith(('http://', 'https://')):
+            return uploaded
+
+        # Older locally stored image
+        name = os.path.basename(uploaded.replace('\\', '/'))
+        local_path = os.path.join(current_app.static_folder, 'uploads', name)
+
+        if os.path.isfile(local_path):
             return 'uploads/' + name
+
     return default
 
-
 def save_image_file(file_storage, prefix=''):
-    """Validate + save an uploaded image under a unique name. Returns (name, path) or (None, None)."""
+    """Upload image to Cloudinary. Returns (image_url, None)."""
+
     if not file_storage or not file_storage.filename:
         return None, None
+
     if not allowed_file(file_storage.filename):
-        raise ValueError('Unsupported image format. Use png, jpg, jpeg or gif.')
+        raise ValueError(
+            'Unsupported image format. Use png, jpg, jpeg or gif.'
+        )
+
     safe = secure_filename(file_storage.filename)
+
     if not safe:
         raise ValueError('Invalid filename.')
-    ext = os.path.splitext(safe)[1].lower()
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    name = f"{prefix}{uuid.uuid4().hex}{ext}"
-    path = os.path.join(app.config['UPLOAD_FOLDER'], name)
-    file_storage.save(path)
-    return name, path
+
+    cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME')
+    api_key = os.getenv('CLOUDINARY_API_KEY')
+    api_secret = os.getenv('CLOUDINARY_API_SECRET')
+
+    if not all([cloud_name, api_key, api_secret]):
+        raise RuntimeError('Cloudinary environment variables are missing.')
+
+    cloudinary.config(
+        cloud_name=cloud_name,
+        api_key=api_key,
+        api_secret=api_secret,
+        secure=True
+    )
+
+    public_id = f"{prefix}{uuid.uuid4().hex}"
+
+    result = cloudinary.uploader.upload(
+        file_storage,
+        folder='deepflix/uploads',
+        public_id=public_id,
+        resource_type='image'
+    )
+
+    image_url = result.get('secure_url')
+
+    if not image_url:
+        raise RuntimeError('Cloudinary did not return an image URL.')
+
+    return image_url, None
+
 
 
 def extract_youtube_id(value):
@@ -1145,7 +1234,7 @@ def user_wordcloud(user_id):
             return redirect(url_for('admin_users'))
 
         if user.get('profile_image'):
-            profile_image_url = url_for('static', filename=f'uploads/{user["profile_image"]}')
+            profile_image_url = image_url(user['profile_image'])
         elif (user.get('gender') or '').lower() == 'male':
             profile_image_url = url_for('static', filename='m_profile.png')
         else:
@@ -1206,6 +1295,7 @@ CONTENT_IMAGE_FIELDS = [
 ]
 
 
+
 @app.route('/admin/upload', methods=['GET', 'POST'])
 @admin_required
 def upload_content():
@@ -1220,11 +1310,13 @@ def upload_content():
         title = request.form.get('title', '').strip()
         story = request.form.get('story', '').strip()
         content_type = request.form.get('content_type', '').strip()
+
         if not title or not story or not content_type:
             flash('Title, story and content type are required.', 'danger')
             return redirect(request.url)
 
         video_id = extract_youtube_id(request.form.get('youtube_url', ''))
+
         if not video_id:
             flash('Invalid YouTube URL. Please enter a valid video link.', 'danger')
             return redirect(request.url)
@@ -1259,68 +1351,119 @@ def upload_content():
             'is_90s': 1 if request.form.get('is_90s') else 0,
             'is_kids': 1 if request.form.get('is_kids') else 0,
         }
+
         for field in CONTENT_TEXT_FIELDS:
             record[field] = request.form.get(field, '').strip()
 
+        # Upload thumbnail to Cloudinary
         name, path = save_image_file(request.files.get('thumbnail'))
+
         if not name:
             raise ValueError('Please select a thumbnail image.')
-        saved_files.append(path)
+
+        # Track only local files for cleanup.
+        # Cloudinary uploads return path=None.
+        if path:
+            saved_files.append(path)
+
+        # Save Cloudinary URL into database
         record['thumbnail'] = name
 
+        # Upload optional content images
         for field in CONTENT_IMAGE_FIELDS:
             name, path = save_image_file(request.files.get(field))
+
             record[field] = name or ''
+
+            # Track local files only, if any
             if path:
                 saved_files.append(path)
 
+        # Database connection
         conn = get_connection()
+
         if conn is None:
             raise RuntimeError('Database connection could not be created.')
+
         cursor = conn.cursor()
 
+        # Reset duplicate DeepFlix rank if required
         if deepflix_rank > 0:
-            cursor.execute("UPDATE contents SET deepflix_rank = 0 WHERE deepflix_rank = %s",
-                           (deepflix_rank,))
+            cursor.execute(
+                "UPDATE contents SET deepflix_rank = 0 WHERE deepflix_rank = %s",
+                (deepflix_rank,)
+            )
 
-        columns = list(record)  # hard-coded keys only
+        # Insert content record
+        columns = list(record)
+
         cursor.execute(
             f"INSERT INTO contents ({', '.join(columns)}) "
             f"VALUES ({', '.join(['%s'] * len(columns))})",
-            tuple(record[c] for c in columns))
+            tuple(record[c] for c in columns)
+        )
+
         content_id = cursor.lastrowid
 
+        # Create notification
         cursor.execute(
-            "INSERT INTO notifications (title, message, content_id) VALUES (%s, %s, %s)",
-            ('New Content Added', f'{title} is now available to watch!', content_id))
+            "INSERT INTO notifications (title, message, content_id) "
+            "VALUES (%s, %s, %s)",
+            (
+                'New Content Added',
+                f'{title} is now available to watch!',
+                content_id
+            )
+        )
 
+        # Commit database changes
         conn.commit()
+
+        # Upload/insert successful; do not clean up
         saved_files.clear()
+
         flash('Content uploaded successfully!', 'success')
         return redirect(url_for('admin_dashboard'))
 
     except ValueError as e:
         if conn:
             conn.rollback()
+
         flash(str(e), 'danger')
         return redirect(request.url)
+
     except Exception:
         if conn:
             conn.rollback()
+
         app.logger.exception('Content upload failed')
-        flash('Upload failed. Please check the application logs and database connection.', 'danger')
+
+        flash(
+            'Upload failed. Please check the application logs and database connection.',
+            'danger'
+        )
+
         return redirect(request.url)
+
     finally:
         if cursor:
             cursor.close()
+
         if conn:
             conn.close()
-        for path in saved_files:  # remove files if DB insert failed
+
+        # Cleanup only temporary LOCAL files.
+        # Cloudinary URLs are not local files and are never deleted here.
+        for path in saved_files:
             try:
-                if os.path.isfile(path):
+                if path and os.path.isfile(path):
                     os.remove(path)
+
             except OSError:
-                app.logger.warning('Could not remove temporary upload: %s', path)
+                app.logger.warning(
+                    'Could not remove temporary upload: %s',
+                    path
+                )
 
 
 @app.route('/admin/upload_csv', methods=['GET', 'POST'])
@@ -1404,13 +1547,14 @@ def upload_csv():
                 failed += 1
 
         conn.commit()
-        flash(f"CSV Upload Done ✅ {success} success, {failed} failed", "success")
+        flash(f"CSV upload done: {success} successful, {failed} failed.", "success")
         return redirect(url_for('admin_dashboard'))
 
-    except Exception as e:
+    except Exception:
         if conn:
             conn.rollback()
-        flash(f"Error: {str(e)}", "danger")
+        app.logger.exception('CSV content upload failed')
+        flash("CSV upload failed. Please check the file and application logs.", "danger")
         return redirect(request.url)
     finally:
         if cursor:
@@ -1609,16 +1753,25 @@ def admin_analysis():
 @admin_required
 def edit_content(content_id):
     conn = None
+    cursor = None
     new_files = []
+
     try:
         conn = get_connection()
+
         if not conn:
             flash("Database connection failed!", "danger")
             return redirect(url_for('admin_dashboard'))
 
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+
+        cursor.execute(
+            "SELECT * FROM contents WHERE id=%s",
+            (content_id,)
+        )
+
         content = cursor.fetchone()
+
         if not content:
             flash("Content not found!", "danger")
             return redirect(url_for('admin_dashboard'))
@@ -1627,13 +1780,23 @@ def edit_content(content_id):
             return render_template('edit_content.html', content=content)
 
         form = request.form
-        release_year = int(form.get('release_year')) if form.get('release_year') else None
+
+        release_year = (
+            int(form.get('release_year'))
+            if form.get('release_year')
+            else None
+        )
+
         trending_rank = int(form.get('trending_rank') or 0)
         deepflix_rank = int(form.get('deepflix_rank') or 0)
 
         youtube_input = form.get('youtube_video_id', '').strip()
-        youtube_video_id = (extract_youtube_id(youtube_input) or youtube_input) \
-            if youtube_input else content.get('youtube_video_id')
+
+        youtube_video_id = (
+            (extract_youtube_id(youtube_input) or youtube_input)
+            if youtube_input
+            else content.get('youtube_video_id')
+        )
 
         upload_date = form.get('upload_date') or content.get('upload_date')
 
@@ -1644,60 +1807,113 @@ def edit_content(content_id):
             'release_year': release_year,
             'content_type': form.get('content_type'),
             'genre': form.get('genre'),
-            'hero': form.get('hero'), 'hero2': form.get('hero2'), 'hero3': form.get('hero3'),
-            'heroine': form.get('heroine'), 'heroine2': form.get('heroine2'),
+
+            'hero': form.get('hero'),
+            'hero2': form.get('hero2'),
+            'hero3': form.get('hero3'),
+
+            'heroine': form.get('heroine'),
+            'heroine2': form.get('heroine2'),
             'heroine3': form.get('heroine3'),
-            'director': form.get('director'), 'comedian': form.get('comedian'),
+
+            'director': form.get('director'),
+            'comedian': form.get('comedian'),
             'producer': form.get('producer'),
+
             'upload_date': upload_date,
             'trending_rank': trending_rank,
             'deepflix_rank': deepflix_rank,
             'youtube_video_id': youtube_video_id,
+
             'is_90s': 1 if form.get('is_90s') else 0,
-            'backdrop_url': form.get('backdrop_url', '').strip() or content.get('backdrop_url'),
+
+            'backdrop_url': (
+                form.get('backdrop_url', '').strip()
+                or content.get('backdrop_url')
+            ),
         }
 
+        # Upload replacement images to Cloudinary.
+        # If no new image is selected, keep the old image.
         for field in ['thumbnail'] + CONTENT_IMAGE_FIELDS:
-            name, path = save_image_file(request.files.get(field))
+
+            name, path = save_image_file(
+                request.files.get(field)
+            )
+
             if name:
                 fields[field] = name
-                new_files.append(path)
 
+                # Cloudinary returns path=None.
+                # Track only local files for cleanup.
+                if path:
+                    new_files.append(path)
+
+        # Handle DeepFlix rank uniqueness
         if deepflix_rank > 0:
-            cursor.execute("UPDATE contents SET deepflix_rank=0 WHERE deepflix_rank=%s AND id!=%s",
-                           (deepflix_rank, content_id))
+            cursor.execute(
+                "UPDATE contents SET deepflix_rank=0 "
+                "WHERE deepflix_rank=%s AND id!=%s",
+                (deepflix_rank, content_id)
+            )
 
-        columns = list(fields)  # hard-coded keys only
+        # Update content in database
+        columns = list(fields)
+
         cursor.execute(
-            f"UPDATE contents SET {', '.join(c + '=%s' for c in columns)} WHERE id=%s",
-            tuple(fields[c] for c in columns) + (content_id,))
+            f"UPDATE contents SET "
+            f"{', '.join(c + '=%s' for c in columns)} "
+            f"WHERE id=%s",
+            tuple(fields[c] for c in columns) + (content_id,)
+        )
+
         conn.commit()
+
+        # Update successful; do not clean up uploaded files
         new_files.clear()
 
         flash("Content updated successfully!", "success")
         return redirect(url_for('admin_dashboard'))
 
     except Exception as e:
-        print("EDIT ERROR:", e)
+        app.logger.exception("EDIT CONTENT FAILED")
+
         if conn:
             conn.rollback()
-        flash(f"Error updating content: {str(e)}", "danger")
+
+        flash(
+            "Unable to update content. Please check the application logs.",
+            "danger"
+        )
+
         return redirect(url_for('admin_dashboard'))
+
     finally:
+        if cursor:
+            cursor.close()
+
         if conn:
             conn.close()
+
+        # Remove temporary local files only.
+        # Cloudinary files/URLs are not local files.
         for path in new_files:
             try:
-                os.remove(path)
+                if path and os.path.isfile(path):
+                    os.remove(path)
+
             except OSError:
-                pass
+                app.logger.warning(
+                    'Could not remove temporary upload: %s',
+                    path
+                )
 
 
-@app.route('/admin/delete/<int:content_id>')
+@app.route('/admin/delete/<int:content_id>', methods=['POST'])
 @admin_required
 def delete_content(content_id):
     conn = get_connection()
-    if not conn:
+    if conn is None:
         flash("Database connection failed!", "danger")
         return redirect(url_for('admin_dashboard'))
     try:
@@ -1709,9 +1925,10 @@ def delete_content(content_id):
             cursor.execute("DELETE FROM contents WHERE id=%s", (content_id,))
         conn.commit()
         flash("Content deleted successfully!", "danger")
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        flash(f"Delete failed: {str(e)}", "danger")
+        app.logger.exception('Content deletion failed for id=%s', content_id)
+        flash("Delete failed. Please check the application logs.", "danger")
     finally:
         conn.close()
     return redirect(url_for('admin_dashboard'))
@@ -1886,8 +2103,10 @@ def register():
             return redirect(url_for('login'))
         except pymysql.err.IntegrityError:
             flash('That username is already taken.', 'danger')
-        except Exception as e:
-            flash(f'Error: {e}', 'danger')
+        except Exception:
+            conn.rollback()
+            app.logger.exception('Registration failed')
+            flash('Registration failed. Please try again later.', 'danger')
         finally:
             conn.close()
 
@@ -1928,12 +2147,10 @@ def watch_based():
             session.clear()
             return redirect(url_for('login'))
 
-        if user['profile_image']:
-            user['display_image'] = 'uploads/' + user['profile_image']
-        elif (user['gender'] or '').lower() == 'female':
-            user['display_image'] = 'f_profile.png'
-        else:
-            user['display_image'] = 'm_profile.png'
+        user['display_image'] = resolve_profile_image(
+            user.get('profile_image'),
+            user.get('gender')
+        )
 
         # ==========================================
         # USER PROFILES
@@ -2080,7 +2297,7 @@ def verify_password_hash(stored_hash, password):
     except (ValueError, TypeError):
         app.logger.exception("Password hash verification failed")
         return False
-    
+
 @app.route('/add_profile', methods=['GET', 'POST'])
 @login_required
 def add_profile():
@@ -2117,15 +2334,22 @@ def add_profile():
     return render_template("add_profile.html")
 
 
-@app.route('/delete_profile/<int:id>')
+@app.route('/delete_profile/<int:id>', methods=['POST'])
 @login_required
 def delete_profile(id):
     conn = get_connection()
+    if conn is None:
+        flash('Database connection failed.', 'danger')
+        return redirect(url_for('watch_based'))
     try:
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM user_profiles WHERE id=%s AND user_id=%s",
                            (id, session['user_id']))
         conn.commit()
+    except Exception:
+        conn.rollback()
+        app.logger.exception('Extra profile deletion failed')
+        flash('Unable to delete profile. Please try again.', 'danger')
     finally:
         conn.close()
     return redirect(url_for('watch_based'))
@@ -2151,70 +2375,151 @@ def edit_profile(id):
     return redirect(url_for('watch_based'))
 
 
+
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
     user_id = session['user_id']
     conn = None
+
     try:
         conn = get_connection()
+
         if conn is None:
             return "Database connection failed", 500
 
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE id=%s", (user_id,))
+            cursor.execute(
+                "SELECT * FROM users WHERE id=%s",
+                (user_id,)
+            )
+
             user = cursor.fetchone()
+
             if not user:
                 session.clear()
                 return redirect(url_for('login'))
 
             if request.method == 'POST':
-                upload_folder = app.config['UPLOAD_FOLDER']
+
                 old_image = user.get('profile_image')
 
+                # Remove old local image only.
+                # Cloudinary images must not be deleted as local files.
                 def remove_old():
-                    if old_image:
-                        old_path = os.path.join(upload_folder, os.path.basename(old_image))
-                        if os.path.isfile(old_path):
-                            os.remove(old_path)
+                    if not old_image:
+                        return
 
+                    if old_image.startswith(('http://', 'https://')):
+                        return
+
+                    old_path = os.path.join(
+                        app.config['UPLOAD_FOLDER'],
+                        os.path.basename(old_image)
+                    )
+
+                    if os.path.isfile(old_path):
+                        try:
+                            os.remove(old_path)
+                        except OSError:
+                            app.logger.warning(
+                                'Could not remove old profile image: %s',
+                                old_path
+                            )
+
+                # Remove profile image
                 if request.form.get('action') == 'remove_image':
-                    remove_old()
-                    cursor.execute("UPDATE users SET profile_image=NULL WHERE id=%s", (user_id,))
+
+                    cursor.execute(
+                        "UPDATE users SET profile_image=NULL WHERE id=%s",
+                        (user_id,)
+                    )
+
                     conn.commit()
+
+                    remove_old()
+
+                    flash(
+                        'Profile image removed successfully.',
+                        'success'
+                    )
+
                     return redirect(url_for('profile'))
 
+                # Upload new profile image
                 file = request.files.get('profile_image')
+
                 if file and file.filename:
+
                     try:
-                        filename, _ = save_image_file(file, prefix=f"{user_id}_")
+                        filename, path = save_image_file(
+                            file,
+                            prefix=f"{user_id}_"
+                        )
+
                     except ValueError as e:
                         flash(str(e), 'danger')
                         return redirect(url_for('profile'))
-                    cursor.execute("UPDATE users SET profile_image=%s WHERE id=%s",
-                                   (filename, user_id))
+                    except Exception:
+                        app.logger.exception('Profile image upload failed')
+                        flash('Image upload failed. Please try again later.', 'danger')
+                        return redirect(url_for('profile'))
+
+                    if not filename:
+                        flash(
+                            'Please select a valid profile image.',
+                            'danger'
+                        )
+                        return redirect(url_for('profile'))
+
+                    # Save Cloudinary secure URL in database
+                    cursor.execute(
+                        "UPDATE users SET profile_image=%s WHERE id=%s",
+                        (filename, user_id)
+                    )
+
                     conn.commit()
+
+                    # Delete old local image only.
+                    # Never delete a Cloudinary image here.
                     if old_image and old_image != filename:
                         remove_old()
+
+                    flash(
+                        'Profile image updated successfully!',
+                        'success'
+                    )
+
                     return redirect(url_for('profile'))
 
-            return render_template('profile.html', user=user)
+            return render_template(
+                'profile.html',
+                user=user
+            )
 
     except Exception:
         if conn:
             conn.rollback()
-        app.logger.exception("Error loading or updating profile")
+
+        app.logger.exception(
+            "Error loading or updating profile"
+        )
+
         return "Unable to load profile. Please try again.", 500
+
     finally:
         if conn:
             conn.close()
 
 
-@app.route('/delete_account')
+@app.route('/delete_account', methods=['POST'])
 @login_required
 def delete_account():
     user_id = session['user_id']
     conn = get_connection()
+    if conn is None:
+        flash('Database connection failed. Account was not deleted.', 'danger')
+        return redirect(url_for('profile'))
     try:
         with conn.cursor() as cursor:
             for table, column in (
@@ -2227,9 +2532,10 @@ def delete_account():
                 safe_delete(cursor, table, column, user_id)
             cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
         conn.commit()
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        flash(f"Could not delete account: {e}", "danger")
+        app.logger.exception('Account deletion failed for user_id=%s', user_id)
+        flash('Could not delete account. Please try again later.', 'danger')
         return redirect(url_for('profile'))
     finally:
         conn.close()
@@ -2390,12 +2696,14 @@ def kids_search():
 @login_required
 def kids_watch(content_id):
     conn = get_connection()
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+            cursor.execute("SELECT * FROM contents WHERE id=%s AND is_kids=1", (content_id,))
             content = cursor.fetchone()
             if not content:
-                return "Content not found"
+                return "Content not found", 404
         return render_template("kids_watch.html", content=content)
     finally:
         conn.close()
@@ -2429,7 +2737,7 @@ _CHAT_LANGUAGES = {
     'bengali': ('bengali',), 'marathi': ('marathi',), 'punjabi': ('punjabi',),
     'japanese': ('japanese',), 'korean': ('korean',),
 }
-_CHAT_STOP = {'recommend','recommendation','suggest','movie','movies','film','films','series','show','shows','please','me','a','an','the','some','something','any','what','which','is','are','for','to','in','of','and','or','i','want','need','watch','play','that','this','it','under','genre','category','language','today','feeling','feel','im','i’m','my','about'}
+_CHAT_STOP = {'recommend','recommendation','suggest','movie','movies','film','films','series','show','shows','please','me','a','an','the','some','something','any','what','which','is','are','for','to','in','of','and','or','i','want','need','watch','play','that','this','it','under','genre','category','language','today','feeling','feel','im','my','about'}
 
 
 def _deepflix_chat_reply(message, history=None):
@@ -2562,8 +2870,7 @@ def _deepflix_chat_reply(message, history=None):
         thumb=val(row,columns.get('thumbnail') or 'thumbnail')
         if not thumb:
             thumb=val(row,columns.get('poster') or 'poster')
-        if thumb and not thumb.startswith(('http://','https://','/')):
-            thumb=url_for('static',filename='uploads/'+thumb)
+        thumb = image_url(thumb) if thumb else None
         cid=row.get('id')
         return {'id':cid,'title':val(row,title_col),'year':val(row,year_col),'language':val(row,lang_col),'genre':val(row,genre_col),'story':' '.join(val(row,f) for f in story_cols)[:500],'poster':thumb or None,'watch_url':url_for('watch_content',content_id=cid),'play_url':url_for('play_content',content_id=cid)}
     matches=[]
@@ -2597,11 +2904,13 @@ def _chat_movie_card(row, columns):
     thumb = str(row.get('thumbnail') or row.get('poster') or row.get('poster_image') or '').strip()
     story = str(row.get('story') or '').strip()
     if len(story)>240: story=story[:237].rstrip()+'...'
-    return {'id': int(row.get('id')), 'title': title, 'year': row.get('release_year'), 'language': row.get('language'), 'genre': row.get('genre'), 'story': story, 'poster': url_for('static', filename='uploads/'+thumb) if thumb and not thumb.startswith(('http://','https://')) else (thumb or None), 'watch_url': url_for('watch_content', content_id=int(row.get('id'))), 'play_url': url_for('play_content', content_id=int(row.get('id')))}
+    return {'id': int(row.get('id')), 'title': title, 'year': row.get('release_year'), 'language': row.get('language'), 'genre': row.get('genre'), 'story': story, 'poster': image_url(thumb) if thumb else None, 'watch_url': url_for('watch_content', content_id=int(row.get('id'))), 'play_url': url_for('play_content', content_id=int(row.get('id')))}
 
 @app.route('/api/chat', methods=['POST'], endpoint='deepflix_ai_chat')
 @login_required
 def deepflix_ai_chat():
+    if session.get('profile_type') == 'kids':
+        return jsonify({'reply': 'AI chat is not available in Kids profile.', 'movies': []}), 403
     try:
         payload = request.get_json(silent=True) or {}
 
@@ -2657,6 +2966,8 @@ def deepflix_ai_chat():
 @app.route('/user_dashboard', endpoint='user_dashboard')
 @login_required
 def user_dashboard():
+    if session.get('profile_type') == 'kids':
+        return redirect(url_for('kids_dashboard'))
     user_id = session['user_id']
     conn = get_connection()
     if not conn:
@@ -2944,10 +3255,14 @@ def check_notifications():
 @app.route('/content/<int:content_id>')
 @login_required
 def content_page(content_id):
+    if session.get('profile_type') == 'kids':
+        return redirect(url_for('kids_dashboard'))
     conn = get_connection()
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+        cursor.execute("SELECT * FROM contents WHERE id=%s AND (is_kids=0 OR is_kids IS NULL)", (content_id,))
         movie = cursor.fetchone()
         if not movie:
             return "Movie not found"
@@ -2955,7 +3270,7 @@ def content_page(content_id):
         touch_continue_watching(cursor, session['user_id'], content_id)
         conn.commit()
 
-        cursor.execute("SELECT * FROM contents WHERE genre LIKE %s AND id != %s LIMIT 10",
+        cursor.execute("SELECT * FROM contents WHERE (is_kids=0 OR is_kids IS NULL) AND genre LIKE %s AND id != %s LIMIT 10",
                        ("%" + (movie.get('genre') or '') + "%", content_id))
         similar_movies = cursor.fetchall()
 
@@ -2977,19 +3292,75 @@ CAST_SPEC = [
 ]
 
 
+def image_url(value):
+    """
+    Return the correct URL for Cloudinary images
+    and older locally stored uploads.
+    """
+    if not value:
+        return None
+
+    value = str(value).strip().replace('\\', '/')
+
+    if not value:
+        return None
+
+    # Cloudinary or other external image URLs
+    if value.startswith(('http://', 'https://', 'data:image/')):
+        return value
+
+    # Remove existing static path prefixes
+    if value.startswith('/static/'):
+        value = value[len('/static/'):]
+
+    elif value.startswith('static/'):
+        value = value[len('static/'):]
+
+    # Avoid adding uploads/uploads/ and keep legacy local filenames confined
+    # to the uploads directory. Cloudinary URLs above are returned unchanged.
+    if value.startswith('uploads/'):
+        value = value[len('uploads/'):]
+
+    value = os.path.basename(value)
+    if not value:
+        return None
+
+    return url_for('static', filename='uploads/' + value)
+
+
+# Make helper available in all Jinja templates
+app.jinja_env.globals['image_url'] = image_url
+
+
 def poster_url(item):
     name = (item.get("poster") or "").strip()
-    return url_for("static", filename=f"uploads/{name}") if name else None
+
+    if not name:
+        return None
+
+    # Cloudinary image URL: return directly
+    if name.startswith(("http://", "https://")):
+        return name
+
+    # Old locally stored image: maintain backward compatibility
+    name = os.path.basename(name)
+
+    return url_for("static", filename=f"uploads/{name}")
+
 
 
 @app.route('/watch/<int:content_id>')
 @login_required
 def watch_content(content_id):
+    if session.get('profile_type') == 'kids':
+        return redirect(url_for('kids_dashboard'))
     user_id = session['user_id']
     conn = get_connection()
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+            cursor.execute("SELECT * FROM contents WHERE id=%s AND (is_kids=0 OR is_kids IS NULL)", (content_id,))
             content = cursor.fetchone()
             if not content:
                 return "Content not found"
@@ -3005,7 +3376,7 @@ def watch_content(content_id):
                     cast.append({
                         "role": role,
                         "name": content.get(name_key),
-                        "image": url_for("static", filename=f"uploads/{image}") if image else None,
+                        "image": image_url(image) if image else None,
                     })
 
             record_history(cursor, user_id, content_id)
@@ -3057,11 +3428,15 @@ def watch_content(content_id):
 @app.route('/play/<int:content_id>')
 @login_required
 def play_content(content_id):
+    if session.get('profile_type') == 'kids':
+        return redirect(url_for('kids_dashboard'))
     user_id = session['user_id']
     conn = get_connection()
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contents WHERE id=%s", (content_id,))
+        cursor.execute("SELECT * FROM contents WHERE id=%s AND (is_kids=0 OR is_kids IS NULL)", (content_id,))
         movie = cursor.fetchone()
         if not movie:
             return "Content not found"
@@ -3087,6 +3462,8 @@ def all_movies():
     genre = request.args.get('genre', '').strip()
 
     conn = get_connection()
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         cursor = conn.cursor()
         query = "SELECT * FROM contents WHERE (is_kids = 0 OR is_kids IS NULL)"
@@ -3116,17 +3493,19 @@ def all_movies():
 @app.route('/movie_suggestions')
 def movie_suggestions():
     keyword = request.args.get('q', '').strip()
-    if not keyword:
+    if not keyword or session.get('profile_type') == 'kids':
         return jsonify([])
 
     conn = get_connection()
+    if conn is None:
+        return jsonify([]), 503
     try:
         cursor = conn.cursor()
         pattern = "%" + keyword.lower() + "%"
         cursor.execute("""
             SELECT title, hero, heroine, director, genre, language
             FROM contents
-            WHERE content_type='movie'
+            WHERE content_type='movie' AND (is_kids=0 OR is_kids IS NULL)
               AND (LOWER(title) LIKE %s OR LOWER(hero) LIKE %s OR LOWER(heroine) LIKE %s
                    OR LOWER(director) LIKE %s OR LOWER(genre) LIKE %s OR LOWER(language) LIKE %s)
             LIMIT 25
@@ -3155,9 +3534,9 @@ def person_movies(name):
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT * FROM contents
-                WHERE hero = %s OR hero2 = %s OR hero3 = %s
+                WHERE (is_kids=0 OR is_kids IS NULL) AND (hero = %s OR hero2 = %s OR hero3 = %s
                    OR heroine = %s OR heroine2 = %s OR heroine3 = %s
-                   OR director = %s OR producer = %s OR comedian = %s
+                   OR director = %s OR producer = %s OR comedian = %s)
             """, (name,) * 9)
             movies = cursor.fetchall()
 
@@ -3176,8 +3555,8 @@ def person_movies(name):
 def all_series():
     user_id = session['user_id']
     conn = get_connection()
-    if not conn:
-        return "Database connection failed"
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         cursor = conn.cursor()
         cursor.execute("""
@@ -3224,8 +3603,8 @@ def all_series():
 @login_required
 def series_play(content_id):
     conn = get_connection()
-    if not conn:
-        return "Database connection failed"
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM contents WHERE id = %s AND content_type = 'series'",
@@ -3264,6 +3643,8 @@ def add_initial(row):
 @login_required
 def social_hub():
     conn = get_connection()
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         with conn.cursor() as cursor:
             cursor.execute("SELECT id, username, gender, profile_image FROM users WHERE id = %s",
@@ -3295,6 +3676,8 @@ def social_hub():
 @login_required
 def socialhub_profile(user_id):
     conn = get_connection()
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         cursor = conn.cursor()
 
@@ -3335,8 +3718,7 @@ def socialhub_profile(user_id):
 
         for item in recommended_contents:
             thumb = item.get('thumbnail')
-            if thumb and not thumb.startswith(('http://', 'https://')):
-                item['thumbnail'] = url_for('static', filename=f'uploads/{thumb}')
+            item['thumbnail'] = image_url(thumb) if thumb else None
 
         cursor.execute("SELECT 1 FROM social_graph WHERE follower_id=%s AND followed_id=%s",
                        (session['user_id'], user_id))
@@ -3377,8 +3759,13 @@ def toggle_follow(user_id):
         return jsonify({"success": False, "message": "You cannot follow yourself"})
 
     conn = get_connection()
+    if conn is None:
+        return jsonify({"success": False, "message": "Database unavailable."}), 503
     try:
         with conn.cursor() as cursor:
+            cursor.execute('SELECT id FROM users WHERE id=%s', (user_id,))
+            if not cursor.fetchone():
+                return jsonify({"success": False, "message": "User not found."}), 404
             cursor.execute("SELECT 1 FROM social_graph WHERE follower_id=%s AND followed_id=%s",
                            (me, user_id))
             if cursor.fetchone():
@@ -3395,14 +3782,21 @@ def toggle_follow(user_id):
         conn.close()
 
 
-@app.route('/api/follow/<int:target_id>')
+@app.route('/api/follow/<int:target_id>', methods=['POST'])
 @login_required
 def api_follow(target_id):
     if target_id == session['user_id']:
         return redirect(url_for('social_hub'))
     conn = get_connection()
+    if conn is None:
+        flash('Database connection failed.', 'danger')
+        return redirect(url_for('social_hub'))
     try:
         with conn.cursor() as cursor:
+            cursor.execute('SELECT id FROM users WHERE id=%s', (target_id,))
+            if not cursor.fetchone():
+                flash('User not found.', 'danger')
+                return redirect(url_for('social_hub'))
             cursor.execute("SELECT id FROM social_graph WHERE follower_id=%s AND followed_id=%s",
                            (session['user_id'], target_id))
             exists = cursor.fetchone()
@@ -3421,7 +3815,7 @@ def api_follow(target_id):
 
 def format_chat_user(user):
     if user.get('profile_image'):
-        user['profile_image'] = '/static/uploads/' + user['profile_image']
+        user['profile_image'] = image_url(user['profile_image'])
         user['initial'] = None
     else:
         user['profile_image'] = None
@@ -3433,6 +3827,8 @@ def format_chat_user(user):
 @login_required
 def chat(user_id):
     conn = get_connection()
+    if conn is None:
+        return 'Database connection failed', 503
     try:
         with conn.cursor() as cursor:
             cursor.execute("SELECT id, username, profile_image FROM users WHERE id=%s", (user_id,))
@@ -3451,10 +3847,12 @@ def chat(user_id):
 @app.route('/fetch_messages/<int:user_id>')
 def fetch_messages(user_id):
     if 'user_id' not in session:
-        return jsonify([])
+        return jsonify([]), 401
 
     me_id = session['user_id']
     conn = get_connection()
+    if conn is None:
+        return jsonify({'error': 'Database unavailable.'}), 503
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -3478,7 +3876,7 @@ def fetch_messages(user_id):
                 if sender:
                     msg['username'] = sender['username']
                     if sender.get('profile_image'):
-                        msg['profile_image'] = '/static/uploads/' + sender['profile_image']
+                        msg['profile_image'] = image_url(sender['profile_image'])
                         msg['initial'] = None
                     else:
                         msg['profile_image'] = None
@@ -3498,12 +3896,17 @@ def send_message(user_id):
         return jsonify({"success": False})
 
     msg = ((request.get_json(silent=True) or {}).get('message') or '').strip()
-    if not msg:
-        return jsonify({"success": False})
+    if not msg or len(msg) > 2000:
+        return jsonify({"success": False, "message": "Message must be 1-2000 characters."}), 400
 
     conn = get_connection()
+    if conn is None:
+        return jsonify({"success": False, "message": "Database unavailable."}), 503
     try:
         with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM users WHERE id=%s", (user_id,))
+            if not cursor.fetchone():
+                return jsonify({"success": False, "message": "Recipient not found."}), 404
             cursor.execute("INSERT INTO chats (sender_id, receiver_id, message) VALUES (%s,%s,%s)",
                            (session['user_id'], user_id, msg))
         conn.commit()
@@ -3521,15 +3924,17 @@ def api_rate():
         return jsonify({'error': 'Login required'}), 401
 
     data = request.get_json(silent=True) or {}
-    content_id = data.get('content_id')
     try:
+        content_id = int(data.get('content_id'))
         rating = float(data.get('rating'))
     except (TypeError, ValueError):
-        return jsonify({'error': 'Missing data'}), 400
-    if not content_id or not (0 < rating <= 5):
+        return jsonify({'error': 'Missing or invalid data'}), 400
+    if content_id <= 0 or not math.isfinite(rating) or not (0 < rating <= 5):
         return jsonify({'error': 'Invalid data'}), 400
 
     conn = get_connection()
+    if conn is None:
+        return jsonify({'error': 'Database unavailable.'}), 503
     try:
         with conn.cursor() as cursor:
             cursor.execute("SELECT id FROM ratings WHERE user_id=%s AND content_id=%s",
@@ -3541,11 +3946,13 @@ def api_rate():
                 cursor.execute("INSERT INTO ratings (user_id, content_id, rating) VALUES (%s, %s, %s)",
                                (session['user_id'], content_id, rating))
         conn.commit()
-        ALSRecommender._cache.pop(session['user_id'], None)  # refresh recommendations
+        with ALSRecommender._cache_lock:
+            ALSRecommender._cache.pop(session['user_id'], None)  # refresh recommendations
         return jsonify({'success': True})
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        return jsonify({'error': str(e)}), 500
+        app.logger.exception('Rating update failed')
+        return jsonify({'error': 'Unable to save rating.'}), 500
     finally:
         conn.close()
 
@@ -3574,10 +3981,16 @@ def api_review():
     if not content_id or not text:
         flash('Review text is required.', 'danger')
         return redirect(request.referrer or url_for('user_dashboard'))
+    if len(text) > 5000:
+        flash('Review must be 5000 characters or fewer.', 'danger')
+        return redirect(request.referrer or url_for('user_dashboard'))
 
     sentiment = TextBlob(text).sentiment.polarity  # -1 .. 1
 
     conn = get_connection()
+    if conn is None:
+        flash('Database connection failed.', 'danger')
+        return redirect(request.referrer or url_for('user_dashboard'))
     try:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -3623,9 +4036,13 @@ def update_progress():
     if not content_id:
         return jsonify({'success': False}), 400
 
+    if not math.isfinite(progress):
+        return jsonify({'success': False}), 400
     progress = max(0, min(progress, 100))
 
     conn = get_connection()
+    if conn is None:
+        return jsonify({'success': False, 'message': 'Database unavailable.'}), 503
     try:
         with conn.cursor() as cursor:
             if progress >= 95:   # finished -> remove from "continue watching"
@@ -3635,8 +4052,9 @@ def update_progress():
                 touch_continue_watching(cursor, session['user_id'], content_id, progress)
         conn.commit()
         return jsonify({'success': True})
-    except Exception as e:
-        print("Progress Error:", e)
+    except Exception:
+        app.logger.exception('Progress update failed')
+        conn.rollback()
         return jsonify({'success': False}), 500
     finally:
         conn.close()
@@ -3895,6 +4313,8 @@ def admin_user_analysis(user_id):
 
 def json_query(sql):
     conn = get_connection()
+    if conn is None:
+        raise RuntimeError('Database connection unavailable.')
     try:
         with conn.cursor() as cursor:
             cursor.execute(sql)

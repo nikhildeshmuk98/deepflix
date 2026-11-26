@@ -1,6 +1,105 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Analysis - {{ user['username'] }}</title>
@@ -46,7 +145,7 @@
                 <span class="text-xl font-semibold tracking-tight text-white">Analytics</span>
             </a>
             <!-- Logout Button -->
-            <a href="{{ url_for('logout') }}" 
+            <a href="{{ url_for('logout') }}"
                class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-full text-sm font-medium transition-all shadow-lg hover:shadow-red-600/20">
                 <i class="fas fa-sign-out-alt"></i>
                 <span>Logout</span>
@@ -59,7 +158,7 @@
         <div class="text-center mb-12">
             <div class="relative inline-block">
                 <div class="gradient-border inline-block">
-                    <img src="{{ profile_image_url }}" 
+                    <img src="{{ profile_image_url }}"
                          class="w-28 h-28 rounded-full object-cover border-4 border-transparent"
                          alt="{{ user['username'] }}">
                 </div>
@@ -72,7 +171,7 @@
             <h2 class="text-4xl font-bold mt-4 bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
                 {{ user['username'] }}
             </h2>
-            <p class="text-gray-400 mt-1">Member since • content analyst</p>
+            <p class="text-gray-400 mt-1">Member since â€¢ content analyst</p>
         </div>
 
         <!-- WORD CLOUD SECTION (card background removed) -->
@@ -126,7 +225,7 @@
                 {% for item in recent_contents %}
                 <div class="group relative">
                     <div class="rounded-xl overflow-hidden bg-gray-800 aspect-video shadow-lg">
-                        <img src="{{ url_for('static', filename='uploads/' + item.thumbnail) }}" 
+                        <img src="{{ image_url(item.thumbnail) }}"
                              alt="{{ item.title }}"
                              class="w-full h-full object-cover transition duration-300 group-hover:scale-110 group-hover:brightness-75">
                     </div>
@@ -148,7 +247,7 @@
     </main>
 
     <footer class="text-center text-gray-600 text-sm py-6 border-t border-gray-800 mt-10">
-        <p>© 2025 YourBrand — intelligent insights</p>
+        <p>Â© 2025 YourBrand â€” intelligent insights</p>
     </footer>
 
     <script>
@@ -169,7 +268,7 @@
             datasets: [{
                 label: 'Views',
                 data: views,
-                backgroundColor: backgroundColors,  // now multi‑color
+                backgroundColor: backgroundColors,  // now multiâ€‘color
                 borderRadius: 6
             }]
         };
@@ -196,7 +295,7 @@
                     if (elements.length > 0) {
                         const index = elements[0].index;
 
-                        img.src = "{{ url_for('static', filename='uploads/') }}" + thumbnails[index];
+                        img.src = thumbnails[index];
                         title.innerText = labels[index];
 
                         // Position preview near mouse with offset

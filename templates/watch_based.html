@@ -1,17 +1,116 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Deepflix · Who's Watching</title>
+  <title>Deepflix Â· Who's Watching</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
 
   <style>
-    /* ═══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        TOKENS
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     :root {
       --red:           #e8291c;
       --red-glow:      rgba(232,41,28,0.18);
@@ -31,9 +130,9 @@
       --spring:        cubic-bezier(0.34, 1.56, 0.64, 1);
     }
 
-    /* ═══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        RESET
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; overflow:hidden; }
 
@@ -48,9 +147,9 @@
     a { text-decoration:none; color:inherit; }
     ::selection { background:var(--red); color:#fff; }
 
-    /* ═══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        BACKDROP LAYERS (crossfade system)
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     #bd-a, #bd-b {
       position: fixed;
       inset: 0;
@@ -62,11 +161,11 @@
     #bd-a { z-index: 0; opacity: 1; }
     #bd-b { z-index: 1; opacity: 0; }
 
-    /* ═══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        LAYERED CINEMATIC OVERLAYS
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-    /* 1. Deep vignette — aggressive left darkening for profile readability */
+    /* 1. Deep vignette â€” aggressive left darkening for profile readability */
     .ov-vignette {
       position: fixed; inset: 0; z-index: 2; pointer-events: none;
       background:
@@ -127,9 +226,9 @@
       opacity: 0.7;
     }
 
-    /* ═══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        CURSOR GLOW
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     .cursor-glow {
       position: fixed;
       width: 340px; height: 340px;
@@ -142,9 +241,9 @@
       transition: opacity 0.4s;
     }
 
-    /* ═══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        FULL-SCREEN LAYOUT GRID
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     .page-grid {
       position: fixed;
       inset: 0;
@@ -154,9 +253,9 @@
       grid-template-rows: 1fr;
     }
 
-    /* ═══════════════════════════════════════
-       LEFT COLUMN — PROFILES
-    ═══════════════════════════════════════ */
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+       LEFT COLUMN â€” PROFILES
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     .left-col {
       display: flex;
       flex-direction: column;
@@ -182,7 +281,7 @@
         transparent);
     }
 
-    /* ── WHO'S WATCHING HEADING ── */
+    /* â”€â”€ WHO'S WATCHING HEADING â”€â”€ */
     .ww-header { margin-bottom: 2.8rem; }
 
     .ww-eyebrow {
@@ -250,9 +349,9 @@
       flex-shrink: 0;
     }
 
-    /* ═══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        PROFILE CARDS
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     .profiles-list {
       display: flex;
       flex-direction: column;
@@ -292,7 +391,7 @@
       cursor: pointer;
     }
 
-    /* HOVER STATE — full glass reveal */
+    /* HOVER STATE â€” full glass reveal */
     .profile-card:hover .p-inner {
       background: var(--glass-bg);
       border-color: var(--red-border);
@@ -328,7 +427,7 @@
     }
     .profile-card:hover .p-inner::after { left: 160%; }
 
-    /* ── AVATAR ── */
+    /* â”€â”€ AVATAR â”€â”€ */
     .av-wrap {
       position: relative;
       flex-shrink: 0;
@@ -393,7 +492,7 @@
     .av-status.away    { background: #f59e0b; }
     .av-status.offline { background: #4b5563; }
 
-    /* ── TEXT ── */
+    /* â”€â”€ TEXT â”€â”€ */
     .p-text { flex: 1; min-width: 0; }
 
     .p-name {
@@ -440,7 +539,7 @@
     .pill.red  { background: rgba(232,41,28,0.1);  border-color: rgba(232,41,28,0.22);  color: rgba(255,110,100,0.9); }
     .pill.gold { background: rgba(201,168,76,0.08); border-color: rgba(201,168,76,0.2);  color: rgba(232,201,122,0.85); }
 
-    /* ── ARROW ── */
+    /* â”€â”€ ARROW â”€â”€ */
     .p-arrow {
       flex-shrink: 0;
       width: 26px; height: 26px;
@@ -480,18 +579,18 @@
       white-space: nowrap;
     }
 
-    /* ═══════════════════════════════════════
-       RIGHT COLUMN — CINEMATIC PANEL
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+       RIGHT COLUMN â€” CINEMATIC PANEL
        (empty space, just holds the corner module)
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     .right-col {
       position: relative;
-      /* nothing to display — backdrop shows through */
+      /* nothing to display â€” backdrop shows through */
     }
 
-    /* ═══════════════════════════════════════
-       NOW SHOWING — PINNED BOTTOM RIGHT
-    ═══════════════════════════════════════ */
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+       NOW SHOWING â€” PINNED BOTTOM RIGHT
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     .now-showing {
       position: fixed;
       bottom: 3rem;
@@ -567,7 +666,7 @@
       transform: translateY(14px) scale(0.97);
     }
 
-    /* Underline accent — right aligned */
+    /* Underline accent â€” right aligned */
     .ns-underline {
       display: flex;
       align-items: center;
@@ -652,9 +751,9 @@
       color: rgba(255,130,120,0.9);
     }
 
-    /* ═══════════════════════════════════════
-       DEEPFLIX LOGO — TOP LEFT WATERMARK
-    ═══════════════════════════════════════ */
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+       DEEPFLIX LOGO â€” TOP LEFT WATERMARK
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     .logo-watermark {
       position: fixed;
       top: 2rem; left: 2.5rem;
@@ -708,9 +807,9 @@
       margin-left: 0.3rem;
     }
 
-    /* ═══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        RESPONSIVE
-    ═══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     @media (max-width: 1050px) {
       .page-grid { grid-template-columns: 420px 1fr; }
     }
@@ -767,14 +866,14 @@
 
 <body>
 
-<!-- ── CURSOR GLOW ── -->
+<!-- â”€â”€ CURSOR GLOW â”€â”€ -->
 <div class="cursor-glow" id="cg"></div>
 
-<!-- ── BACKDROP LAYERS ── -->
+<!-- â”€â”€ BACKDROP LAYERS â”€â”€ -->
 <div id="bd-a"></div>
 <div id="bd-b"></div>
 
-<!-- ── OVERLAYS ── -->
+<!-- â”€â”€ OVERLAYS â”€â”€ -->
 <div class="ov-vignette"></div>
 <div class="ov-grain"></div>
 <div class="ov-scan"></div>
@@ -782,14 +881,14 @@
 
 
 
-<!-- ══════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      MAIN PAGE GRID
-══════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="page-grid">
 
-  <!-- ─────────────────────────────────────
-       LEFT — WHO'S WATCHING
-  ───────────────────────────────────── -->
+  <!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+       LEFT â€” WHO'S WATCHING
+  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="left-col">
 
     <!-- Heading -->
@@ -818,7 +917,7 @@
         <div class="p-inner">
           <div class="av-wrap">
             {% if user and user.profile_image %}
-              <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" class="av-img" alt="avatar">
+              <img src="{{ image_url(user.profile_image) }}" class="av-img" alt="avatar">
             {% else %}
               <div class="av-ph av-main">
                 {{ user.username[0].upper() if user and user.username else 'U' }}
@@ -829,13 +928,13 @@
           </div>
           <div class="p-text">
             <div class="p-name">{{ user.username if user else 'Explorer' }}</div>
-            <div class="p-role gold">✦ Main Profile</div>
+            <div class="p-role gold">âœ¦ Main Profile</div>
             <div class="p-pills">
               <span class="pill red">Admin</span>
               <span class="pill gold">All Access</span>
             </div>
           </div>
-          <div class="p-arrow">→</div>
+          <div class="p-arrow">â†’</div>
         </div>
       </a>
 
@@ -852,10 +951,10 @@
             <div class="p-role">Family & Fun Zone</div>
             <div class="p-pills">
               <span class="pill">Safe Mode</span>
-              <span class="pill">Ages 2–12</span>
+              <span class="pill">Ages 2â€“12</span>
             </div>
           </div>
-          <div class="p-arrow">→</div>
+          <div class="p-arrow">â†’</div>
         </div>
       </a>
 
@@ -863,7 +962,7 @@
       <a href="{{ url_for('select_profile', profile='guest') }}" class="profile-card">
         <div class="p-inner">
           <div class="av-wrap">
-            <div class="av-ph av-guest">🎭</div>
+            <div class="av-ph av-guest">ðŸŽ­</div>
             <div class="av-ring"></div>
             <div class="av-status offline"></div>
           </div>
@@ -874,7 +973,7 @@
               <span class="pill">Limited</span>
             </div>
           </div>
-          <div class="p-arrow">→</div>
+          <div class="p-arrow">â†’</div>
         </div>
       </a>
 
@@ -893,12 +992,12 @@
           </div>
           <div class="p-text">
             <div class="p-name">{{ profile.name }}</div>
-            <div class="p-role">✦ Profile</div>
+            <div class="p-role">âœ¦ Profile</div>
             <div class="p-pills">
               <span class="pill">Standard</span>
             </div>
           </div>
-          <div class="p-arrow">→</div>
+          <div class="p-arrow">â†’</div>
         </div>
       </a>
       {% endfor %}
@@ -925,22 +1024,22 @@
     <!-- Bottom hint -->
     <div class="bottom-hint">
       <div class="hint-rule"></div>
-      <span class="hint-text">hover to reveal · click to enter</span>
+      <span class="hint-text">hover to reveal Â· click to enter</span>
       <div class="hint-rule"></div>
     </div>
 
   </div>
 
-  <!-- ─────────────────────────────────────
-       RIGHT — empty, backdrop shows through
-  ───────────────────────────────────── -->
+  <!-- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+       RIGHT â€” empty, backdrop shows through
+  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="right-col"></div>
 
 </div><!-- /page-grid -->
 
-<!-- ══════════════════════════════════════
-     NOW SHOWING — FIXED BOTTOM RIGHT
-══════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     NOW SHOWING â€” FIXED BOTTOM RIGHT
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="now-showing" id="now-showing">
 
   <!-- Ghost counter -->
@@ -964,7 +1063,7 @@
 
   <!-- Meta -->
   <div class="ns-meta">
-    <span class="ns-stars">★★★★★</span>
+    <span class="ns-stars">â˜…â˜…â˜…â˜…â˜…</span>
     <div class="ns-sep"></div>
     <span class="ns-tag red" id="movie-genre">CINEMA</span>
     <span class="ns-tag">4K HDR</span>
@@ -976,13 +1075,13 @@
 
 </div>
 
-<!-- ══════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      CINEMATIC CAROUSEL ENGINE
-══════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <script>
 (function () {
 
-  /* ── MOVIE DATA from Jinja2 ── */
+  /* â”€â”€ MOVIE DATA from Jinja2 â”€â”€ */
   const movies = [
     {% for movie in deepflix_top %}
     {
@@ -1003,7 +1102,7 @@
     );
   }
 
-  /* ── DOM ── */
+  /* â”€â”€ DOM â”€â”€ */
   const bdA     = document.getElementById('bd-a');
   const bdB     = document.getElementById('bd-b');
   const titleEl = document.getElementById('movie-title');
@@ -1012,12 +1111,12 @@
   const dotsWrap= document.getElementById('ns-dots');
   const cgEl    = document.getElementById('cg');
 
-  /* ── STATE ── */
+  /* â”€â”€ STATE â”€â”€ */
   let cur = 0;
   let aActive = true;   // bd-a currently visible
   let timer = null;
 
-  /* ── BUILD DOTS ── */
+  /* â”€â”€ BUILD DOTS â”€â”€ */
   function buildDots() {
     dotsWrap.innerHTML = '';
     movies.forEach((_, i) => {
@@ -1038,7 +1137,7 @@
     });
   }
 
-  /* ── CROSSFADE BACKDROP ── */
+  /* â”€â”€ CROSSFADE BACKDROP â”€â”€ */
   function swapBackdrop(url) {
     const next = aActive ? bdB : bdA;
     const prev = aActive ? bdA : bdB;
@@ -1050,14 +1149,14 @@
     aActive = !aActive;
   }
 
-  /* ── PRELOAD ── */
+  /* â”€â”€ PRELOAD â”€â”€ */
   const loaded = new Set();
   function preload(i) {
     const url = movies[i]?.backdrop;
     if (url && !loaded.has(url)) { const im = new Image(); im.src = url; loaded.add(url); }
   }
 
-  /* ── UPDATE TITLE ── */
+  /* â”€â”€ UPDATE TITLE â”€â”€ */
   function updateTitle(m) {
     titleEl.classList.add('out');
     setTimeout(() => {
@@ -1068,7 +1167,7 @@
     }, 320);
   }
 
-  /* ── GO TO ── */
+  /* â”€â”€ GO TO â”€â”€ */
   function goTo(idx) {
     if (idx === cur && loaded.has(movies[cur]?.backdrop)) return;
     cur = ((idx % movies.length) + movies.length) % movies.length;
@@ -1082,13 +1181,13 @@
 
   function next() { goTo(cur + 1); }
 
-  /* ── TIMER ── */
+  /* â”€â”€ TIMER â”€â”€ */
   function resetTimer() {
     clearInterval(timer);
     timer = setInterval(next, 6000);
   }
 
-  /* ── INIT ── */
+  /* â”€â”€ INIT â”€â”€ */
   function init() {
     const first = movies[0];
     bdA.style.backgroundImage = `url('${first.backdrop}')`;
@@ -1103,7 +1202,7 @@
 
   init();
 
-  /* ── CURSOR GLOW ── */
+  /* â”€â”€ CURSOR GLOW â”€â”€ */
   document.addEventListener('mousemove', e => {
     cgEl.style.left    = e.clientX + 'px';
     cgEl.style.top     = e.clientY + 'px';
@@ -1111,13 +1210,13 @@
   });
   document.addEventListener('mouseleave', () => { cgEl.style.opacity = '0'; });
 
-  /* ── PAUSE ON PROFILE HOVER ── */
+  /* â”€â”€ PAUSE ON PROFILE HOVER â”€â”€ */
   document.querySelectorAll('.profile-card').forEach(c => {
     c.addEventListener('mouseenter', () => clearInterval(timer));
     c.addEventListener('mouseleave', resetTimer);
   });
 
-  /* ── KEYBOARD ── */
+  /* â”€â”€ KEYBOARD â”€â”€ */
   document.addEventListener('keydown', e => {
     if (e.key === 'ArrowRight') next();
     if (e.key === 'ArrowLeft')  goTo(cur - 1);

@@ -2,6 +2,105 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>DeepFlix - Series Vault | Hover Magic</title>
@@ -10,12 +109,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
-    
+
     <style>
         * {
             font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif;
         }
-        
+
         body {
             background-color: #0a0a0a;
             scroll-behavior: smooth;
@@ -30,31 +129,31 @@
             overflow: hidden;
             box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.5);
         }
-        
+
         .series-card:hover {
             transform: scale(1.03) translateY(-6px);
             box-shadow: 0 28px 35px -14px rgba(0, 0, 0, 0.8);
         }
-        
+
         .thumbnail-wrapper {
             position: relative;
             overflow: hidden;
             background: #080808;
             aspect-ratio: 2 / 3;
         }
-        
+
         .card-img {
             width: 100%;
             height: 100%;
             object-fit: cover;
             transition: transform 0.5s ease;
         }
-        
+
         .series-card:hover .card-img {
             transform: scale(1.02);
         }
-        
-        /* HOVER OVERLAY — SHOWS TITLE, GENRE, YEAR, PLAY BUTTON */
+
+        /* HOVER OVERLAY â€” SHOWS TITLE, GENRE, YEAR, PLAY BUTTON */
         .hover-details-overlay {
             position: absolute;
             inset: 0;
@@ -72,12 +171,12 @@
             transition: opacity 0.25s ease-in-out, visibility 0.25s ease-in-out;
             z-index: 15;
         }
-        
+
         .series-card:hover .hover-details-overlay {
             opacity: 1;
             visibility: visible;
         }
-        
+
         .play-btn-circle {
             background-color: #e50914;
             width: 56px;
@@ -90,19 +189,19 @@
             box-shadow: 0 8px 20px rgba(229, 9, 20, 0.5);
             cursor: pointer;
         }
-        
+
         .play-btn-circle:hover {
             background-color: #ff1a2c;
             transform: scale(1.08);
             box-shadow: 0 12px 24px rgba(229, 9, 20, 0.7);
         }
-        
+
         .play-btn-circle i {
             font-size: 1.7rem;
             margin-left: 4px;
             color: white;
         }
-        
+
         .overlay-title {
             font-weight: 800;
             font-size: 1.2rem;
@@ -114,7 +213,7 @@
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
-        
+
         .genre-year-badge {
             display: flex;
             flex-wrap: wrap;
@@ -122,7 +221,7 @@
             gap: 0.5rem;
             margin-top: 0.1rem;
         }
-        
+
         .genre-chip {
             background: rgba(229, 9, 20, 0.85);
             padding: 0.25rem 0.9rem;
@@ -132,7 +231,7 @@
             letter-spacing: 0.3px;
             backdrop-filter: blur(2px);
         }
-        
+
         .year-chip {
             background: rgba(20, 20, 30, 0.85);
             backdrop-filter: blur(2px);
@@ -142,7 +241,7 @@
             font-weight: 500;
             border-left: 1px solid #e50914;
         }
-        
+
         /* filter bar */
         .filter-letter {
             transition: all 0.2s;
@@ -156,31 +255,31 @@
             cursor: pointer;
             user-select: none;
         }
-        
+
         .filter-letter.active-letter {
             background: #e50914;
             color: white;
             box-shadow: 0 6px 12px rgba(229, 9, 20, 0.4);
         }
-        
+
         .filter-letter:hover:not(.active-letter) {
             background: #2f2f3c;
             color: white;
             transform: translateY(-2px);
         }
-        
+
         .clear-filter-btn {
             background: rgba(255,255,255,0.05);
             border: 1px solid #333;
             transition: all 0.2s;
         }
-        
+
         .clear-filter-btn:hover {
             background: #e50914;
             border-color: #e50914;
             color: white;
         }
-        
+
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -192,11 +291,11 @@
             background: #e50914;
             border-radius: 8px;
         }
-        
+
         .notif-scroll::-webkit-scrollbar {
             width: 4px;
         }
-        
+
         .profile-image {
             width: 36px;
             height: 36px;
@@ -204,7 +303,7 @@
             object-fit: cover;
             border: 2px solid #e50914;
         }
-        
+
         .profile-icon {
             width: 36px;
             height: 36px;
@@ -216,7 +315,7 @@
             color: #e50914;
             font-size: 1.2rem;
         }
-        
+
         @media (max-width: 640px) {
             .overlay-title {
                 font-size: 0.9rem;
@@ -233,18 +332,18 @@
                 padding: 0.2rem 0.6rem;
             }
         }
-        
+
         #noResultsMsg {
             transition: all 0.2s;
         }
-        
+
         .line-clamp-2 {
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
-        
+
         /* smaller cards for continue & recent */
         .simple-card {
             background: #111;
@@ -285,7 +384,7 @@
             font-size: 0.7rem;
             padding: 0.2rem 0.8rem;
         }
-        
+
         /* featured carousel */
         .featured-carousel {
             background: linear-gradient(135deg, #0f0f1a 0%, #050508 100%);
@@ -366,14 +465,14 @@
     {% if notifications and notifications|length > 0 %}
         {% for n in notifications %}
 
-        <a href="{% if n.content_id %}{{ url_for('series_play', content_id=n.content_id) }}{% else %}#{% endif %}" 
-           class="flex items-center gap-3 px-4 py-3 hover:bg-gray-800 border-b border-gray-800 transition {% if not n.read %}bg-gray-800{% endif %}" 
+        <a href="{% if n.content_id %}{{ url_for('series_play', content_id=n.content_id) }}{% else %}#{% endif %}"
+           class="flex items-center gap-3 px-4 py-3 hover:bg-gray-800 border-b border-gray-800 transition {% if not n.read %}bg-gray-800{% endif %}"
            data-id="{{ n.id }}">
 
             <!-- Thumbnail -->
             <div class="w-14 h-20 flex-shrink-0 rounded overflow-hidden bg-gray-700">
                 {% if n.content_thumbnail %}
-                    <img src="{{ url_for('static', filename='uploads/' + n.content_thumbnail) }}"
+                    <img src="{{ image_url(n.content_thumbnail) }}"
                          class="w-full h-full object-cover"
                          alt="poster"
                          onerror="this.parentNode.innerHTML='<div class=\'flex items-center justify-center h-full text-gray-400\'><i class=\'fas fa-film\'></i></div>'">
@@ -427,9 +526,9 @@
                     {% if session.get('profile_type') == 'extra' %}
                         {% if session.get('profile_gender')|lower == 'female' %}<img src="{{ url_for('static', filename='img/female_icon.png') }}" class="profile-image">{% else %}<img src="{{ url_for('static', filename='img/male_icon.png') }}" class="profile-image">{% endif %}
                     {% elif session.get('profile_type') == 'guest' %}<img src="{{ url_for('static', filename='main_profile.png') }}" class="profile-image">
-                    {% else %}{% if user and user.profile_image %}<img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" class="profile-image">{% else %}<div class="profile-icon"><i class="fas fa-user"></i></div>{% endif %}{% endif %}
+                    {% else %}{% if user and user.profile_image %}<img src="{{ image_url(user.profile_image) }}" class="profile-image">{% else %}<div class="profile-icon"><i class="fas fa-user"></i></div>{% endif %}{% endif %}
                 </div>
-                <span class="profile-text hidden md:inline flex items-center gap-1">{{ session.get('profile_name', session.get('username','Profile')) }}{% if session.get('profile_type') == 'extra' %}<span class="text-yellow-400 text-sm">⭐</span>{% endif %}<i class="fas fa-chevron-right ml-1"></i></span>
+                <span class="profile-text hidden md:inline flex items-center gap-1">{{ session.get('profile_name', session.get('username','Profile')) }}{% if session.get('profile_type') == 'extra' %}<span class="text-yellow-400 text-sm">â­</span>{% endif %}<i class="fas fa-chevron-right ml-1"></i></span>
             </a>
             <a href="{{ url_for('logout') }}" class="bg-red-600 px-4 py-2 rounded-full text-sm font-medium hover:bg-red-700 transition shadow-lg shadow-red-600/20 flex items-center"><i class="fas fa-sign-out-alt mr-1"></i> Logout</a>
         </div>
@@ -477,8 +576,8 @@
                 {% for s in continue_watching_series %}
                 <div class="simple-card group cursor-pointer" onclick="window.location.href='/series_play/{{ s.id }}'">
                     <div class="relative">
-                        <img src="{{ url_for('static', filename='uploads/' + s.thumbnail) if s.thumbnail else 'https://placehold.co/600x900/111111/e50914?text=No+Poster' }}" 
-                             alt="{{ s.title }}" 
+                        <img src="{{ image_url(s.thumbnail) if s.thumbnail else 'https://placehold.co/600x900/111111/e50914?text=No+Poster' }}"
+                             alt="{{ s.title }}"
                              onerror="this.src='https://placehold.co/600x900/111111/e50914?text=No+Poster'">
                     </div>
                     <div class="p-2">
@@ -502,8 +601,8 @@
                 {% for s in recently_added_series %}
                 <div class="simple-card group cursor-pointer" onclick="window.location.href='/series_play/{{ s.id }}'">
                     <div class="relative">
-                        <img src="{{ url_for('static', filename='uploads/' + s.thumbnail) if s.thumbnail else 'https://placehold.co/600x900/111111/e50914?text=No+Poster' }}" 
-                             alt="{{ s.title }}" 
+                        <img src="{{ image_url(s.thumbnail) if s.thumbnail else 'https://placehold.co/600x900/111111/e50914?text=No+Poster' }}"
+                             alt="{{ s.title }}"
                              onerror="this.src='https://placehold.co/600x900/111111/e50914?text=No+Poster'">
                     </div>
                     <div class="p-2">
@@ -541,7 +640,7 @@
                 <button id="clearFiltersBtn" class="clear-filter-btn text-sm px-5 py-2 rounded-full flex items-center gap-2"><i class="fas fa-times-circle"></i> Clear filters</button>
             </div>
         </div>
-       
+
         <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
             <div class="text-sm text-gray-400 flex items-center gap-2">
                 <i class="fas fa-layer-group text-red-500"></i>
@@ -556,19 +655,19 @@
         <h3 class="text-2xl font-bold mb-5 flex items-center gap-2"><i class="fas fa-tv text-red-500"></i> All Series</h3>
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 gap-y-8" id="seriesGridContainer">
             {% for series in series_list %}
-            <div class="series-card group cursor-pointer" 
-                 data-title="{{ series.title|lower }}" 
+            <div class="series-card group cursor-pointer"
+                 data-title="{{ series.title|lower }}"
                  data-genre="{{ series.genre|lower }}"
                  data-first-letter="{{ series.title[0]|upper if series.title else '' }}"
                  data-id="{{ series.id }}">
-                
+
                 <div class="thumbnail-wrapper relative w-full bg-gray-900">
-                    <img src="{{ url_for('static', filename='uploads/' + series.thumbnail) }}" 
+                    <img src="{{ image_url(series.thumbnail) }}"
                          class="card-img w-full h-full object-cover"
                          alt="{{ series.title }}"
                          loading="lazy"
                          onerror="this.src='https://placehold.co/600x900/111111/e50914?text=No+Poster'">
-                    
+
                     <div class="hover-details-overlay">
                         <h3 class="overlay-title text-white drop-shadow-md">{{ series.title }}</h3>
                         <div class="genre-year-badge">
@@ -602,10 +701,10 @@
             const resetFiltersBtn = document.getElementById('resetFiltersBtn');
             const searchActiveBadge = document.getElementById('searchActiveBadge');
             const searchTermDisplay = document.getElementById('searchTermDisplay');
-            
+
             let activeLetter = 'all';
             let currentSearchTerm = '';
-            
+
             function filterSeries() {
                 let visibleCount = 0;
                 const searchLower = currentSearchTerm.trim().toLowerCase();
@@ -636,7 +735,7 @@
                     searchActiveBadge.classList.add('hidden');
                 }
             }
-            
+
             const letterBtns = document.querySelectorAll('.filter-letter');
             function setActiveLetter(letter) {
                 activeLetter = letter;
@@ -650,14 +749,14 @@
             letterBtns.forEach(btn => {
                 btn.addEventListener('click', () => setActiveLetter(btn.getAttribute('data-letter')));
             });
-            
+
             let debounceTimer;
             searchInput.addEventListener('input', (e) => {
                 clearTimeout(debounceTimer);
                 currentSearchTerm = e.target.value;
                 debounceTimer = setTimeout(() => filterSeries(), 260);
             });
-            
+
             function clearAllFilters() {
                 currentSearchTerm = '';
                 searchInput.value = '';
@@ -666,7 +765,7 @@
             }
             clearFiltersBtn.addEventListener('click', clearAllFilters);
             if (resetFiltersBtn) resetFiltersBtn.addEventListener('click', clearAllFilters);
-            
+
             const urlParams = new URLSearchParams(window.location.search);
             const initialSearch = urlParams.get('search') || '';
             if (initialSearch) {
@@ -674,7 +773,7 @@
                 searchInput.value = initialSearch;
             }
             filterSeries();
-            
+
             // ---------- CARD NAVIGATION ----------
             function navigateToSeries(contentId) {
                 if (contentId) window.location.href = "{{ url_for('series_play', content_id=0) }}".replace('0', contentId);
@@ -698,7 +797,7 @@
                 if (id) navigateToSeries(id);
             }
             attachPlayButtonListeners();
-            
+
             // ---------- NOTIFICATIONS ----------
             const notifToggle = document.getElementById('notificationsToggle');
             const notifDropdown = document.getElementById('notificationsDropdown');
@@ -722,7 +821,7 @@
                 }).catch(() => {});
                 return false;
             };
-            
+
             // ---------- FEATURED CAROUSEL (auto-play using recently_added_series) ----------
             {% if recently_added_series and recently_added_series|length > 0 %}
             const featuredData = {{ recently_added_series|tojson|safe }};
@@ -736,11 +835,11 @@
             const featuredStory = document.getElementById('featuredStory');
             const featuredPlayBtn = document.getElementById('featuredPlayBtn');
             const dotsContainer = document.getElementById('carouselDots');
-            
+
             function updateFeaturedCarousel(index) {
                 if (!featuredData.length) return;
                 const item = featuredData[index % featuredData.length];
-                const thumbUrl = item.thumbnail ? "{{ url_for('static', filename='uploads/') }}" + item.thumbnail : "https://placehold.co/600x900/111111/e50914?text=No+Poster";
+                const thumbUrl = item.thumbnail ? item.thumbnail : "https://placehold.co/600x900/111111/e50914?text=No+Poster";
                 featuredThumb.src = thumbUrl;
                 featuredThumb.onerror = function() { this.src = "https://placehold.co/600x900/111111/e50914?text=No+Poster"; };
                 featuredTitle.innerText = item.title || "Untitled";
@@ -764,11 +863,11 @@
                     });
                 }
             }
-            
+
             function nextSlide() { currentIndex = (currentIndex + 1) % featuredData.length; updateFeaturedCarousel(currentIndex); }
             function startAutoPlay() { if (autoInterval) clearInterval(autoInterval); autoInterval = setInterval(nextSlide, 5500); }
             function stopAutoPlay() { if (autoInterval) { clearInterval(autoInterval); autoInterval = null; } }
-            
+
             const carouselSection = document.getElementById('featuredCarouselSection');
             if (carouselSection) {
                 carouselSection.addEventListener('mouseenter', stopAutoPlay);

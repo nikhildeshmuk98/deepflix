@@ -4,9 +4,9 @@
 {%- set has_hero = (not search_query) and recommendations and (recommendations|length > 0) -%}
 {%- set hero_item = recommendations[0] if has_hero else none -%}
 
-{#- ─────────────────────────────────────────────
+{#- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      CHATBOT IDENTITY (same avatar logic as the nav profile pill)
-     ───────────────────────────────────────────── -#}
+     â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -#}
 {%- set df_gender = (session.get('profile_gender') or '')|lower -%}
 {%- set df_user_avatar = '' -%}
 {%- if session.get('profile_type') == 'extra' and df_gender == 'female' -%}
@@ -14,14 +14,14 @@
 {%- elif session.get('profile_type') == 'extra' -%}
     {%- set df_user_avatar = url_for('static', filename='img/male_icon.png') -%}
 {%- elif user and user.profile_image -%}
-    {%- set df_user_avatar = url_for('static', filename='uploads/' + user.profile_image) -%}
+    {%- set df_user_avatar = image_url(user.profile_image) -%}
 {%- endif -%}
 {%- set df_user_name = session.get('profile_name') or session.get('username') or '' -%}
 {%- set df_logo_url = url_for('static', filename='img/logo.png') -%}
 
-{#- ─────────────────────────────────────────────
+{#- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      POSTER CARD MACRO (used by every row + grid)
-     ───────────────────────────────────────────── -#}
+     â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -#}
 {% macro card(item, tag='', rank=0, use_image=false, progress=none, rating=false, hearts=true, logo=false, meta='') -%}
 {%- set img = (item.image if (use_image and item.image) else item.thumbnail) or 'default.jpg' -%}
 <div class="card-slot{% if rank %} ranked{% endif %}"{% if rank %} style="--rank-w:{{ '3.4rem' if rank < 10 else '6rem' }}"{% endif %}>
@@ -29,7 +29,7 @@
     <article class="df-card">
         <a class="card-link" href="{{ url_for('watch_content', content_id=item.id) }}" aria-label="Watch {{ item.title }}">
             <div class="poster">
-                <img src="{{ url_for('static', filename='uploads/' + img) }}" alt="" loading="lazy" decoding="async">
+                <img src="{{ image_url(img) }}" alt="" loading="lazy" decoding="async">
                 {% if tag == 'new' %}<span class="recent-badge"><i class="fas fa-bolt"></i> New</span>{% endif %}
                 {% if rating %}<span class="rating-pill">{% if item.rating %}<i class="fas fa-star"></i> {{ item.rating }}{% else %}<i class="far fa-clock"></i> New{% endif %}</span>{% endif %}
                 {% if logo %}<span class="df-logo-badge"><img src="{{ url_for('static', filename='img/d.png') }}" alt="" data-hide-on-error></span>{% endif %}
@@ -60,11 +60,110 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#080707">
     <meta name="color-scheme" content="dark">
-    <title>DeepFlix · Cinema Elevated</title>
+    <title>DeepFlix Â· Cinema Elevated</title>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -101,9 +200,9 @@
     </script>
 
     <style>
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            TOKENS
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         :root {
             --red: #E50914;
             --red-dark: #9e0610;
@@ -174,9 +273,9 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--red); border-radius: 99px; }
 
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            NAV
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         .df-nav {
             position: fixed;
             top: 0; left: 0; right: 0;
@@ -419,9 +518,9 @@
             .logout-pill span { display: inline; }
         }
 
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            HERO
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         .hero {
             position: relative;
             isolation: isolate;
@@ -622,9 +721,9 @@
         @media (min-width: 768px) { .up-item { flex-basis: 190px; } }
         @media (max-width: 479px) { .up-item { flex-basis: 155px; } }
 
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            MAIN LAYOUT / SECTIONS
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         .df-main { max-width: var(--maxw); margin: 0 auto; padding: 1.6rem var(--gx) 4rem; }
         @media (min-width: 768px) { .df-main { padding-top: 2.2rem; padding-bottom: 5rem; } }
         .no-hero .df-main { padding-top: calc(8.4rem + var(--safe-t)); }
@@ -664,9 +763,9 @@
         .js .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.55s ease, transform 0.55s ease; }
         .js .reveal.visible { opacity: 1; transform: none; }
 
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            HORIZONTAL ROWS
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         .row-wrap { position: relative; }
         .df-scroll {
             display: flex;
@@ -708,9 +807,9 @@
         .row-arrow.next { right: -14px; }
         @media (hover: hover) and (pointer: fine) { .row-wrap.can-scroll .row-arrow { display: flex; } }
 
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            CARDS
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         .card-slot { position: relative; flex: 0 0 auto; width: 132px; }
         @media (min-width: 480px) { .card-slot { width: 148px; } }
         @media (min-width: 768px) { .card-slot { width: 168px; } }
@@ -863,9 +962,9 @@
         @media (min-width: 768px) { .card-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1.1rem; } }
         @media (min-width: 1280px) { .card-grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 1.25rem; } }
 
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            LANGUAGE + GENRE
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         .lang-scroll {
             display: flex;
             gap: 0.85rem;
@@ -935,9 +1034,9 @@
         .genre-chip i { font-size: 0.72rem; }
         .genre-chip:hover, .genre-chip.active { background: var(--red); border-color: var(--red); color: #fff; }
 
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            EMPTY STATE / TOAST / FOOTER / BOTTOM NAV
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         .empty-state {
             margin-top: 1rem;
             background: rgba(255,255,255,0.025);
@@ -1027,9 +1126,9 @@
         .bn-item i { font-size: 1.15rem; }
         .bn-item.active { color: var(--red); }
 
-        /* ══════════════════════════════════════
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
            REDUCED MOTION
-        ══════════════════════════════════════ */
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         @media (prefers-reduced-motion: reduce) {
             html { scroll-behavior: auto; }
             .df-scroll { scroll-behavior: auto; }
@@ -1040,9 +1139,9 @@
             *, *::before, *::after { transition-duration: 0.01ms !important; }
         }
 
-        /* ══════════════════════════════════════════════════════════
-           DEEPFLIX AI CHAT  ·  premium assistant
-        ══════════════════════════════════════════════════════════ */
+        /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+           DEEPFLIX AI CHAT  Â·  premium assistant
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
         .df-chat-launcher {
             position: fixed; right: 22px; bottom: 22px; z-index: 10001;
             width: 64px; height: 64px; border-radius: 50%;
@@ -1274,7 +1373,7 @@
         .df-chat-send:disabled { opacity: 0.45; cursor: not-allowed; }
         .df-chat-foot { flex: 0 0 auto; text-align: center; font-size: 0.62rem; color: rgba(240,237,230,0.3); padding: 0 0 9px; background: rgba(10,7,7,0.92); letter-spacing: 0.04em; }
 
-        /* chat — phones */
+        /* chat â€” phones */
         @media (max-width: 767px) {
             .df-chat-launcher { right: 15px; bottom: calc(76px + var(--safe-b)); width: 58px; height: 58px; }
             .df-chat-panel {
@@ -1303,9 +1402,9 @@
     <span id="toast-msg"></span>
 </div>
 
-<!-- ══════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      NAV
-══════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <header class="df-nav" id="dfNav">
     <div class="nav-left">
         <a href="{{ url_for('user_dashboard') }}" class="logo-link" aria-label="DeepFlix home">
@@ -1322,7 +1421,7 @@
     <form method="GET" action="{{ url_for('user_dashboard') }}" class="search-wrap" id="mobileSearchForm" role="search">
         <i class="fas fa-search" aria-hidden="true"></i>
         <input type="search" name="search" value="{{ search_query }}"
-               placeholder="Search title, genre, hero, director…"
+               placeholder="Search title, genre, hero, directorâ€¦"
                aria-label="Search DeepFlix"
                enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"
                class="df-search">
@@ -1355,7 +1454,7 @@
                            data-id="{{ n.id }}">
                             <div class="notif-thumb">
                                 {% if n.content_thumbnail %}
-                                <img src="{{ url_for('static', filename='uploads/' + n.content_thumbnail) }}" alt="" loading="lazy">
+                                <img src="{{ image_url(n.content_thumbnail) }}" alt="" loading="lazy">
                                 {% else %}
                                 <i class="fas fa-film"></i>
                                 {% endif %}
@@ -1384,7 +1483,7 @@
                 {% elif session.get('profile_type') == 'extra' %}
                     <img src="{{ url_for('static', filename='img/male_icon.png') }}" alt="" data-hide-on-error>
                 {% elif user and user.profile_image %}
-                    <img src="{{ url_for('static', filename='uploads/' + user.profile_image) }}" alt="" data-hide-on-error>
+                    <img src="{{ image_url(user.profile_image) }}" alt="" data-hide-on-error>
                 {% else %}
                     <i class="fas fa-user"></i>
                 {% endif %}
@@ -1399,9 +1498,9 @@
     </div>
 </header>
 
-<!-- ══════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      HERO (featured carousel)
-══════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 {% if has_hero %}
 <section class="hero" id="hero" aria-label="Featured titles">
     <div class="hero-bg" id="heroBgA"></div>
@@ -1411,7 +1510,7 @@
         <div class="hero-grid">
             <a id="featuredLink" class="featured-poster-link" href="{{ url_for('content_page', content_id=hero_item.id) }}" tabindex="-1" aria-hidden="true">
                 <img id="featuredPoster" class="featured-poster"
-                     src="{{ url_for('static', filename='uploads/' + (hero_item.thumbnail or hero_item.image or 'default.jpg')) }}"
+                     src="{{ image_url(hero_item.thumbnail or hero_item.image or 'default.jpg') }}"
                      alt="">
             </a>
 
@@ -1442,9 +1541,9 @@
 </section>
 {% endif %}
 
-<!-- ══════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      MAIN CONTENT
-══════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <main class="df-main">
     {% if not search_query %}
 
@@ -1559,7 +1658,7 @@
     {% if korean_blockbusters %}
     <section class="df-section reveal">
         <div class="section-head">
-            <span style="font-size:1.1rem;" aria-hidden="true">🇰🇷</span>
+            <span style="font-size:1.1rem;" aria-hidden="true">ðŸ‡°ðŸ‡·</span>
             <h2 class="section-title">Korean Blockbusters</h2>
             <div class="section-divider"></div>
         </div>
@@ -1630,7 +1729,7 @@
                class="lang-card{% if f_lang == lang.name %} active{% endif %}">
                 <div class="lang-card-media">
                     <span class="lang-fallback" aria-hidden="true">{{ lang.name }}</span>
-                    <img src="{{ url_for('static', filename='uploads/' + lang.image) }}"
+                    <img src="{{ image_url(lang.image) }}"
                          alt="" class="lang-card-img" loading="lazy" decoding="async" data-hide-on-error>
                 </div>
                 <span class="lang-card-label">{{ lang.name }}</span>
@@ -1669,9 +1768,9 @@
             <i class="fas fa-compass" style="color:var(--red);"></i>
             <h2 class="section-title">
                 {% if search_query %}
-                    Results for “{{ search_query }}”
+                    Results for â€œ{{ search_query }}â€
                 {% elif f_genre and f_lang %}
-                    {{ f_genre }} · {{ f_lang }}
+                    {{ f_genre }} Â· {{ f_lang }}
                 {% elif f_genre %}
                     {{ f_genre }} Movies
                 {% elif f_lang %}
@@ -1694,13 +1793,13 @@
         <div class="card-grid">
             {% for content in all_contents %}
             {% set yr = content.release_year or content.year %}
-            {{ card(content, rating=true, hearts=false, meta=(content.genre or '') ~ ((' · ' ~ yr) if yr else '')) }}
+            {{ card(content, rating=true, hearts=false, meta=(content.genre or '') ~ ((' Â· ' ~ yr) if yr else '')) }}
             {% endfor %}
         </div>
         {% else %}
         <div class="empty-state">
             <i class="fas fa-film"></i>
-            {% if search_query %}No titles match “{{ search_query }}”. Try a different title, genre or actor.{% else %}No content available in this category.{% endif %}
+            {% if search_query %}No titles match â€œ{{ search_query }}â€. Try a different title, genre or actor.{% else %}No content available in this category.{% endif %}
             <br>
             <a href="{{ url_for('user_dashboard') }}">Browse everything</a>
         </div>
@@ -1717,7 +1816,7 @@
         <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
         <a href="#" aria-label="YouTube"><i class="fab fa-youtube"></i></a>
     </div>
-    <p class="footer-copy">© <span id="year">2026</span> DeepFlix — your cinema, elevated</p>
+    <p class="footer-copy">Â© <span id="year">2026</span> DeepFlix â€” your cinema, elevated</p>
 </footer>
 
 <!-- MOBILE TAB BAR -->
@@ -1738,7 +1837,7 @@
     function $(s, c) { return (c || document).querySelector(s); }
     function $$(s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); }
 
-    /* ── TOAST ── */
+    /* â”€â”€ TOAST â”€â”€ */
     var toastEl = $('#toast'), toastMsg = $('#toast-msg'), toastTimer = null;
     function showToast(msg) {
         toastMsg.textContent = msg;
@@ -1747,7 +1846,7 @@
         toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2800);
     }
 
-    /* ── HEARTS (one delegated handler for every card) ── */
+    /* â”€â”€ HEARTS (one delegated handler for every card) â”€â”€ */
     document.addEventListener('click', function (e) {
         var btn = e.target.closest ? e.target.closest('.heart-btn') : null;
         if (!btn) return;
@@ -1788,7 +1887,7 @@
         });
     });
 
-    /* ── NOTIFICATIONS ── */
+    /* â”€â”€ NOTIFICATIONS â”€â”€ */
     var notifBtn = $('#notifToggle'), notifDrop = $('#notifDrop'), notifBadge = $('#notifBadge');
     var lastNotifCount = {{ notifications|length if notifications else 0 }};
 
@@ -1841,7 +1940,7 @@
     }
     setInterval(checkNotifications, 10000);
 
-    /* ── NAV SCROLL STATE ── */
+    /* â”€â”€ NAV SCROLL STATE â”€â”€ */
     var nav = $('#dfNav'), ticking = false;
     function onScroll() {
         if (ticking) return;
@@ -1854,7 +1953,7 @@
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
 
-    /* ── SCROLL REVEAL ── */
+    /* â”€â”€ SCROLL REVEAL â”€â”€ */
     var revEls = $$('.reveal');
     if ('IntersectionObserver' in window) {
         var io = new IntersectionObserver(function (entries) {
@@ -1872,7 +1971,7 @@
         revEls.forEach(function (el) { el.classList.add('visible'); });
     }
 
-    /* ── ROW ARROWS (mouse devices only; touch users just swipe) ── */
+    /* â”€â”€ ROW ARROWS (mouse devices only; touch users just swipe) â”€â”€ */
     $$('.row-wrap').forEach(function (wrap) {
         var row = $('.df-scroll', wrap);
         if (!row) return;
@@ -1901,13 +2000,13 @@
         update();
     });
 
-    /* ── keep the active genre chip in view on phones ── */
+    /* â”€â”€ keep the active genre chip in view on phones â”€â”€ */
     var gs = $('#genreScroll'), ga = gs ? $('.genre-chip.active', gs) : null;
     if (gs && ga && gs.scrollWidth > gs.clientWidth) {
         gs.scrollLeft = Math.max(0, ga.offsetLeft - (gs.clientWidth - ga.offsetWidth) / 2);
     }
 
-    /* ── already-failed images (error fired before listener) ── */
+    /* â”€â”€ already-failed images (error fired before listener) â”€â”€ */
     $$('img').forEach(function (img) {
         if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) {
             img.dispatchEvent(new Event('error'));
@@ -1917,9 +2016,9 @@
     var yearEl = $('#year');
     if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-    /* ══════════════════════════════════════
+    /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
        FEATURED CAROUSEL
-    ══════════════════════════════════════ */
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
     {% if has_hero %}
     var items = [
     {%- for r in recommendations[:8] %}
@@ -2144,9 +2243,9 @@
     }
 </script>
 
-<!-- ══════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      DEEPFLIX AI CHAT ASSISTANT (premium)
-══════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <button id="dfChatLauncher" class="df-chat-launcher" type="button" aria-label="Open DeepFlix AI chat" aria-expanded="false">
   <i class="fas fa-comment-dots"></i>
 </button>
@@ -2160,7 +2259,7 @@
     </div>
     <div class="df-chat-headtext">
       <div class="df-chat-title"><strong>DeepFlix AI</strong><span class="df-chat-tag">Beta</span></div>
-      <small>Online · Movie &amp; mood assistant</small>
+      <small>Online Â· Movie &amp; mood assistant</small>
     </div>
     <button id="dfChatClear" class="df-chat-hbtn" type="button" aria-label="Clear chat" title="New chat"><i class="fas fa-rotate-right"></i></button>
     <button id="dfChatClose" class="df-chat-hbtn" type="button" aria-label="Close chat"><i class="fas fa-times"></i></button>
@@ -2169,19 +2268,20 @@
   <div id="dfChatMessages" class="df-chat-messages" aria-live="polite"></div>
 
   <div id="dfChatSuggestions" class="df-chat-suggestions">
-    <button class="df-chat-suggestion" type="button">😊 I'm happy today. Recommend a movie!</button>
-    <button class="df-chat-suggestion" type="button">🔥 I need a gripping thriller</button>
-    <button class="df-chat-suggestion" type="button">💛 Suggest a feel-good movie</button>
-    <button class="df-chat-suggestion" type="button">🎬 Best Telugu movies</button>
+    <button class="df-chat-suggestion" type="button">ðŸ˜Š I'm happy today. Recommend a movie!</button>
+    <button class="df-chat-suggestion" type="button">ðŸ”¥ I need a gripping thriller</button>
+    <button class="df-chat-suggestion" type="button">ðŸ’› Suggest a feel-good movie</button>
+    <button class="df-chat-suggestion" type="button">ðŸŽ¬ Best Telugu movies</button>
   </div>
 
   <form id="dfChatForm" class="df-chat-inputrow" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="df-chat-inputwrap">
-      <textarea id="dfChatInput" class="df-chat-input" rows="1" maxlength="2000" placeholder="Ask anything about movies…" aria-label="Your message"></textarea>
+      <textarea id="dfChatInput" class="df-chat-input" rows="1" maxlength="2000" placeholder="Ask anything about moviesâ€¦" aria-label="Your message"></textarea>
     </div>
     <button id="dfChatSend" class="df-chat-send" type="submit" aria-label="Send message"><i class="fas fa-paper-plane"></i></button>
   </form>
-  <div class="df-chat-foot">DeepFlix AI can make mistakes · Enjoy the show 🍿</div>
+  <div class="df-chat-foot">DeepFlix AI can make mistakes Â· Enjoy the show ðŸ¿</div>
 </section>
 
 <script>
@@ -2308,7 +2408,7 @@
       info.appendChild(title);
       var meta = document.createElement('div');
       meta.className = 'df-chat-movie-meta';
-      meta.textContent = [m.year, m.language, m.genre].filter(Boolean).join(' • ');
+      meta.textContent = [m.year, m.language, m.genre].filter(Boolean).join(' â€¢ ');
       if (meta.textContent) info.appendChild(meta);
       if (m.story) {
         var story = document.createElement('div');
@@ -2359,7 +2459,7 @@
     day.textContent = 'Today';
     messages.appendChild(day);
     var first = USER_NAME ? USER_NAME.split(' ')[0] : '';
-    addText('Hey' + (first ? ' ' + first : '') + '! 👋 Tell me what you\'re in the mood for, or ask me about movies and series available on DeepFlix.', 'bot');
+    addText('Hey' + (first ? ' ' + first : '') + '! ðŸ‘‹ Tell me what you\'re in the mood for, or ask me about movies and series available on DeepFlix.', 'bot');
   }
 
   async function sendMessage(raw) {

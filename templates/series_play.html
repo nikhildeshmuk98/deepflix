@@ -1,9 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+<script>
+(function () {
+    'use strict';
+
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+        console.error('DeepFlix CSRF token meta tag is missing.');
+        return;
+    }
+
+    const token = meta.content;
+
+    function isUnsafe(method) {
+        return !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(
+            String(method || 'GET').toUpperCase()
+        );
+    }
+
+    function isSameOrigin(url) {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Automatically protect fetch() requests.
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (input, init) {
+        init = init || {};
+
+        const requestUrl = input instanceof Request ? input.url : input;
+        const method = init.method || (
+            input instanceof Request ? input.method : 'GET'
+        );
+
+        if (isUnsafe(method) && isSameOrigin(requestUrl)) {
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : {})
+            );
+
+            headers.set('X-CSRFToken', token);
+            init = Object.assign({}, init, { headers: headers });
+        }
+
+        return originalFetch(input, init);
+    };
+
+    // Automatically protect XMLHttpRequest uploads.
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        this.__deepflixMethod = method;
+        this.__deepflixUrl = url;
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+        if (
+            isUnsafe(this.__deepflixMethod) &&
+            isSameOrigin(this.__deepflixUrl)
+        ) {
+            this.setRequestHeader('X-CSRFToken', token);
+        }
+
+        return originalSend.apply(this, args);
+    };
+
+    // Add token to dynamically created forms before submission.
+    function addFormToken(form) {
+        if (!(form instanceof HTMLFormElement)) return;
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = token;
+            form.appendChild(input);
+        }
+    }
+
+    document.addEventListener('submit', function (event) {
+        addFormToken(event.target);
+    }, true);
+
+    // Also cover forms submitted using form.submit().
+    const originalSubmit = HTMLFormElement.prototype.submit;
+
+    HTMLFormElement.prototype.submit = function () {
+        addFormToken(this);
+        return originalSubmit.call(this);
+    };
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>DeepFlix · Series Experience</title>
+    <title>DeepFlix Â· Series Experience</title>
     <!-- Tailwind + Font Awesome + Google Fonts -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -332,7 +431,7 @@
     <!-- Auto-hide Navbar -->
     <nav class="navbar fixed top-0 left-0 w-full z-50 p-5 flex justify-between items-center bg-gradient-to-b from-black via-black/80 to-transparent transition-opacity duration-300">
         <a href="{{ url_for('all_series') }}" class="text-white/90 hover:text-red-500 transition-all flex items-center gap-3 text-lg group">
-            <i class="fas fa-arrow-left group-hover:-translate-x-1 transition"></i> 
+            <i class="fas fa-arrow-left group-hover:-translate-x-1 transition"></i>
             <span class="border-b border-transparent group-hover:border-red-500">All Series</span>
         </a>
         <div class="flex items-center gap-4">
@@ -355,7 +454,7 @@
         <div id="player-fallback" class="w-full h-full hidden items-center justify-center bg-gradient-to-b from-gray-900 to-black">
             <div class="text-center p-8 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10">
                 <i class="fas fa-film text-7xl text-gray-700 mb-5"></i>
-                <p class="text-gray-300 text-xl">✨ Trailer / Episode preview unavailable ✨</p>
+                <p class="text-gray-300 text-xl">âœ¨ Trailer / Episode preview unavailable âœ¨</p>
                 <p class="text-gray-500 mt-2">But you can still explore & review this series</p>
             </div>
         </div>
@@ -386,7 +485,7 @@
                         {% if series.hero %}
                         <div class="cast-item">
                             {% if series.hero_image %}
-                                <img src="{{ url_for('static', filename='uploads/' + series.hero_image.split('/')[-1]) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <img src="{{ image_url(series.hero_image) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
                                 <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle fa-3x"></i></div>
                             {% else %}
                                 <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
@@ -397,7 +496,7 @@
                         {% if series.hero2 and series.hero2 != "None" %}
                         <div class="cast-item">
                             {% if series.hero2_image %}
-                                <img src="{{ url_for('static', filename='uploads/' + series.hero2_image.split('/')[-1]) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <img src="{{ image_url(series.hero2_image) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
                                 <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle fa-3x"></i></div>
                             {% else %}
                                 <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
@@ -414,7 +513,7 @@
                         {% if series.heroine %}
                         <div class="cast-item">
                             {% if series.heroine_image %}
-                                <img src="{{ url_for('static', filename='uploads/' + series.heroine_image.split('/')[-1]) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <img src="{{ image_url(series.heroine_image) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
                                 <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle fa-3x"></i></div>
                             {% else %}
                                 <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
@@ -431,7 +530,7 @@
                         {% if series.director %}
                         <div class="cast-item">
                             {% if series.director_image %}
-                                <img src="{{ url_for('static', filename='uploads/' + series.director_image.split('/')[-1]) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <img src="{{ image_url(series.director_image) }}" class="avatar" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
                                 <div class="avatar-placeholder" style="display: none;"><i class="fas fa-user-circle fa-3x"></i></div>
                             {% else %}
                                 <div class="avatar-placeholder"><i class="fas fa-user-circle fa-3x"></i></div>
@@ -460,7 +559,7 @@
                         <span class="mr-4 font-medium text-gray-200">Rate this series:</span>
                         <div class="flex space-x-1.5" id="star-container">
                             {% for i in range(1, 6) %}
-                            <button onclick="rateContent({{ series.id }}, {{ i }})" class="star-btn text-4xl text-gray-600 focus:outline-none" data-rating="{{ i }}">★</button>
+                            <button onclick="rateContent({{ series.id }}, {{ i }})" class="star-btn text-4xl text-gray-600 focus:outline-none" data-rating="{{ i }}">â˜…</button>
                             {% endfor %}
                         </div>
                     </div>
@@ -473,14 +572,15 @@
             <!-- Right Column: Reviews -->
             <div class="lg:w-1/3 bg-gray-900/70 backdrop-blur-md p-6 rounded-3xl border border-gray-800/80 shadow-2xl">
                 <h3 class="text-2xl font-bold mb-5 flex items-center gap-3">
-                    <i class="fas fa-comments text-red-500"></i> 
+                    <i class="fas fa-comments text-red-500"></i>
                     <span>Community Reviews</span>
                     <span class="text-sm bg-gray-800 px-3 py-1 rounded-full text-gray-300" id="review-count">{{ reviews|length if reviews else 0 }}</span>
                 </h3>
 
                 <form id="reviewForm" method="POST" class="mb-7">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="content_id" value="{{ series.id }}">
-                    <textarea name="review_text" id="reviewText" rows="3" placeholder="Write your honest review... (clear, vibrant, visible)" 
+                    <textarea name="review_text" id="reviewText" rows="3" placeholder="Write your honest review... (clear, vibrant, visible)"
                               class="review-textarea w-full p-4 rounded-2xl border-2 resize-none focus:ring-0"></textarea>
                     <button type="submit" class="mt-4 w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold py-3 rounded-xl transition-all shadow-xl shadow-red-600/30 flex items-center justify-center gap-2">
                         <i class="fas fa-paper-plane"></i> Post Review
@@ -581,11 +681,11 @@
                                     {% if item.poster_path.startswith(('http://', 'https://')) %}
                                         <img src="{{ item.poster_path }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">
                                     {% else %}
-                                        {% set filename = item.poster_path.split('/')[-1] %}
-                                        <img src="{{ url_for('static', filename='uploads/' + filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">
+                                        {% set filename = item.poster_path %}
+                                        <img src="{{ image_url(filename) }}" alt="{{ item.title }}" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">
                                     {% endif %}
                                 {% else %}
-                                    <img src="{{ url_for('static', filename='uploads/default.jpg') }}" alt="{{ item.title }}" onerror="this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">
+                                    <img src="{{ image_url('default.jpg') }}" alt="{{ item.title }}" onerror="this.style.display='none'; this.parentElement.querySelector('.fallback-icon').style.display='flex';">
                                 {% endif %}
                                 <div class="fallback-icon" style="display:none;"><i class="fas fa-film fa-3x"></i><span class="text-xs mt-2">{{ item.title|truncate(18) }}</span></div>
                             </div>
@@ -629,37 +729,37 @@
             if (!youtubeVideoId || youtubeVideoId === 'None' || youtubeVideoId === '') { showFallback(); return; }
             player = new YT.Player('player', { height: '100%', width: '100%', videoId: youtubeVideoId, playerVars: { autoplay: 1, modestbranding: 1, rel: 0 }, events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange, 'onError': onPlayerError } });
         }
-        function onPlayerReady(event) { 
-            fetch(`/api/progress/get?content_id=${seriesId}`).then(res=>res.json()).then(data=>{ if(data.success && data.progress>0){ let dur=player.getDuration(); player.seekTo((data.progress/100)*dur,true); } }).catch(()=>{}); 
-            progressUpdateInterval = setInterval(()=>reportProgress(), 15000); 
+        function onPlayerReady(event) {
+            fetch(`/api/progress/get?content_id=${seriesId}`).then(res=>res.json()).then(data=>{ if(data.success && data.progress>0){ let dur=player.getDuration(); player.seekTo((data.progress/100)*dur,true); } }).catch(()=>{});
+            progressUpdateInterval = setInterval(()=>reportProgress(), 15000);
         }
         function onPlayerStateChange(event){ if(event.data === YT.PlayerState.ENDED) reportProgress(100); }
         function onPlayerError(){ showFallback(); }
         function showFallback(){ document.getElementById('player').classList.add('hidden'); document.getElementById('player-fallback').classList.remove('hidden'); }
         function reportProgress(forcePercent=null){ if(!player||!player.getCurrentTime)return; let percent; if(forcePercent!==null){ percent=forcePercent; } else{ let cur=player.getCurrentTime(), dur=player.getDuration(); if(!dur)return; percent=(cur/dur)*100; if(Math.abs(percent-lastReportedTime)<2)return; } percent=Math.min(100,Math.max(0,percent)); lastReportedTime=percent; fetch('/api/progress/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:seriesId,progress:percent})}).catch(()=>{}); }
-        
-        function rateContent(cid,rating){ 
-            fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:cid,rating:rating})}).then(res=>res.json()).then(data=>{ if(data.success){ let stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<rating){ star.classList.add('active'); star.style.color='#fbbf24'; } else{ star.classList.remove('active'); star.style.color=''; } }); showToast('⭐ Rating saved!'); } }).catch(()=>showToast('Error saving rating','error')); 
+
+        function rateContent(cid,rating){
+            fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content_id:cid,rating:rating})}).then(res=>res.json()).then(data=>{ if(data.success){ let stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<rating){ star.classList.add('active'); star.style.color='#fbbf24'; } else{ star.classList.remove('active'); star.style.color=''; } }); showToast('â­ Rating saved!'); } }).catch(()=>showToast('Error saving rating','error'));
         }
-        function loadUserRating(){ 
-            fetch(`/api/rating/get?content_id=${seriesId}`).then(res=>res.json()).then(data=>{ if(data.success && data.rating>0){ let stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<data.rating){ star.classList.add('active'); star.style.color='#fbbf24'; } }); } }).catch(()=>{}); 
+        function loadUserRating(){
+            fetch(`/api/rating/get?content_id=${seriesId}`).then(res=>res.json()).then(data=>{ if(data.success && data.rating>0){ let stars=document.querySelectorAll('.star-btn'); stars.forEach((star,idx)=>{ if(idx<data.rating){ star.classList.add('active'); star.style.color='#fbbf24'; } }); } }).catch(()=>{});
         }
-        
+
         function scrollCarousel(dir){ const car=document.getElementById('recommendations-carousel'); if(!car)return; const amount=dir==='left'? -440 : 440; car.scrollBy({left:amount,behavior:'smooth'}); setTimeout(updateArrowStates,300); }
         function updateArrowStates(){ const car=document.getElementById('recommendations-carousel'); if(!car)return; const left=document.getElementById('carousel-left'),right=document.getElementById('carousel-right'); if(car.scrollLeft<=15) left.classList.add('disabled'); else left.classList.remove('disabled'); if(car.scrollLeft>=car.scrollWidth-car.clientWidth-15) right.classList.add('disabled'); else right.classList.remove('disabled'); }
-        
+
         function showToast(msg,type='success'){ const toast=document.createElement('div'); toast.className=`fixed bottom-6 right-6 ${type==='success'?'bg-green-600':'bg-red-600'} text-white px-6 py-4 rounded-2xl shadow-2xl z-50 flex items-center gap-3 backdrop-blur-sm bg-opacity-90 border ${type==='success'?'border-green-400':'border-red-400'} toast-message`; toast.innerHTML=`<i class="fas ${type==='success'?'fa-check-circle':'fa-exclamation-triangle'}"></i><span>${msg}</span>`; document.body.appendChild(toast); setTimeout(()=>toast.remove(),3000); }
-        
+
         // Auto-hide navbar
         (function(){ const nav=document.querySelector('.navbar'); let hideTimeout; function showNav(){ if(nav) nav.classList.remove('navbar-hidden'); clearTimeout(hideTimeout); hideTimeout=setTimeout(()=>{ if(nav) nav.classList.add('navbar-hidden'); },2000); } if(nav){ document.addEventListener('mousemove',showNav); document.addEventListener('keydown',showNav); showNav(); } })();
-        
+
         // Share modal
         function openShareModal(){ const modal=document.getElementById('shareModal'); document.getElementById('shareLink').value=window.location.href; modal.classList.remove('hidden'); modal.classList.add('flex'); }
         function closeShareModal(){ const modal=document.getElementById('shareModal'); modal.classList.add('hidden'); modal.classList.remove('flex'); }
-        function copyLink(){ const inp=document.getElementById('shareLink'); inp.select(); navigator.clipboard.writeText(inp.value).then(()=>showToast('🔗 Series link copied!')).catch(()=>showToast('Failed','error')); }
-        function shareWhatsApp(){ window.open(`https://wa.me/?text=${encodeURIComponent("🔥 Check out this series on DeepFlix:\n"+window.location.href)}`,'_blank'); }
-        function nativeShare(){ if(navigator.share){ navigator.share({title:document.title,text:"DeepFlix series",url:window.location.href}).catch(()=>{}); } else showToast("⚠️ Native share not supported",'error'); }
-        
+        function copyLink(){ const inp=document.getElementById('shareLink'); inp.select(); navigator.clipboard.writeText(inp.value).then(()=>showToast('ðŸ”— Series link copied!')).catch(()=>showToast('Failed','error')); }
+        function shareWhatsApp(){ window.open(`https://wa.me/?text=${encodeURIComponent("ðŸ”¥ Check out this series on DeepFlix:\n"+window.location.href)}`,'_blank'); }
+        function nativeShare(){ if(navigator.share){ navigator.share({title:document.title,text:"DeepFlix series",url:window.location.href}).catch(()=>{}); } else showToast("âš ï¸ Native share not supported",'error'); }
+
         // Download series info text
         function triggerDownload(){
             const seriesTitle = "{{ series.title }}";
@@ -672,13 +772,13 @@
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(link.href);
-            showToast(`📥 Downloaded info for "${seriesTitle}"`, 'success');
+            showToast(`ðŸ“¥ Downloaded info for "${seriesTitle}"`, 'success');
         }
 
         // Episode video download function
         function downloadEpisodeVideo(videoUrl, episodeRawTitle) {
             if(!videoUrl || videoUrl === '' || videoUrl === 'None') {
-                showToast('❌ No video file available for download', 'error');
+                showToast('âŒ No video file available for download', 'error');
                 return;
             }
             const link = document.createElement('a');
@@ -688,9 +788,9 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            showToast('⬇️ Download started!', 'success');
+            showToast('â¬‡ï¸ Download started!', 'success');
         }
-        
+
         // AJAX review submission
         document.getElementById('reviewForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -700,7 +800,7 @@
                 const data = await res.json();
                 if (data.success) {
                     document.getElementById('reviewText').value = '';
-                    showToast('✅ Review posted!');
+                    showToast('âœ… Review posted!');
                     const reviewsDiv = document.getElementById('reviewsList');
                     const newReviewHtml = `
                         <div class="border-b border-gray-800/70 pb-4 review-card p-3 -mx-2 rounded-xl">
@@ -726,12 +826,12 @@
                 showToast('Network error. Please try again.', 'error');
             }
         });
-        
-        document.addEventListener('DOMContentLoaded',()=>{ 
-            loadUserRating(); 
-            const car=document.getElementById('recommendations-carousel'); 
-            if(car){ car.addEventListener('scroll',updateArrowStates); window.addEventListener('resize',updateArrowStates); setTimeout(updateArrowStates,200); } 
-            if(!youtubeVideoId||youtubeVideoId==='None') showFallback(); 
+
+        document.addEventListener('DOMContentLoaded',()=>{
+            loadUserRating();
+            const car=document.getElementById('recommendations-carousel');
+            if(car){ car.addEventListener('scroll',updateArrowStates); window.addEventListener('resize',updateArrowStates); setTimeout(updateArrowStates,200); }
+            if(!youtubeVideoId||youtubeVideoId==='None') showFallback();
         });
         window.addEventListener('beforeunload',()=>reportProgress());
         window.addEventListener('unload',()=>{ if(progressUpdateInterval) clearInterval(progressUpdateInterval); });
