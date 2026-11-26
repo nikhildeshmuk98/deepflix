@@ -978,33 +978,64 @@ def healthz():
 @app.route('/')
 def index():
     conn = None
+    cursor = None
+
     try:
         conn = get_connection()
-        cursor = conn.cursor()
+
+        # PyMySQL dictionary cursor
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
         base = """
-            SELECT * FROM contents
+            SELECT *
+            FROM contents
             WHERE content_type = %s
               AND (is_kids = 0 OR is_kids IS NULL)
               AND (is_90s = 0 OR is_90s IS NULL)
             ORDER BY views DESC, hearts DESC
             LIMIT 10
         """
+
+        # Fetch movies
         cursor.execute(base, ('movie',))
         trending_movies = cursor.fetchall()
+
+        # Fetch series
         cursor.execute(base, ('series',))
         trending_series = cursor.fetchall()
-        cursor.close()
-        return render_template("index.html",
-                               trending_movies=trending_movies,
-                               trending_series=trending_series)
+
+        # Debug
+        print("TOTAL TRENDING MOVIES:", len(trending_movies))
+
+        if trending_movies:
+            print(
+                "FIRST MOVIE BACKDROP:",
+                trending_movies[0].get('backdrop_url')
+            )
+
+        return render_template(
+            "index.html",
+            trending_movies=trending_movies,
+            trending_series=trending_series
+        )
+
     except Exception as e:
+        print("HOMEPAGE DATABASE ERROR:", str(e))
+
         flash(f"Database Error: {str(e)}", "danger")
-        return render_template("index.html", trending_movies=[], trending_series=[])
+
+        return render_template(
+            "index.html",
+            trending_movies=[],
+            trending_series=[]
+        )
+
     finally:
+        if cursor:
+            cursor.close()
+
         if conn:
             conn.close()
-
-
 # =========================================================
 # ROUTES: ADMIN
 # =========================================================

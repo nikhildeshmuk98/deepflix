@@ -1,920 +1,707 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>DeepFlixAI · cinematic intelligence</title>
-    <!-- fonts & icons -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#030712">
+    <title>DeepFlixAI · Cinematic Intelligence</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        /* MAGICAL PAGE LOAD ANIMATION */
-        @keyframes magicalReveal {
-            0% {
-                opacity: 0;
-                transform: scale(0.95) translateY(20px);
-                filter: blur(10px);
-            }
-            50% {
-                opacity: 0.7;
-                transform: scale(1.02) translateY(-5px);
-                filter: blur(2px);
-            }
-            100% {
-                opacity: 1;
-                transform: scale(1) translateY(0);
-                filter: blur(0);
-            }
+        /* ==================================
+           TOKENS
+        ================================== */
+        :root {
+            --bg: #030712;
+            --card: #0b0f19;
+            --red: #e50914;
+            --red-hot: #f40612;
+            --text: #ffffff;
+            --soft: #d1d5db;
+            --muted: #9ca3af;
+            --line: rgba(255,255,255,0.08);
+            --gutter: clamp(16px, 4vw, 48px);
+            --maxw: 1280px;
+            --card-w: clamp(240px, 72vw, 340px);
+            --gap: clamp(14px, 2vw, 28px);
         }
 
-        @keyframes glowPulse {
-            0% { text-shadow: 0 0 20px rgba(229,9,20,0.3); }
-            50% { text-shadow: 0 0 40px rgba(229,9,20,0.8), 0 0 60px rgba(229,9,20,0.4); }
-            100% { text-shadow: 0 0 20px rgba(229,9,20,0.3); }
-        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-        @keyframes slideUpFade {
-            0% { opacity: 0; transform: translateY(30px); }
-            100% { opacity: 1; transform: translateY(0); }
+        html {
+            -webkit-text-size-adjust: 100%;
+            scroll-behavior: smooth;
         }
-
-        @keyframes cardPop {
-            0% { opacity: 0; transform: scale(0.8); }
-            50% { transform: scale(1.05); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-
-        /* Apply animations to different elements */
-        .magical-header {
-            animation: slideUpFade 1s ease-out forwards;
-        }
-
-        .magical-hero {
-            animation: magicalReveal 1.2s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
-        }
-
-        .magical-title {
-            animation: glowPulse 3s infinite, slideUpFade 1s ease-out forwards;
-        }
-
-        .magical-section {
-            animation: slideUpFade 1s ease-out 0.3s both;
-        }
-
-        .movie-card {
-            animation: cardPop 0.6s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
-            opacity: 0;
-        }
-
-        /* Stagger card animations */
-        .movie-card:nth-child(1) { animation-delay: 0.1s; }
-        .movie-card:nth-child(2) { animation-delay: 0.2s; }
-        .movie-card:nth-child(3) { animation-delay: 0.3s; }
-        .movie-card:nth-child(4) { animation-delay: 0.4s; }
-        .movie-card:nth-child(5) { animation-delay: 0.5s; }
-        .movie-card:nth-child(6) { animation-delay: 0.6s; }
-        .movie-card:nth-child(7) { animation-delay: 0.7s; }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background: #030712;
-            color: white;
-            scroll-behavior: smooth;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            min-height: 100dvh;
             overflow-x: hidden;
-            width: 100%;
-            position: relative;
+            display: flex;
+            flex-direction: column;
+            -webkit-font-smoothing: antialiased;
+            -webkit-tap-highlight-color: transparent;
         }
 
-        /* hero background (fixed) */
+        img { max-width: 100%; display: block; }
+        a { color: inherit; text-decoration: none; }
+        button { font: inherit; color: inherit; }
+
+        :focus-visible {
+            outline: 2px solid #fff;
+            outline-offset: 3px;
+        }
+
+        /* ==================================
+           BACKGROUND
+        ================================== */
         .bg-hero {
-            background: url('{{ url_for("static", filename="img/bg.png") }}') center/cover no-repeat;
             position: fixed;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             z-index: -2;
+            background:
+                url('{{ url_for("static", filename="img/bg.png") }}') center / cover no-repeat,
+                var(--bg);
             filter: brightness(0.4) saturate(1.2);
-            transition: filter 0.2s;
-            animation: glowPulse 8s infinite;
+            transform: translateZ(0);
         }
 
-        /* subtle animated overlay */
-        .bg-hero::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: radial-gradient(circle at 30% 30%, rgba(229,9,20,0.15) 0%, transparent 70%);
+        .bg-shade {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
             pointer-events: none;
-            animation: glowPulse 5s infinite;
+            background:
+                radial-gradient(circle at 30% 20%, rgba(229,9,20,0.18), transparent 65%),
+                linear-gradient(to bottom, rgba(3,7,18,0.2) 0%, rgba(3,7,18,0.55) 55%, var(--bg) 100%);
         }
 
-        /* glass header */
-        .header {
-            background: rgba(0,0,0,0.6);
-            backdrop-filter: blur(16px) saturate(180%);
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+        /* ==================================
+           BUTTONS
+        ================================== */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border-radius: 999px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            white-space: nowrap;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: transform 0.25s ease, background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
         }
 
         .btn-red {
-            background: #e50914;
-            box-shadow: 0 8px 20px -8px rgba(229,9,20,0.5);
-            transition: all 0.2s ease;
-            font-weight: 600;
-            letter-spacing: 0.3px;
-        }
-        .btn-red:hover {
-            background: #f40612;
-            transform: scale(1.05) translateY(-2px);
-            box-shadow: 0 14px 28px -8px rgba(229,9,20,0.7);
+            background: var(--red);
+            box-shadow: 0 8px 22px -8px rgba(229,9,20,0.6);
         }
 
-        /* ---------- MOVIE CARD - MATCHING REFERENCE IMAGE ---------- */
-        .movie-card {
-            width: min(220px, 45vw);
-            max-width: 220px;
-            min-width: 160px;
-            flex: 0 0 auto;
-            border-radius: 12px;
-            overflow: hidden;
-            transition: all 0.35s cubic-bezier(0.2, 0, 0, 1);
-            position: relative;
-            cursor: pointer;
-            box-shadow: 0 15px 25px -8px rgba(0,0,0,0.9);
-            border: 1px solid rgba(255,255,255,0.03);
-            background: #0b0f19;
+        .btn-red:hover {
+            background: var(--red-hot);
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px -8px rgba(229,9,20,0.75);
         }
-        .movie-card:hover {
-            transform: scale(1.08) translateY(-10px);
-            box-shadow: 0 30px 35px -12px black;
-            border-color: rgba(255,255,255,0.2);
-            z-index: 10;
+
+        .btn-red:active { transform: scale(0.97); }
+
+        .btn-ghost {
+            background: rgba(0,0,0,0.4);
+            border-color: rgba(255,255,255,0.18);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+
+        .btn-ghost:hover { border-color: rgba(255,255,255,0.4); background: rgba(255,255,255,0.08); }
+
+        /* ==================================
+           HEADER
+        ================================== */
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            padding: env(safe-area-inset-top, 0px) max(var(--gutter), env(safe-area-inset-right, 0px)) 0 max(var(--gutter), env(safe-area-inset-left, 0px));
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .header-inner {
+            max-width: var(--maxw);
+            margin: 0 auto;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .logo { height: 36px; width: auto; max-width: 150px; object-fit: contain; }
+
+        .header .btn { padding: 10px 22px; font-size: 0.9rem; }
+
+        /* ==================================
+           HERO
+        ================================== */
+        .hero {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: clamp(48px, 10vh, 120px) var(--gutter) clamp(40px, 8vh, 90px);
+            text-align: center;
+            animation: heroIn 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+        }
+
+        @keyframes heroIn {
+            from { opacity: 0; transform: translateY(24px); filter: blur(8px); }
+            to   { opacity: 1; transform: none; filter: blur(0); }
+        }
+
+        .hero-title {
+            font-size: clamp(2.1rem, 7vw, 4.4rem);
+            font-weight: 900;
+            line-height: 1.08;
+            letter-spacing: -0.03em;
+            background: linear-gradient(to bottom, #ffffff 40%, #c7cad1);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-wrap: balance;
+            filter: drop-shadow(0 4px 30px rgba(229,9,20,0.35));
+        }
+
+        .hero-sub {
+            margin: 1.25rem auto 0;
+            max-width: 40ch;
+            color: var(--soft);
+            font-size: clamp(1.05rem, 2.6vw, 1.45rem);
+            font-weight: 300;
+            line-height: 1.55;
+        }
+
+        .hero-chips {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 1.75rem;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #f3f4f6;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.14);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+
+        .chip i { color: var(--red); font-size: 0.8rem; }
+
+        .hero-cta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            margin-top: 2.25rem;
+        }
+
+        .hero-cta .btn { padding: 15px 40px; font-size: 1.1rem; }
+
+        .hero-note {
+            margin-top: 1rem;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        /* ==================================
+           TRENDING
+        ================================== */
+        .trending {
+            width: 100%;
+            max-width: var(--maxw);
+            margin: 0 auto;
+            padding: 0 0 clamp(32px, 6vw, 72px);
+            position: relative;
+        }
+
+        .section-title {
+            padding: 0 var(--gutter);
+            font-size: clamp(1.5rem, 4vw, 2.2rem);
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            text-transform: uppercase;
+            line-height: 1.2;
+            text-shadow: 0 0 20px rgba(229,9,20,0.35);
+        }
+
+        .carousel-frame { position: relative; margin-top: 8px; }
+
+        .carousel {
+            display: flex;
+            gap: var(--gap);
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 18px var(--gutter) 56px;
+            scroll-snap-type: x proximity;
+            scroll-padding-inline: var(--gutter);
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
+        }
+
+        .carousel::-webkit-scrollbar { display: none; }
+
+        .movie-card {
+            position: relative;
+            flex: 0 0 var(--card-w);
+            scroll-snap-align: start;
+            border-radius: 14px;
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,0.04);
+            box-shadow: 0 15px 25px -8px rgba(0,0,0,0.9);
+            transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.35s ease, border-color 0.35s ease;
+            animation: cardPop 0.6s ease both;
+        }
+
+        .movie-card:nth-child(1) { animation-delay: 0.05s; }
+        .movie-card:nth-child(2) { animation-delay: 0.12s; }
+        .movie-card:nth-child(3) { animation-delay: 0.19s; }
+        .movie-card:nth-child(4) { animation-delay: 0.26s; }
+        .movie-card:nth-child(5) { animation-delay: 0.33s; }
+
+        @keyframes cardPop {
+            from { opacity: 0; transform: scale(0.92) translateY(16px); }
+            to   { opacity: 1; transform: none; }
+        }
+
+        .poster-wrap {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            border-radius: 14px;
+            overflow: hidden;
+            background: #1f2937;
         }
 
         .poster {
-            height: min(330px, 65vw);
-            max-height: 330px;
-            min-height: 240px;
             width: 100%;
+            height: 100%;
             object-fit: cover;
-            transition: transform 0.4s;
-            display: block;
-            background: #1f2937;
-        }
-        .movie-card:hover .poster {
-            transform: scale(1.03);
+            object-position: center;
+            transition: transform 0.5s ease;
         }
 
-        /* ---------- NUMBER RANK - BOTTOM RIGHT (HALF ON CARD, HALF OUTSIDE — PLAIN WHITE, NO GLOW) ---------- */
-        .rank-number {
-            position: absolute;
-            bottom: -0.4em;               /* pushes half of the number outside the card bottom */
-            right: 8px;
-            color: #ffffff;                /* pure white, no glow */
-            font-weight: 900;
-            font-size: clamp(5rem, 18vw, 7rem);
-            line-height: 0.8;
-            z-index: 15;
-            font-family: 'Inter', sans-serif;
-            letter-spacing: -0.1em;
-            /* text-shadow completely removed */
-            text-shadow: none;
-            opacity: 0.95;
-            transition: all 0.2s ease;
-            pointer-events: none;
-        }
+        .card-link { position: absolute; inset: 0; z-index: 5; border-radius: 14px; }
 
-        /* all ranks consistently white, no glow */
-        .movie-card:nth-child(1) .rank-number,
-        .movie-card:nth-child(2) .rank-number,
-        .movie-card:nth-child(3) .rank-number,
-        .movie-card:nth-child(4) .rank-number,
-        .movie-card:nth-child(5) .rank-number,
-        .movie-card:nth-child(6) .rank-number,
-        .movie-card:nth-child(7) .rank-number {
-            color: #ffffff;
-            text-shadow: none;
-        }
-
-        .movie-card:hover .rank-number {
-            transform: scale(1.1);
-            opacity: 1;
-            /* no glow on hover either */
-            text-shadow: none;
-        }
-
-        /* heart button - minimal like reference */
-        .heart-btn {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
-            padding: 6px 12px;
-            border-radius: 30px;
-            cursor: pointer;
-            border: 1px solid rgba(255,255,255,0.2);
-            display: none;
-            align-items: center;
-            gap: 6px;
-            z-index: 25;
-            transition: all 0.15s;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: white;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-        }
-        .heart-btn i {
-            font-size: 1rem;
-        }
-        .heart-btn.active {
-            background: #e50914;
-            border-color: #e50914;
-        }
-        .heart-btn.active i {
-            color: white;
-        }
-
-        /* meta info overlay - minimal */
         .meta-info {
             position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            inset: auto 0 0 0;
+            z-index: 6;
+            padding: 36px 14px 14px;
+            padding-right: 4.8rem;
             background: linear-gradient(0deg, rgba(0,0,0,0.95) 10%, rgba(0,0,0,0.4) 70%, transparent);
-            padding: 30px 12px 15px 12px;
-            text-align: left;
-            opacity: 0;
-            transition: opacity 0.25s ease;
             pointer-events: none;
-            z-index: 10;
+            transition: opacity 0.25s ease;
         }
+
         .movie-title {
-            font-size: 1.1rem;
+            font-size: 1.05rem;
             font-weight: 800;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            color: white;
-            text-shadow: 0 2px 5px black;
-            letter-spacing: -0.02em;
-        }
-        .movie-year {
-            font-size: 0.9rem;
-            color: #d1d5db;
-            font-weight: 500;
-            margin-top: 2px;
+            text-shadow: 0 2px 5px #000;
         }
 
-        /* on card hover: show heart & meta-info */
-        @media (hover: hover) {
-            .movie-card:hover .heart-btn {
-                display: flex;
-            }
-            .movie-card:hover .meta-info {
-                opacity: 1;
-            }
-        }
+        .movie-year { margin-top: 2px; font-size: 0.85rem; font-weight: 500; color: var(--soft); }
 
-        /* Touch devices - show on tap */
-        @media (hover: none) {
-            .movie-card:active .heart-btn {
-                display: flex;
-            }
-            .movie-card:active .meta-info {
-                opacity: 1;
-            }
-        }
-
-        /* carousel wrapper */
-        .carousel-wrapper {
-            display: flex;
-            justify-content: center;
-            width: 100%;
-            padding: 0 10px;
-        }
-
-        .carousel {
-            display: flex;
-            overflow-x: auto;
-            gap: 40px;  /* INCREASED SPACE BETWEEN CARDS - was 20px, now 40px */
-            scroll-behavior: smooth;
-            padding: 15px 4px 30px 4px;
-            scrollbar-width: none;
-            width: 100%;
-            max-width: calc(220px * 4 + 40px * 3);  /* Updated to match new gap */
-            margin: 0 auto;
-            justify-content: flex-start;
-            -webkit-overflow-scrolling: touch;
-        }
-        .carousel::-webkit-scrollbar {
-            display: none;
-        }
-
-        /* carousel container */
-        .carousel-container {
-            position: relative;
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-top: 1.5rem;
-        }
-
-        /* carousel navigation buttons */
-        .carousel-btn {
+        .rank-number {
             position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
+            right: 10px;
+            bottom: -0.12em;
+            z-index: 7;
+            font-size: clamp(3.8rem, 11vw, 5.5rem);
+            font-weight: 900;
+            line-height: 0.85;
+            letter-spacing: -0.08em;
+            pointer-events: none;
+            color: #fff;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.85);
+            transition: transform 0.25s ease;
+        }
+
+        .heart-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-height: 36px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(0,0,0,0.7);
             border: 1px solid rgba(255,255,255,0.2);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: transform 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+        }
+
+        .heart-btn.active { background: var(--red); border-color: var(--red); }
+        .heart-btn:active { transform: scale(0.9); }
+
+        /* Desktop / mouse: hover reveals details */
+        @media (hover: hover) and (pointer: fine) {
+            .movie-card:hover {
+                transform: translateY(-8px) scale(1.03);
+                box-shadow: 0 30px 35px -12px #000;
+                border-color: rgba(255,255,255,0.2);
+                z-index: 10;
+            }
+            .movie-card:hover .poster { transform: scale(1.05); }
+            .movie-card:hover .rank-number { transform: scale(1.08); }
+            .meta-info { opacity: 0; }
+            .heart-btn { opacity: 0; }
+            .movie-card:hover .meta-info,
+            .movie-card:focus-within .meta-info,
+            .movie-card:hover .heart-btn,
+            .movie-card:focus-within .heart-btn { opacity: 1; }
+        }
+
+        /* ==================================
+           CAROUSEL ARROWS (mouse devices only)
+        ================================== */
+        .carousel-btn {
+            display: none;
+            position: absolute;
+            top: calc(50% - 20px);
+            transform: translateY(-50%);
+            z-index: 40;
             width: 48px;
             height: 48px;
-            border-radius: 50%;
-            display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2.2rem;
-            color: white;
+            border-radius: 50%;
+            font-size: 2rem;
+            line-height: 1;
             cursor: pointer;
-            transition: 0.2s;
-            z-index: 40;
+            background: rgba(0,0,0,0.8);
+            border: 1px solid rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             box-shadow: 0 10px 20px rgba(0,0,0,0.7);
-            font-weight: 300;
-        }
-        .carousel-btn:hover {
-            background: #e50914;
-            border-color: #e50914;
-            transform: translateY(-50%) scale(1.15);
+            transition: background 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
         }
 
-        .left { left: -10px; }
-        .right { right: -10px; }
+        .carousel-btn:hover { background: var(--red); border-color: var(--red); transform: translateY(-50%) scale(1.12); }
+        .carousel-btn[disabled] { opacity: 0; pointer-events: none; }
+        .carousel-btn.left { left: 12px; }
+        .carousel-btn.right { right: 12px; }
 
-        @media (max-width: 1024px) {
-            .left { left: 0px; }
-            .right { right: 0px; }
+        @media (hover: hover) and (pointer: fine) and (min-width: 768px) {
+            .carousel-btn { display: flex; }
         }
 
-        /* section headers - TRENDING NOW like reference */
-        .section-title {
-            font-size: 2.2rem;
-            font-weight: 900;
-            letter-spacing: -0.02em;
-            color: white;
-            margin-bottom: 1rem;  /* Slightly increased */
-            margin-left: max(15px, calc((100% - (220px * 4 + 40px * 3)) / 2));  /* Updated */
-            display: block;
-            line-height: 1.2;
-            text-transform: uppercase;
-        }
+        .empty-state { padding: 24px var(--gutter); color: var(--muted); }
 
-        /* HERO SECTION */
-        .hero-title {
-            font-size: clamp(2rem, 6vw, 2.5rem);
-            font-weight: 900;
-            line-height: 1.1;
-            background: linear-gradient(to right, #ffffff, #f0f0f0);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            text-shadow: 0 0 50px rgba(229,9,20,0.5);
-            margin-bottom: 0.75rem;
-        }
-
-        .hero-sub {
-            color: #d1d5db;
-            font-size: clamp(1.2rem, 4vw, 1.5rem);
-            font-weight: 300;
-            max-width: min(750px, 90%);
-            margin-left: auto;
-            margin-right: auto;
-            line-height: 1.4;
-        }
-
-        .hero-cta-text {
-            font-size: clamp(0.9rem, 3vw, 1.1rem);
-            color: #9ca3af;
-            margin-top: 0.8rem;
-            margin-bottom: 1.5rem;
-            padding: 0 15px;
-        }
-
-        .hero-button-text {
-            font-size: clamp(0.9rem, 3vw, 1.1rem);
-            font-weight: 400;
-            color: #f3f4f6;
-            background: rgba(0,0,0,0.4);
-            backdrop-filter: blur(5px);
-            display: inline-block;
-            padding: 0.5rem 2rem;
-            border-radius: 50px;
-            border: 1px solid rgba(255,255,255,0.15);
-            margin-bottom: 2rem;
-        }
-
-        /* container */
-        .max-w-6xl {
-            max-width: 1200px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        /* Responsive fixes */
-        @media (max-width: 768px) {
-            .section-title {
-                font-size: 1.8rem;
-                margin-left: 15px;
-            }
-            .rank-number {
-                font-size: 5.5rem;
-                bottom: -0.4em;
-                right: 5px;
-            }
-            .carousel {
-                gap: 30px;  /* More space on tablet */
-            }
-        }
-
-        @media (max-width: 480px) {
-            .movie-card {
-                width: 160px;
-            }
-            .poster {
-                height: 240px;
-            }
-            .rank-number {
-                font-size: 4.5rem;
-                bottom: -0.4em;
-                right: 4px;
-                line-height: 0.7;
-            }
-            .section-title {
-                font-size: 1.6rem;
-                margin-left: 10px;
-            }
-            .hero-title {
-                font-size: 1.8rem;
-            }
-            .hero-sub {
-                font-size: 1.1rem;
-            }
-            .carousel {
-                gap: 20px;  /* Still good spacing on mobile */
-            }
-        }
-
-        /* Touch device optimizations */
-        @media (pointer: coarse) {
-            .carousel-btn {
-                width: 50px;
-                height: 50px;
-                background: rgba(229, 9, 20, 0.9);
-            }
-            .heart-btn {
-                padding: 8px 14px;
-            }
-        }
-
-        /* Ensure images don't break layout */
-        img {
-            max-width: 100%;
-            height: auto;
-        }
-
-        /* Smooth transitions */
-        .btn-red, .movie-card, .heart-btn, .carousel-btn {
-            transition: all 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
-        }
-
-        /* Better text rendering */
-        * {
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-
-        /* foot-note styling */
+        /* ==================================
+           FOOTER
+        ================================== */
         .foot-note {
+            margin-top: auto;
+            padding: 2.5rem 1.5rem calc(2.5rem + env(safe-area-inset-bottom, 0px));
             text-align: center;
-            padding: 3rem 2rem;
-            color: #4b5563;
+            color: #6b7280;
             font-size: 0.9rem;
-            border-top: 1px solid #1f2937;
             letter-spacing: 0.5px;
-            margin-top: 2rem;
+            border-top: 1px solid #1f2937;
+        }
+
+        /* ==================================
+           TOAST
+        ================================== */
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+            transform: translateX(-50%);
+            z-index: 99999;
+            max-width: 90%;
+            padding: 13px 24px;
+            border-radius: 999px;
+            background: rgba(229,9,20,0.96);
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        /* ==================================
+           SMALL SCREENS
+        ================================== */
+        @media (max-width: 480px) {
+            .header-inner { height: 58px; }
+            .logo { height: 30px; }
+            .header .btn { padding: 9px 18px; font-size: 0.85rem; }
+            .hero-cta .btn { width: 100%; max-width: 320px; }
+            .movie-title { font-size: 1rem; }
+        }
+
+        @media (min-width: 1400px) {
+            :root { --card-w: 360px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation: none !important;
+                transition: none !important;
+                scroll-behavior: auto !important;
+            }
         }
     </style>
 </head>
+
 <body>
 
 <div class="bg-hero"></div>
+<div class="bg-shade"></div>
 
-<!-- HEADER (glass) with animation -->
-<header class="header flex justify-between items-center px-6 py-3 sticky top-0 z-50 magical-header">
-    <img src="{{ url_for('static', filename='img/logo.png') }}" class="h-9 md:h-10" alt="DeepFlixAI" style="max-width: 150px;">
-    <a href="{{ url_for('login') }}" class="btn-red px-5 py-2 rounded-full text-sm md:text-base shadow-lg whitespace-nowrap">
-        Sign In
-    </a>
+<!-- ==================================
+     HEADER
+================================== -->
+<header class="header">
+    <div class="header-inner">
+        <a href="/" aria-label="DeepFlixAI home">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" class="logo" alt="DeepFlixAI">
+        </a>
+        <a href="{{ url_for('login') }}" class="btn btn-red">Sign In</a>
+    </div>
 </header>
 
-<!-- HERO SECTION with magical animation -->
-<section class="text-center py-16 px-4 max-w-6xl mx-auto magical-hero">
-    <h1 class="hero-title font-extrabold mb-4 magical-title">
-        AI-Powered Movie & OTT Recommendation
-    </h1>
-    <p class="hero-sub text-gray-300 mb-2">
-        Analyzing Scripts with NLP & CNN for personalized content just for you.
-    </p>
-    <div class="hero-cta-text">
-        Unlimited entertainment, AI-powered recommendations.
-    </div>
-    <div class="hero-button-text">
-        ready to watch? sign up to receive tailored suggestions
-    </div>
-    <div class="mt-6">
-        <a href="{{ url_for('register') }}" class="btn-red px-8 py-3 md:px-10 md:py-4 rounded-full text-lg md:text-xl font-bold inline-block tracking-wide">
-            Get Started
-        </a>
-    </div>
-</section>
+<main>
 
-<!-- TRENDING NOW CAROUSEL - MATCHING REFERENCE IMAGE (WITH EXTRA SPACE BETWEEN CARDS) -->
-<section class="px-4 md:px-6 lg:px-12 mb-20 md:mb-28 relative magical-section">
+    <!-- ==================================
+         HERO
+    ================================== -->
+    <section class="hero">
+        <h1 class="hero-title">AI-Powered Movie &amp; OTT Recommendation</h1>
 
-    <h2 class="section-title">🔥 TRENDING NOW</h2>
+        <p class="hero-sub">Analyzing scripts with NLP &amp; CNN for personalized content just for you.</p>
 
-    <!-- carousel container -->
-    <div class="carousel-container">
+        <div class="hero-chips">
+            <span class="chip"><i class="fas fa-bolt"></i> Unlimited entertainment</span>
+            <span class="chip"><i class="fas fa-brain"></i> AI-powered picks</span>
+            <span class="chip"><i class="fas fa-film"></i> Tailored to you</span>
+        </div>
 
-        <!-- navigation arrows -->
-        <button class="carousel-btn left hidden sm:flex" onclick="scrollCarousel(-1)" aria-label="previous">‹</button>
-        <button class="carousel-btn right hidden sm:flex" onclick="scrollCarousel(1)" aria-label="next">›</button>
+        <div class="hero-cta">
+            <a href="{{ url_for('register') }}" class="btn btn-red">Get Started</a>
+            <a href="{{ url_for('login') }}" class="btn btn-ghost" style="padding:15px 32px;font-size:1.1rem;">Sign In</a>
+        </div>
 
-        <!-- carousel wrapper -->
-        <div class="carousel-wrapper">
-            <div id="moviesCarousel" class="carousel">
+        <p class="hero-note">Ready to watch? Sign up to receive tailored suggestions.</p>
+    </section>
+
+    <!-- ==================================
+         TRENDING NOW
+    ================================== -->
+    <section class="trending" aria-labelledby="trendingTitle">
+
+        <h2 class="section-title" id="trendingTitle">🔥 Trending Now</h2>
+
+        <div class="carousel-frame">
+
+            <button class="carousel-btn left" id="prevBtn" onclick="scrollCarousel(-1)" aria-label="Previous movies">‹</button>
+            <button class="carousel-btn right" id="nextBtn" onclick="scrollCarousel(1)" aria-label="Next movies">›</button>
+
+            <div id="moviesCarousel" class="carousel" tabindex="0" role="list">
 
                 {% if trending_movies and trending_movies|length > 0 %}
-
                     {% for movie in trending_movies[:10] %}
-                    <div class="movie-card" data-id="{{ movie.id }}">
 
+                    <article class="movie-card" role="listitem" data-id="{{ movie.id }}">
 
-<!-- poster -->
-{% set poster = (movie.thumbnail or '')|trim %}
+                        <div class="poster-wrap">
 
-<img
-    src="{% if poster.startswith('http://') or poster.startswith('https://') or poster.startswith('data:image/') %}{{ poster }}{% elif poster %}{{ url_for('static', filename='uploads/' + poster) }}{% else %}https://placehold.co/300x450/1f2937/ffffff?text=No+Poster{% endif %}"
-    class="poster"
-    alt="{{ movie.title }}"
-    loading="lazy"
-    style="aspect-ratio:2/3; object-fit:cover; width:100%;"
-    onerror="this.onerror=null; this.src='https://placehold.co/300x450/1f2937/ffffff?text=No+Poster';">
+                            {% set backdrop = (movie.backdrop_url or '')|trim %}
 
+                            <img
+                                src="{% if backdrop.startswith('http://') or backdrop.startswith('https://') or backdrop.startswith('data:image/') %}{{ backdrop }}{% elif backdrop %}{{ url_for('static', filename='uploads/' + backdrop) }}{% else %}https://placehold.co/600x338/1f2937/ffffff?text=No+Backdrop{% endif %}"
+                                class="poster"
+                                alt="{{ movie.title }}"
+                                loading="lazy"
+                                decoding="async"
+                                onerror="this.onerror=null; this.src='https://placehold.co/600x338/1f2937/ffffff?text=No+Backdrop';"
+                            >
 
-                        <!-- rank -->
-                        <div class="rank-number">{{ loop.index }}</div>
+                            <!-- Navigation -->
+                            <a href="{{ url_for('watch_content', content_id=movie.id) }}" class="card-link" aria-label="Watch {{ movie.title }}"></a>
 
-                        <!-- heart -->
-                        <div onclick="event.stopPropagation(); toggleHeart({{ movie.id }}, this)"
-                             class="heart-btn {% if movie.user_hearted %}active{% endif %}">
-
-                            <i class="{% if movie.user_hearted %}fas{% else %}far{% endif %} fa-heart"></i>
-                            <span class="heart-count">{{ movie.hearts or 0 }}</span>
-                        </div>
-
-                        <!-- overlay -->
-                        <div class="meta-info">
-                            <div class="movie-title">{{ movie.title }}</div>
-                            <div class="movie-year">
-                                {{ movie.release_year or '—' }}
+                            <!-- Title + year -->
+                            <div class="meta-info">
+                                <div class="movie-title">{{ movie.title }}</div>
+                                <div class="movie-year">{{ movie.release_year or '—' }}</div>
                             </div>
+
+                            <!-- Rank -->
+                            <div class="rank-number" aria-hidden="true">{{ loop.index }}</div>
+
+                            <!-- Heart -->
+                            <button
+                                type="button"
+                                onclick="event.stopPropagation(); toggleHeart({{ movie.id }}, this)"
+                                class="heart-btn {% if movie.user_hearted %}active{% endif %}"
+                                aria-label="Heart {{ movie.title }}"
+                            >
+                                <i class="{% if movie.user_hearted %}fas{% else %}far{% endif %} fa-heart"></i>
+                                <span class="heart-count">{{ movie.hearts or 0 }}</span>
+                            </button>
+
                         </div>
 
-                        <!-- click navigation -->
-                        <a href="{{ url_for('watch_content', content_id=movie.id) }}" class="absolute inset-0"></a>
+                    </article>
 
-                    </div>
                     {% endfor %}
-
                 {% else %}
-
-                <!-- empty state -->
-                <div class="text-gray-400 p-6">
-                    No trending movies available.
-                </div>
-
+                    <div class="empty-state">No trending movies available.</div>
                 {% endif %}
 
             </div>
         </div>
 
-    </div>
-</section>
+    </section>
 
-<!-- Simple footer with animation -->
-<div class="foot-note magical-section" style="animation-delay: 0.8s;">
-    ✦ DeepFlixAI · where every click reveals a story ✦
-</div>
+</main>
+
+<!-- ==================================
+     FOOTER
+================================== -->
+<footer class="foot-note">
+    ✦ DeepFlixAI · Where Every Click Reveals a Story ✦
+</footer>
 
 
 <script>
-    // ==========================================
-    // DEEPFLIX AI - COMPLETE HOMEPAGE JAVASCRIPT
-    // ==========================================
+/* ==================================
+   CAROUSEL
+================================== */
+const carousel = document.getElementById('moviesCarousel');
+const prevBtn  = document.getElementById('prevBtn');
+const nextBtn  = document.getElementById('nextBtn');
 
-    // CAROUSEL SCROLL
-    function scrollCarousel(direction) {
-        const container = document.getElementById('moviesCarousel');
+function scrollCarousel(direction) {
+    if (!carousel) return;
+    const card = carousel.querySelector('.movie-card');
+    const gap  = parseFloat(getComputedStyle(carousel).columnGap) || 20;
+    const step = card ? card.getBoundingClientRect().width + gap : 320;
+    carousel.scrollBy({ left: direction * step * 2, behavior: 'smooth' });
+}
 
-        if (!container) return;
+function updateArrows() {
+    if (!carousel || !prevBtn || !nextBtn) return;
+    const max = carousel.scrollWidth - carousel.clientWidth - 4;
+    prevBtn.disabled = carousel.scrollLeft <= 4;
+    nextBtn.disabled = carousel.scrollLeft >= max;
+}
 
-        const scrollAmount =
-            window.innerWidth <= 480 ? 180 :
-            window.innerWidth <= 768 ? 200 : 260;
+if (carousel) {
+    carousel.addEventListener('scroll', updateArrows, { passive: true });
+    window.addEventListener('resize', updateArrows);
+    window.addEventListener('load', updateArrows);
+    updateArrows();
 
-        container.scrollBy({
-            left: direction * scrollAmount,
-            behavior: 'smooth'
-        });
-    }
-
-
-    // ==========================================
-    // HEART TOGGLE - AJAX
-    // ==========================================
-
-    async function toggleHeart(contentId, btnElement) {
-
-        if (!btnElement) return;
-
-        btnElement.style.transform = 'scale(0.9)';
-
-        setTimeout(() => {
-            btnElement.style.transform = '';
-        }, 200);
-
-        try {
-
-            const response = await fetch('/ajax_toggle_heart', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    content_id: contentId
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('Request failed: ' + response.status);
-            }
-
-            const data = await response.json();
-
-            if (data.status === 'success') {
-
-                const countSpan =
-                    btnElement.querySelector('.heart-count');
-
-                if (countSpan) {
-                    countSpan.innerText = data.hearts;
-                }
-
-                const icon = btnElement.querySelector('i');
-
-                if (btnElement.classList.contains('active')) {
-
-                    btnElement.classList.remove('active');
-
-                    if (icon) {
-                        icon.classList.replace('fas', 'far');
-                    }
-
-                } else {
-
-                    btnElement.classList.add('active');
-
-                    if (icon) {
-                        icon.classList.replace('far', 'fas');
-                    }
-                }
-
-            } else {
-
-                showMessage(' Login required to heart movies');
-            }
-
-        } catch (error) {
-
-            console.error('Heart toggle error:', error);
-
-            showMessage('Warning: Something went wrong. Please try again.');
-        }
-    }
-
-
-    // ==========================================
-    // CUSTOM MESSAGE NOTIFICATION
-    // ==========================================
-
-    function showMessage(message) {
-
-        const oldMessage = document.getElementById('deepflix-message');
-
-        if (oldMessage) {
-            oldMessage.remove();
-        }
-
-        const alertDiv = document.createElement('div');
-
-        alertDiv.id = 'deepflix-message';
-
-        alertDiv.style.cssText = `
-            position: fixed;
-            bottom: 25px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(229, 9, 20, 0.96);
-            color: white;
-            padding: 13px 25px;
-            border-radius: 50px;
-            z-index: 99999;
-            font-size: 14px;
-            font-weight: 600;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            text-align: center;
-            max-width: 90%;
-            animation: slideUpFade 0.3s ease-out;
-        `;
-
-        alertDiv.textContent = message;
-
-        document.body.appendChild(alertDiv);
-
-        setTimeout(() => {
-            alertDiv.remove();
-        }, 3000);
-    }
-
-
-    // ==========================================
-    // DOM CONTENT LOADED
-    // ==========================================
-
-    document.addEventListener('DOMContentLoaded', function () {
-
-        // TOUCH DEVICE OPTIMIZATION
-        if ('ontouchstart' in window) {
-
-            document.querySelectorAll('.movie-card').forEach(card => {
-
-                card.addEventListener(
-                    'touchstart',
-                    function () {},
-                    { passive: true }
-                );
-
-            });
-        }
-
-
-        // CAROUSEL KEYBOARD ACCESSIBILITY
-        const carousel = document.getElementById('moviesCarousel');
-
-        if (carousel) {
-
-            carousel.addEventListener('keydown', function (event) {
-
-                if (event.key === 'ArrowRight') {
-                    carousel.scrollBy({
-                        left: 200,
-                        behavior: 'smooth'
-                    });
-                }
-
-                if (event.key === 'ArrowLeft') {
-                    carousel.scrollBy({
-                        left: -200,
-                        behavior: 'smooth'
-                    });
-                }
-
-            });
-        }
-
-
-        // POSTER IMAGE ERROR HANDLING
-        // Main fallback is already handled by img onerror.
-        // This avoids duplicate error listeners.
-
-        document.querySelectorAll('.poster').forEach(img => {
-
-            img.addEventListener('load', function () {
-
-                this.classList.add('poster-loaded');
-
-            });
-
-        });
-
+    carousel.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowRight') { e.preventDefault(); scrollCarousel(1); }
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); scrollCarousel(-1); }
     });
+}
 
+/* ==================================
+   HEART TOGGLE (AJAX)
+================================== */
+async function toggleHeart(contentId, btn) {
+    if (!btn || btn.dataset.busy === '1') return;
+    btn.dataset.busy = '1';
 
-    // ==========================================
-    // PREVENT MULTI-TOUCH ZOOM
-    // ==========================================
+    try {
+        const response = await fetch('/ajax_toggle_heart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content_id: contentId })
+        });
 
-    document.addEventListener('touchstart', function (event) {
-
-        if (event.touches.length > 1) {
-            event.preventDefault();
+        if (response.status === 401 || response.status === 403) {
+            showMessage('Login required to heart movies');
+            return;
         }
+        if (!response.ok) throw new Error('Request failed: ' + response.status);
 
-    }, { passive: false });
+        const data = await response.json();
 
+        if (data.status === 'success') {
+            const countSpan = btn.querySelector('.heart-count');
+            if (countSpan) countSpan.textContent = data.hearts;
 
-    // ==========================================
-    // PREVENT UNWANTED DOUBLE-TAP ZOOM
-    // ==========================================
-
-    let lastTouchEnd = 0;
-
-    document.addEventListener('touchend', function (event) {
-
-        const now = Date.now();
-
-        if (now - lastTouchEnd <= 300) {
-            event.preventDefault();
+            const icon = btn.querySelector('i');
+            const nowActive = !btn.classList.contains('active');
+            btn.classList.toggle('active', nowActive);
+            if (icon) {
+                icon.classList.remove(nowActive ? 'far' : 'fas');
+                icon.classList.add(nowActive ? 'fas' : 'far');
+            }
+        } else {
+            showMessage('Login required to heart movies');
         }
+    } catch (error) {
+        console.error('Heart toggle error:', error);
+        showMessage('Something went wrong. Please try again.');
+    } finally {
+        btn.dataset.busy = '0';
+    }
+}
 
-        lastTouchEnd = now;
+/* ==================================
+   TOAST
+================================== */
+function showMessage(message) {
+    const old = document.getElementById('deepflix-message');
+    if (old) old.remove();
 
-    }, { passive: false });
+    const el = document.createElement('div');
+    el.id = 'deepflix-message';
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.textContent = message;
+    document.body.appendChild(el);
 
+    setTimeout(() => el.remove(), 3000);
+}
 </script>
-
-
-<style>
-    /* Final touch-ups matching reference image */
-    .movie-card .heart-btn {
-        z-index: 25;
-    }
-    .meta-info {
-        pointer-events: none;
-    }
-    .error-fallback {
-        object-fit: cover;
-    }
-
-    /* Hide arrows on small phones, use swipe instead */
-    @media (max-width: 640px) {
-        .carousel-btn {
-            display: none !important;
-        }
-    }
-
-    /* Exactly like reference - numbers on bottom right, half outside, plain white (no glow) */
-    .rank-number {
-        text-align: right;
-        line-height: 0.8;
-    }
-
-    /* Make trending section pop */
-    .section-title {
-        text-shadow: 0 0 20px rgba(229,9,20,0.3);
-    }
-
-    /* Better hover states */
-    .movie-card {
-        will-change: transform;
-    }
-
-    /* Match reference image exactly - numbers fully visible & half outside */
-    @media (min-width: 1024px) {
-        .rank-number {
-            font-size: 6.5rem;
-            bottom: -0.4em;
-            right: 8px;
-        }
-    }
-
-    /* Ensure number is never cut off (overflow visible) and half spills out */
-    .movie-card {
-        overflow: visible !important;
-    }
-
-    /* But keep image clipped to card */
-    .poster {
-        border-radius: 12px;
-    }
-
-    /* Additional spacing for the trending section */
-    section.mb-20 {
-        margin-bottom: 5rem;
-    }
-</style>
 
 </body>
 </html>
